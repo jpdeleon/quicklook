@@ -408,7 +408,7 @@ class TessQuickLook:
         ax = axes.flatten()[0]
         self.raw_lc.scatter(ax=ax, label="raw")
         label = f"baseline trend\nmethod={self.flatten_method}"
-        label += "(window_size={self.window_length:.2f})"
+        label += f"(window_size={self.window_length:.2f})"
         self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
 
         # +++++++++++++++++++++ax2 Lomb-scargle periodogram
@@ -551,10 +551,10 @@ class TessQuickLook:
             Path(self.outdir).mkdir()
 
         lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
+        name = self.target_name.replace(" ", "")
         fp = Path(
             self.outdir,
-            f"{self.target_name.replace(' ','')}_s{str(self.sector).zfill(2)}\
-            _{lctype}_{self.cadence[0]}c",
+            f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
         )
         png_file = fp.with_suffix(".png")
         if png_file.exists() and not self.overwrite:
@@ -584,9 +584,9 @@ if __name__ == "__main__":
             "TOI-837",
             sector=-1,
             savefig=True,
-            savetls=False,
+            savetls=True,
             overwrite=True,
-            plot=False,
+            plot=True,
             flatten_method="biweight",
             gp_kernel="matern",  # squared_exp, matern, periodic, periodic_auto
             # gp_kernel_size=0.1,
