@@ -1,0 +1,10 @@
+pre-commit
+lightkurve==2.4.1
+numpy==1.23
+transitleastsquares==1.0.31
+wotan==1.10
+aesthetic
+flammkuchen==1.0.3
+reproject==0.12.0
+astroplan==0.9
+astroquery==0.4.6
