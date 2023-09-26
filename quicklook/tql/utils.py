@@ -163,8 +163,8 @@ def make_square_mask(img, size, xy_center=None, angle=None):
             xy_center = [xcen, ycen]
     mask = np.zeros_like(img, dtype=bool)
     mask[
-        ycen - size : ycen + size + 1, xcen - size : xcen + size + 1  # noqa
-    ] = True
+        ycen - size : ycen + size + 1, xcen - size : xcen + size + 1
+    ] = True  # noqa
     # if angle:
     #    #rotate mask
     #    mask = rotate(mask, angle, axes=(1, 0),
@@ -192,7 +192,7 @@ def compute_secthresh(fold_lc, t14):
             x1 = chunks[n - 1]
             x2 = x
         idx = (fold_lc.phase.value > x1) & (fold_lc.phase.value < x2)
-        mean = np.nanmean(fold_lc.flux[idx])
+        mean = np.nanmean(fold_lc.flux[idx].value)
         # print(mean)
         means.append(mean)
     return 3 * np.nanstd(means)

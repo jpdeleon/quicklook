@@ -79,7 +79,7 @@ def find_contours(
         image.astype(np.float64),
         float(level),
         fully_connected == "high",
-        use_mask=mask,
+        mask=mask,
     )
     contours = _assemble_contours(segments)
     if positive_orientation == "high":

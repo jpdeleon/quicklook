@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+# Import standard library
+import sys
+import argparse
+import logging
+import matplotlib.pyplot as pl
+from quicklook.tql import TessQuickLook
+
+log = logging.getLogger(__name__)
+
+parser = argparse.ArgumentParser(description="create tql based on chronos")
+# parser.add_argument("-gaia2id", type=int, help="Gaia DR2 ID", default=None)
+# parser.add_argument("-gaia3id", type=int, help="Gaia DR3 ID", default=None)
+# parser.add_argument("-toi", type=int, help="TOI ID", default=None)
+# parser.add_argument("-tic", type=int, help="TIC ID", default=None)
+# parser.add_argument(
+#     "-coords",
+#     type=str,
+#     help="e.g. '08:09:10 -05:04:23' or '22.5 -12.56'",
+#     nargs=2,
+#     default=None,
+# )
+parser.add_argument("-name", type=str, help="target name", default=None)
+parser.add_argument(
+    "-sec", "--sector", type=int, help="TESS sector", default=None
+)
+# parser.add_argument(
+#     "-c",
+#     "--cadence",
+#     type=str,
+#     choices=["long", "short"],
+#     help="30-min long or 2-min short (default)",
+#     default="short",
+# )
+# parser.add_argument(
+#     "-sr",
+#     "--search_radius",
+#     type=float,
+#     help="search radius in arcsec (default=3)",
+#     default=3,
+# )
+parser.add_argument(
+    "-lc",
+    "--fluxtype",
+    type=str,
+    help="type of lightcurve",
+    choices=[
+        "pdcsap",
+        "sap",
+    ],
+    default="pdcsap",
+)
+parser.add_argument(
+    "-p",
+    "--pipeline",
+    type=str,
+    help="lightcurve produced from which pipeline",
+    choices=[
+        "custom",
+        "cdips",
+        "pathos",
+        "qlp",
+        "tglc",
+        "diamante",
+    ],
+    default="SPOC",
+)
+parser.add_argument(
+    "-e",
+    "--exptime",
+    type=int,
+    help="exposure time (default=1800 s)",
+    default=1800,
+)
+# parser.add_argument(
+#     "-m",
+#     "--mission",
+#     type=str,
+#     help="TESS or K2 or Kepler",
+#     default='TESS',
+# )
+# parser.add_argument(
+#     "-a",
+#     "--aper_mask",
+#     type=str,
+#     help="aperture mask type",
+#     choices=["pipeline", "round", "square", "percentile", "threshold"],
+#     default=None,
+# )
+# parser.add_argument(
+#     "-t", "--threshold", type=float, help="mask threshold in sigma", default=5
+# )
+# parser.add_argument(
+#     "-r", "--aper_radius", type=int, help="mask radius in pix", default=1
+# )
+# parser.add_argument(
+#     "-perc", "--percentile", type=float, help="mask percentile", default=90
+# )
+# parser.add_argument(
+#     "-qb",
+#     "--quality_bitmask",
+#     type=str,
+#     choices=["none", "default", "hard", "hardest"],
+#     default="default",
+# )
+# parser.add_argument(
+#     "-size",
+#     "--cutout_size",
+#     nargs=2,
+#     type=float,
+#     help="FFI cutout size for long cadence (default=[12,12] pix)",
+#     default=(12, 12),
+# )
+parser.add_argument(
+    "-method",
+    "--flatten_method",
+    type=str,
+    help="wotan flatten method (default=biweight)",
+    default="biweight",
+)
+parser.add_argument(
+    "-wl",
+    "--window_length",
+    type=float,
+    help="flatten method window length (default=0.5 days)",
+    default=None,
+)
+parser.add_argument(
+    "-ec",
+    "--edge_cutoff",
+    type=int,
+    help="cut each edges (default=0.1 days)",
+    default=0.1,
+)
+parser.add_argument(
+    "--sigma_clip_raw",
+    type=float,
+    help="(sigma_lo,sigma_hi) for outlier rejection after flattening lc",
+    nargs=2,
+    default=(5, 5),
+)
+parser.add_argument(
+    "--sigma_clip_flat",
+    help="(sigma_lo,sigma_hi) for outlier rejection after flattening lc",
+    nargs=2,
+    type=float,
+    default=None,
+)
+# parser.add_argument(
+#     "-qm",
+#     "--quality_mask",
+#     action="store_true",
+#     help="remove chunks of bad cadences identified in data release notes",
+#     default=False,
+# )
+parser.add_argument(
+    "-plims",
+    "--period_limits",
+    help="period limits in TLS search; default=(0.5, baseline/2) d",
+    nargs=2,
+    type=float,
+    default=None,
+)
+# parser.add_argument(
+#     "-b",
+#     "--bin_hr",
+#     type=float,
+#     help="bin size in folded lc (default=4 hr if -c=long else 0.5 hr)",
+#     default=0.5,
+# )
+# parser.add_argument(
+#     "-n",
+#     "--nearby_gaia_radius",
+#     type=float,
+#     help="nearby gaia sources to consider (default=120 arcsec)",
+#     default=120,
+# )
+parser.add_argument(
+    "-u",
+    "--use_priors",
+    action="store_true",
+    help="use star priors for detrending and periodogram",
+    default=False,
+)
+# parser.add_argument(
+#     "-g", "--gls", action="store_true", help="run GLS pipeline", default=False
+# )
+# parser.add_argument(
+#     "-f",
+#     "--find_cluster",
+#     action="store_true",
+#     help="find if target is in cluster (default=False)",
+#     default=False,
+# )
+parser.add_argument(
+    "-s",
+    "--save",
+    action="store_true",
+    help="save figure and tls",
+    default=False,
+)
+parser.add_argument(
+    "-o", "--outdir", type=str, help="output directory", default="."
+)
+parser.add_argument(
+    "-v", "--verbose", action="store_true", help="show details", default=False
+)
+parser.add_argument(
+    "--overwrite", action="store_true", help="overwrite files", default=False
+)
+parser.add_argument(
+    "-img",
+    "--use_archival_image",
+    action="store_true",
+    help="plot gaia sources on archival image instead of tpf",
+    default=False,
+)
+parser.add_argument(
+    "-var",
+    "--check_if_variable",
+    action="store_true",
+    help="check if target is in variable star catalog",
+    default=False,
+)
+parser.add_argument(
+    "-em",
+    "--ephem_mask",
+    help="mask ephemeris given period and t0",
+    nargs=3,
+    type=float,
+    default=None,
+)
+parser.add_argument(
+    "-st",
+    "--spec_type",
+    action="store_true",
+    help="estimate spectral type",
+    default=False,
+)
+parser.add_argument(
+    "-age",
+    "--gyro_age",
+    action="store_true",
+    help="estimate gyro age using stardate",
+    default=False,
+)
+# prints help if no argument supplied
+args = parser.parse_args(None if sys.argv[1:] else ["-h"])
+
+if __name__ == "__main__":
+    fig = TessQuickLook(
+        # gaia2id=args.gaia2id,
+        # gaia3id=args.gaia3id,
+        # toiid=args.toi,
+        # ticid=args.tic,
+        # ephem_mask=args.ephem_mask,
+        # coords=args.coords,
+        target_name=args.name,
+        # search_radius=args.search_radius,
+        sector=args.sector,
+        # cadence=args.cadence,
+        pipeline=args.pipeline,
+        exptime=args.exptime,
+        flux_type=args.fluxtype,
+        # sap_mask=args.aper_mask,
+        # aper_radius=args.aper_radius,
+        # threshold_sigma=args.threshold,
+        # percentile=args.percentile,
+        # quality_bitmask=args.quality_bitmask,
+        # apply_data_quality_mask=args.quality_mask,
+        flatten_method=args.flatten_method,
+        window_length=args.window_length,
+        sigma_clip_raw=args.sigma_clip_raw,
+        sigma_clip_flat=args.sigma_clip_flat,
+        # cutout_size=args.cutout_size,
+        # bin_hr=args.bin_hr,
+        # Porb_limits=args.period_limits,
+        # use_star_priors=args.use_priors,
+        edge_cutoff=args.edge_cutoff,
+        # find_cluster=args.find_cluster,
+        # nearby_gaia_radius=args.nearby_gaia_radius,
+        # use_archival_image=args.use_archival_image,
+        # run_gls=args.gls,
+        savefig=args.save,
+        savetls=args.save,
+        outdir=args.outdir,
+        # verbose=args.verbose,
+        overwrite=args.overwrite,
+        # check_if_variable=args.check_if_variable,
+        # estimate_spec_type=args.spec_type,
+        # estimate_gyro_age=args.gyro_age,
+    )
+    if not args.save:
+        pl.show()
+    pl.close()

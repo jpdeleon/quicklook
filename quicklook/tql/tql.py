@@ -16,8 +16,8 @@ from astroquery.skyview import SkyView
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
-from utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
-from plot import (
+from .utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
+from .plot import (
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
     plot_odd_even_transit,
@@ -34,9 +34,10 @@ class TessQuickLook:
         self,
         target_name: str,
         sector=-1,
-        author: str = "SPOC",
+        pipeline: str = "SPOC",
         flux_type="pdcsap",
-        cadence: str = "short",
+        # cadence: str = "short",
+        exptime: float = None,
         pg_method: str = "lombscargle",
         flatten_method: str = "biweight",
         gp_kernel: str = "matern",
@@ -78,10 +79,19 @@ class TessQuickLook:
         self.toiid = toiid
         self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
         self.flux_type = flux_type
-        self.cadence = cadence
+        if exptime is None:
+            if pipeline in ["qlp", "cdips", "pathos", "tglc"]:
+                self.exptime = 1800.0
+            else:
+                self.exptime = 120.0
+        else:
+            self.exptime = exptime
+        self.cadence = "short" if self.exptime < 1800 else "long"
         self.pg_method = pg_method
         self.raw_lc = self.get_lc(
-            author=author, sector=sector, cadence=cadence
+            author=pipeline,
+            sector=sector,
+            exptime=self.exptime,  # cadence=cadence
         )
         self.flatten_method = flatten_method
         self.gp_kernel = (
@@ -136,15 +146,17 @@ class TessQuickLook:
         included_args = [
             # ===target attributes===
             "name",
-            "toiid",
-            "ctoiid",
-            "ticid",
-            "epicid",
-            "gaiaDR2id",
-            "ra_deg",
-            "dec_deg",
-            "target_coord",
+            # "toiid",
+            # "ctoiid",
+            # "ticid",
+            # "epicid",
+            # "gaiaDR2id",
+            # "ra_deg",
+            # "dec_deg",
+            # "target_coord",
             "search_radius",
+            "sector",
+            "exptime",
             "mission",
             "campaign",
             # "all_sectors",
@@ -194,9 +206,22 @@ class TessQuickLook:
             query_name = self.target_name.replace(" ", "")
 
         # get all info
-        search_result = lk.search_lightcurve(query_name)
+        search_result_all_lcs = lk.search_lightcurve(query_name)
+        errmsg = f"Search using '{query_name}' "
+        errmsg += f"did not yield any lightcurve results."
+        assert len(search_result_all_lcs) > 0, errmsg
+        # import pdb; pdb.set_trace()
+        cols = ["author", "mission", "t_exptime"]
+        print("All available lightcurves:")
+        print(search_result_all_lcs.table.to_pandas()[cols])
+
         all_sectors = sorted(
-            set([int(i[-2:]) for i in search_result.table["mission"].tolist()])
+            set(
+                [
+                    int(i[-2:])
+                    for i in search_result_all_lcs.table["mission"].tolist()
+                ]
+            )
         )
         if kwargs.get("sector") is None:
             print(f"Available sectors: {all_sectors}")
@@ -207,7 +232,9 @@ class TessQuickLook:
         if kwargs.get("author") is None:
             kwargs["author"] = "SPOC"
         else:
-            all_authors = set(search_result.table["provenance_name"].tolist())
+            all_authors = set(
+                search_result_all_lcs.table["provenance_name"].tolist()
+            )
             err_msg = f"author={kwargs.get('author')} not in {all_authors}"
             assert kwargs.get("author").upper() in all_authors, err_msg
         self.pipeline = kwargs["author"]
@@ -215,6 +242,10 @@ class TessQuickLook:
 
         # get specific lc in cache
         search_result = lk.search_lightcurve(query_name, **kwargs)
+        errmsg = f"Search using '{query_name}' {kwargs} "
+        errmsg += "did not yield any lightcurve results."
+        assert len(search_result) > 0, errmsg
+        # print(search_result)
 
         self.all_sectors = all_sectors
         # FIXME: no use case for running tls on all sectors
@@ -229,9 +260,11 @@ class TessQuickLook:
         else:
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
-            print(
-                f"Downloaded {kwargs.get('author')} lc in sector {lc.sector}."
+            msg = f"\nDownloaded {kwargs.get('author')} "
+            msg += (
+                f"(exp={kwargs.get('exptime')} s) lc in sector {lc.sector}.\n"
             )
+            print(msg)
             self.sector = lc.sector
         if lc.meta["AUTHOR"].lower() == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
@@ -252,10 +285,37 @@ class TessQuickLook:
             query_name = f"TIC{self.ticid}"
         else:
             query_name = self.target_name.replace(" ", "")
+
+        search_result_all_tpfs = lk.search_targetpixelfile(query_name)
+        errmsg = "No tpf files found."
+        assert len(search_result_all_tpfs) > 0, errmsg
+
+        cols = ["author", "mission", "t_exptime"]
+        print("All available TPFs:")
+        print(search_result_all_tpfs.table.to_pandas()[cols])
+        tpf_authors = search_result_all_tpfs.table.to_pandas()[
+            "author"
+        ].unique()
+        if kwargs.get("author").upper() not in tpf_authors:
+            print(f"No TPF for {kwargs.get('author')} pipeline.")
+            kwargs["author"] = [
+                tpf_authors[i] for i in range(len(tpf_authors)) if i != "QLP"
+            ][0]
+        print(f"\nUsing {kwargs.get('author')} TPF.\n")
+
         search_result = lk.search_targetpixelfile(query_name, **kwargs)
+        errmsg = f"Search using '{query_name}' {kwargs} "
+        errmsg = +f"did not yield any TPF results."
+        assert len(search_result) > 0, errmsg
         idx = sector_orig if sector_orig == -1 else 0
         tpf = search_result[idx].download()
-        print(f"Downloaded {kwargs.get('author')} tpf in sector {tpf.sector}.")
+        # FIXME: What is the correct tpf aperture for other pipeline?
+        # author = tpf.meta['PROCVER'].split('-')[0]
+        author = search_result.author[idx].upper()
+        exptime = search_result.exptime[idx].value
+        msg = f"Downloaded {author} (exp={exptime} s) tpf "
+        msg += f"in sector {tpf.meta['SECTOR']}."
+        print(msg)
         return tpf
 
     def get_toi_ephem(self, idx=1, params=["epoch", "per", "dur"]) -> list:
@@ -340,17 +400,18 @@ class TessQuickLook:
         meta = self.raw_lc.meta
 
         Rp = self.tls_results["rp_rs"] * Rstar * u.Rsun.to(u.Rearth)
-        Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
+        if self.pipeline.lower() in ["spoc", "tess-spoc"]:
+            Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
+        else:
+            # FIXME: need to get dilution from other pipelines
+            Rp_true = Rp
         msg = "\nCandidate Properties\n"
         msg += "-" * 30 + "\n"
-        text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector} \
-                in {self.all_sectors}, {self.pipeline.upper()} pipeline)"
+        text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector}"
+        text += f" in {self.all_sectors}, {self.pipeline.upper()} pipeline)"
         msg += "\n".join(textwrap.wrap(text, 60))
-        msg += (
-            f"\nPeriod={self.tls_results.period:.4f}\
-                +/-{self.tls_results.period_uncertainty:.4f} d"
-            + " " * 5
-        )
+        msg += f"\nPeriod={self.tls_results.period:.4f} "
+        msg += f"+/-{self.tls_results.period_uncertainty:.4f} d" + " " * 5
         msg += f"Duration={self.tls_results.duration*24:.2f} hr" + "\n"
         msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} BJD" + " " * 11
         msg += f"Depth={(1-self.tls_results.depth)*100:.2f}%\n"
@@ -406,7 +467,7 @@ class TessQuickLook:
 
         # +++++++++++++++++++++ax: Raw + trend
         ax = axes.flatten()[0]
-        self.raw_lc.scatter(ax=ax, label="raw")
+        self.raw_lc.scatter(ax=ax, label=f"raw (exp={self.exptime} s)")
         label = f"baseline trend\nmethod={self.flatten_method}"
         label += f"(window_size={self.window_length:.2f})"
         self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
@@ -458,7 +519,8 @@ class TessQuickLook:
         # +++++++++++++++++++++ax: tpf
         ax = axes.flatten()[5].remove()
         self.tpf = self.get_tpf(
-            sector=self.sector, author=self.pipeline, cadence=self.cadence
+            sector=self.sector,
+            author=self.pipeline,  # exptime=self.exptime, #cadence=self.cadence
         )
         try:
             survey = "DSS2 Red"
@@ -485,6 +547,7 @@ class TessQuickLook:
             _ = plot_gaia_sources_on_survey(
                 tpf=self.tpf,
                 target_gaiaid=self.gaiaid,
+                hdu=hdu,
                 gaia_sources=None,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
@@ -535,15 +598,13 @@ class TessQuickLook:
         ax.text(-1, 11, msg, ha="left", va="top", fontsize=10, wrap=True)
         ax.axis("off")
 
-        if self.toiid is None:
-            title = f"TIC {self.ticid} (sector {self.sector})"
-        else:
-            title = (
-                f"TOI {self.toiid} | TIC {self.ticid} (sector {self.sector})"
-            )
-            # if toi_params["Comments"] or toi_params["Comments"] != "nan":
-            #     comment = f"Comment: {toi_params['Comments']}"
-            #     msg += "\n".join(textwrap.wrap(comment, 60))
+        title = ""
+        if self.toiid is not None:
+            title = f"TOI {self.toiid} | "
+        title += f"TIC {self.ticid} | sector {self.sector} | {self.pipeline} pipeline"
+        # if toi_params["Comments"] or toi_params["Comments"] != "nan":
+        #     comment = f"Comment: {toi_params['Comments']}"
+        #     msg += "\n".join(textwrap.wrap(comment, 60))
         fig.suptitle(title, y=1.0, fontsize=20)
         end = timer()
 
@@ -581,8 +642,10 @@ class TessQuickLook:
 if __name__ == "__main__":
     try:
         tql = TessQuickLook(
-            "TOI-837",
+            "TOI-6043",
             sector=-1,
+            # pipeline="qlp",
+            # exptime=1800,
             savefig=True,
             savetls=True,
             overwrite=True,

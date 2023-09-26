@@ -6,20 +6,21 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
-from astroplan.plots import plot_finder_image
+import astropy.units as u
+
+# from astroplan.plots import plot_finder_image
 from astroquery.mast import Catalogs
 from astroquery.skyview import SkyView
 from scipy.ndimage import zoom
 import pandas as pd
-from utils import (
+from .utils import (
     compute_secthresh,
     is_point_inside_mask,
     PadWithZeros,
     parse_aperture_mask,
     TESS_pix_scale,
 )
-from measure import find_contours
-import astropy.units as u
+from .measure import find_contours
 
 # http://gsss.stsci.edu/SkySurveys/Surveys.htm
 dss_description = {
@@ -99,7 +100,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         c="k",
         ls="--",
     )
-    half_phase = 0.5  # *tls_results.period
+    half_phase = 0.5
     t14 = tls_results.duration
     ax.axvline(
         half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
@@ -107,7 +108,11 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     ax.axvline(
         half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
     )
-    secthresh = compute_secthresh(fold_lc2, t14)
+    try:
+        secthresh = compute_secthresh(fold_lc2, t14)
+    except Exception as e:
+        print(e)
+        secthresh = np.nan
     fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
     fold_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
         ax=ax,
@@ -423,6 +428,7 @@ def plot_gaia_sources_on_tpf(
 def plot_gaia_sources_on_survey(
     tpf,
     target_gaiaid,
+    hdu=None,
     gaia_sources=None,
     fov_rad=None,
     depth=0.0,
@@ -496,7 +502,7 @@ def plot_gaia_sources_on_survey(
             f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image"
         )
     # -----------create figure---------------#
-    if ax is None:
+    if (ax is None) or (hdu is None):
         # get img hdu for subplot projection
         try:
             hdu = SkyView.get_images(
@@ -513,11 +519,8 @@ def plot_gaia_sources_on_survey(
         # define scaling in projection
         ax = fig.add_subplot(111, projection=WCS(hdu.header))
     # plot survey img
-    if str(target_coord.distance) == "nan":
-        target_coord = SkyCoord(ra=target_coord.ra, dec=target_coord.dec)
-    nax, hdu = plot_finder_image(
-        target_coord, ax=ax, fov_radius=fov_rad, survey=survey, reticle=False
-    )
+    ax.imshow(hdu.data, cmap="Greys", origin="lower")
+    ax.set(xlabel="RA", ylabel="DEC")
     imgwcs = WCS(hdu.header)
     mx, my = hdu.data.shape
     # plot mask
@@ -552,7 +555,7 @@ def plot_gaia_sources_on_survey(
             edgecolor = "C2"
             marker = "s"
             alpha = 1
-        nax.scatter(
+        ax.scatter(
             pix[0],
             pix[1],
             marker=marker,
@@ -573,11 +576,11 @@ def plot_gaia_sources_on_survey(
         ax.coords[1].set_major_formatter("dd:mm")
     # set img limits
     pl.setp(
-        nax,
+        ax,
         xlim=(0, mx),
         ylim=(0, my),
     )
-    nax.set_title(
+    ax.set_title(
         f"{survey} ({fov_rad.value:.2f}' x {fov_rad.value:.2f}')", y=0.99
     )
     return ax
