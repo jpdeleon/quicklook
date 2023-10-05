@@ -28,6 +28,8 @@ from .plot import (
 
 set_style("science")
 
+__all__ = ["TessQuickLook"]
+
 
 class TessQuickLook:
     def __init__(
@@ -305,7 +307,7 @@ class TessQuickLook:
 
         search_result = lk.search_targetpixelfile(query_name, **kwargs)
         errmsg = f"Search using '{query_name}' {kwargs} "
-        errmsg = +f"did not yield any TPF results."
+        errmsg += f"did not yield any TPF results."
         assert len(search_result) > 0, errmsg
         idx = sector_orig if sector_orig == -1 else 0
         tpf = search_result[idx].download()

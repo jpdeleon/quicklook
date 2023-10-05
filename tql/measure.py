@@ -5,6 +5,8 @@ https://github.com/scikit-image/scikit-image/blob/main/skimage/measure/_find_con
 import numpy as np
 from collections import deque
 
+__all__ = ["find_contours"]
+
 
 def find_contours(
     image,

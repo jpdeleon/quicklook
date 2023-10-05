@@ -4,7 +4,7 @@ import sys
 import argparse
 import logging
 import matplotlib.pyplot as pl
-from quicklook.tql import TessQuickLook
+from tql.tql import TessQuickLook
 
 log = logging.getLogger(__name__)
 

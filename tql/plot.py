@@ -22,6 +22,16 @@ from .utils import (
 )
 from .measure import find_contours
 
+__all__ = [
+    "plot_odd_even_transit",
+    "plot_secondary_eclipse",
+    "plot_periodogram",
+    "plot_gaia_sources_on_tpf",
+    "plot_gaia_sources_on_survey",
+    "plot_archival_images",
+    "plot_tls",
+]
+
 # http://gsss.stsci.edu/SkySurveys/Surveys.htm
 dss_description = {
     "dss1": "POSS1 Red in the north; POSS2/UKSTU Blue in the south",
