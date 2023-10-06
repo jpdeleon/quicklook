@@ -95,6 +95,9 @@ class TessQuickLook:
             sector=sector,
             exptime=self.exptime,  # cadence=cadence
         )
+        self.overwrite = overwrite
+        self.outdir = outdir
+        _ = self.check_file_exists()
         self.flatten_method = flatten_method
         self.gp_kernel = (
             gp_kernel  # squared_exp, matern, periodic, periodic_auto
@@ -140,8 +143,6 @@ class TessQuickLook:
         self.plot = plot
         self.savefig = savefig
         self.savetls = savetls
-        self.overwrite = overwrite
-        self.outdir = outdir
         _ = self.plot_tql()
 
     def __repr__(self):
@@ -184,6 +185,20 @@ class TessQuickLook:
                     args.append(f"{key}={val}")
         args = ", ".join(args)
         return f"{type(self).__name__}({args})"
+
+    def check_file_exists(self):
+        name = self.target_name.replace(" ", "")
+        lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
+        fp = Path(
+            self.outdir,
+            f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
+        )
+        png_file = fp.with_suffix(".png")
+        if png_file.exists() and not self.overwrite:
+            raise FileExistsError(
+                f"{png_file} already exists! Set overwrite=True."
+            )
+        return fp
 
     def get_lc(self, **kwargs: dict) -> lk.TessLightCurve:
         """
@@ -419,7 +434,7 @@ class TessQuickLook:
         meta = self.raw_lc.meta
 
         Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
-        if self.pipeline.lower() in ["spoc", "tess-spoc"]:
+        if self.pipeline in ["spoc", "tess-spoc"]:
             Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
         else:
             # FIXME: need to get dilution from other pipelines
@@ -561,7 +576,7 @@ class TessQuickLook:
         if self.pipeline in ["cdips", "pathos", "tglc"]:
             errmsg = "Pipeline to be added soon."
             raise NotImplementedError(errmsg)
-        elif self.pipeline.lower() == "qlp":
+        elif self.pipeline == "qlp":
             self.tpf = self.get_tpf_tesscut()
             self.sap_mask = "square"
         else:
@@ -661,18 +676,13 @@ class TessQuickLook:
         if (self.outdir is not None) & (not Path(self.outdir).exists()):
             Path(self.outdir).mkdir()
 
-        lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
         name = self.target_name.replace(" ", "")
         fp = Path(
             self.outdir,
-            f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
+            f"{name}_s{str(self.sector).zfill(2)}_{self.pipeline}_{self.cadence[0]}c",
         )
+        fp = self.check_file_exists()
         png_file = fp.with_suffix(".png")
-        if png_file.exists() and not self.overwrite:
-            raise FileExistsError(
-                f"{png_file} already exists! Set overwrite=True."
-            )
-
         if self.savefig:
             save_figure(fig, png_file, dpi=100, writepdf=False)
 
