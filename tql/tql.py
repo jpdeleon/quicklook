@@ -1,4 +1,5 @@
 import sys
+import math
 import traceback
 import textwrap
 from pathlib import Path
@@ -16,8 +17,8 @@ from astroquery.skyview import SkyView
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
-from .utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
-from .plot import (
+from tql.utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
+from tql.plot import (
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
     plot_odd_even_transit,
@@ -46,7 +47,7 @@ class TessQuickLook:
         gp_kernel_size: float = 1,
         window_length: float = None,
         edge_cutoff: float = 0.1,
-        sigma_clip_raw: tuple = (5, 5),
+        sigma_clip_raw: tuple = None,
         sigma_clip_flat: tuple = None,
         ephem_mask: list = None,
         Porb_min: float = None,
@@ -80,16 +81,15 @@ class TessQuickLook:
             toiid = int(self.names[idx][0].split("-")[-1])
         self.toiid = toiid
         self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
-        self.flux_type = flux_type
-        if exptime is None:
-            if pipeline in ["qlp", "cdips", "pathos", "tglc"]:
-                self.exptime = 1800.0
-            else:
-                self.exptime = 120.0
+        if self.target_name[:3].lower() == "toi":
+            self.query_name = f"TIC{self.ticid}"
         else:
-            self.exptime = exptime
-        self.cadence = "short" if self.exptime < 1800 else "long"
+            self.query_name = self.target_name.replace(" ", "")
+        self.flux_type = flux_type
+        self.exptime = exptime
         self.pg_method = pg_method
+        self.sigma_clip_raw = sigma_clip_raw
+        self.sigma_clip_flat = sigma_clip_flat
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
@@ -97,11 +97,9 @@ class TessQuickLook:
         )
         self.flatten_method = flatten_method
         self.gp_kernel = (
-            gp_kernel,
-        )  # squared_exp, matern, periodic, periodic_auto
-        self.gp_kernel_size = (gp_kernel_size,)
-        self.sigma_clip_raw = (sigma_clip_raw,)
-        self.sigma_clip_flat = (sigma_clip_flat,)
+            gp_kernel  # squared_exp, matern, periodic, periodic_auto
+        )
+        self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
         self.ephem_mask = ephem_mask
         _ = self.get_toi_ephem()
@@ -120,10 +118,14 @@ class TessQuickLook:
             if Porb_max is None
             else Porb_max
         )
+        # CDIPS light curve has no flux err
+        if math.isnan(np.median(self.flat_lc.flux_err.value)):
+            flux_err = np.zeros_like(self.flat_lc.flux_err)
+            flux_err += np.nanstd(self.flat_lc.flux)
+        else:
+            flux_err = self.flat_lc.flux_err.value
         self.tls_results = tls(
-            self.flat_lc.time.value,
-            self.flat_lc.flux.value,
-            self.flat_lc.flux_err.value,
+            self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
         ).power(
             period_min=self.Porb_min,  # Roche limit default
             period_max=self.Porb_max,
@@ -202,17 +204,11 @@ class TessQuickLook:
             sector = None if sector_orig in ["all", -1] else sector_orig
             kwargs["sector"] = sector
 
-        if self.target_name[:3].lower() == "toi":
-            query_name = f"TIC{self.ticid}"
-        else:
-            query_name = self.target_name.replace(" ", "")
-
         # get all info
-        search_result_all_lcs = lk.search_lightcurve(query_name)
-        errmsg = f"Search using '{query_name}' "
+        search_result_all_lcs = lk.search_lightcurve(self.query_name)
+        errmsg = f"Search using '{self.query_name}' "
         errmsg += f"did not yield any lightcurve results."
         assert len(search_result_all_lcs) > 0, errmsg
-        # import pdb; pdb.set_trace()
         cols = ["author", "mission", "t_exptime"]
         print("All available lightcurves:")
         print(search_result_all_lcs.table.to_pandas()[cols])
@@ -239,12 +235,12 @@ class TessQuickLook:
             )
             err_msg = f"author={kwargs.get('author')} not in {all_authors}"
             assert kwargs.get("author").upper() in all_authors, err_msg
-        self.pipeline = kwargs["author"]
+        self.pipeline = kwargs["author"].lower()
         self.all_pipelines = all_authors
 
         # get specific lc in cache
-        search_result = lk.search_lightcurve(query_name, **kwargs)
-        errmsg = f"Search using '{query_name}' {kwargs} "
+        search_result = lk.search_lightcurve(self.query_name, **kwargs)
+        errmsg = f"Search using '{self.query_name}' {kwargs} "
         errmsg += "did not yield any lightcurve results."
         assert len(search_result) > 0, errmsg
         # print(search_result)
@@ -262,15 +258,27 @@ class TessQuickLook:
         else:
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
+            exptime = search_result.exptime[idx].value
             msg = f"\nDownloaded {kwargs.get('author')} "
-            msg += (
-                f"(exp={kwargs.get('exptime')} s) lc in sector {lc.sector}.\n"
-            )
+            msg += f"(exp={exptime} s) lc in sector {lc.sector}.\n"
             print(msg)
             self.sector = lc.sector
         if lc.meta["AUTHOR"].lower() == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
-        return lc.normalize()
+        if self.exptime is None:
+            self.exptime = exptime
+        self.cadence = "short" if self.exptime < 1800 else "long"
+        if self.sigma_clip_raw is not None:
+            print(
+                f"Applying sigma clip on raw lc with \
+                 (upper,lower)=({self.sigma_clip_raw})"
+            )
+            return lc.normalize().remove_outliers(
+                sigma_lower=self.sigma_clip_raw[0],
+                sigma_upper=self.sigma_clip_raw[1],
+            )
+        else:
+            return lc.normalize()
 
     def get_tpf(self, **kwargs: dict) -> lk.targetpixelfile.TargetPixelFile:
         if kwargs.get("sector") is None:
@@ -283,12 +291,7 @@ class TessQuickLook:
         if kwargs.get("author") is None:
             kwargs["author"] = "SPOC"
 
-        if self.target_name[:3].lower() == "toi":
-            query_name = f"TIC{self.ticid}"
-        else:
-            query_name = self.target_name.replace(" ", "")
-
-        search_result_all_tpfs = lk.search_targetpixelfile(query_name)
+        search_result_all_tpfs = lk.search_targetpixelfile(self.query_name)
         errmsg = "No tpf files found."
         assert len(search_result_all_tpfs) > 0, errmsg
 
@@ -305,8 +308,8 @@ class TessQuickLook:
             ][0]
         print(f"\nUsing {kwargs.get('author')} TPF.\n")
 
-        search_result = lk.search_targetpixelfile(query_name, **kwargs)
-        errmsg = f"Search using '{query_name}' {kwargs} "
+        search_result = lk.search_targetpixelfile(self.query_name, **kwargs)
+        errmsg = f"Search using '{self.query_name}' {kwargs} "
         errmsg += f"did not yield any TPF results."
         assert len(search_result) > 0, errmsg
         idx = sector_orig if sector_orig == -1 else 0
@@ -318,6 +321,21 @@ class TessQuickLook:
         msg = f"Downloaded {author} (exp={exptime} s) tpf "
         msg += f"in sector {tpf.meta['SECTOR']}."
         print(msg)
+        return tpf
+
+    def get_tpf_tesscut(self):
+        """ """
+        if self.sector is None:
+            errmsg = "Provide sector."
+            raise ValueError(errmsg)
+        tpf = lk.search_tesscut(self.query_name, sector=self.sector).download(
+            cutout_size=(15, 15)
+        )
+        assert tpf is not None, "No results from Tesscut search."
+        # remove zeros
+        zero_mask = (tpf.flux_err == 0).all(axis=(1, 2))
+        if zero_mask.sum() > 0:
+            tpf = tpf[~zero_mask]
         return tpf
 
     def get_toi_ephem(self, idx=1, params=["epoch", "per", "dur"]) -> list:
@@ -352,7 +370,7 @@ class TessQuickLook:
             return_trend=True,
             cval=5.0,  # Tuning parameter for the robust estimators
         )
-        if self.sigma_clip_flat[0] is not None:
+        if self.sigma_clip_flat is not None:
             print(
                 f"Applying sigma clip on flattened lc with \
                  (lower,upper)=({self.sigma_clip_flat})"
@@ -388,13 +406,22 @@ class TessQuickLook:
     def make_summary_info(self):
         star_params = self.tfop_info["stellar_parameters"][1]
         Rstar = float(star_params["srad"])
-        Rstar_err = float(star_params["srad_e"])
+        try:
+            Rstar_err = float(star_params["srad_e"])
+        except:
+            Rstar_err = np.nan
         Mstar = float(star_params["mass"])
-        Mstar_err = float(star_params["mass_e"])
+        try:
+            Mstar_err = float(star_params["mass_e"])
+        except:
+            Mstar_err = np.nan
         Teff = float(star_params["teff"])
         Teff_err = float(star_params["teff_e"])
         logg = float(star_params["logg"])
-        logg_err = float(star_params["logg_e"])
+        try:
+            logg_err = float(star_params["logg_e"])
+        except:
+            logg_err = np.nan
         # feh = star_params["met"]
         # feh_err = star_params["met_e"]
         dist = float(star_params["dist"])
@@ -520,10 +547,18 @@ class TessQuickLook:
         self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
         # +++++++++++++++++++++ax: tpf
         ax = axes.flatten()[5].remove()
-        self.tpf = self.get_tpf(
-            sector=self.sector,
-            author=self.pipeline,  # exptime=self.exptime, #cadence=self.cadence
-        )
+        if self.pipeline in ["cdips", "pathos", "tglc"]:
+            errmsg = "Pipeline to be added soon."
+            raise NotImplementedError(errmsg)
+        elif self.pipeline.lower() == "qlp":
+            self.tpf = self.get_tpf_tesscut()
+            self.sap_mask = "square"
+        else:
+            self.tpf = self.get_tpf(
+                sector=self.sector,
+                author=self.pipeline,  # exptime=self.exptime, #cadence=self.cadence
+            )
+            self.sap_mask = "pipeline"
         try:
             survey = "DSS2 Red"
             # query image to get projection
@@ -553,8 +588,8 @@ class TessQuickLook:
                 gaia_sources=None,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
-                # sap_mask='pipeline',
-                # aper_radius=l.aper_radius,
+                sap_mask=self.sap_mask,
+                aper_radius=2,
                 # threshold_sigma=l.threshold_sigma,
                 # percentile=l.percentile,
                 survey=survey,
@@ -571,8 +606,8 @@ class TessQuickLook:
                 # gaia_sources=None,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
-                # sap_mask=l.sap_mask,
-                # aper_radius=l.aper_radius,
+                sap_mask=self.sap_mask,
+                aper_radius=2,
                 # threshold_sigma=l.threshold_sigma,
                 # percentile=l.percentile,
                 cmap="viridis",

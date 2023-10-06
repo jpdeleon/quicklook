@@ -13,14 +13,14 @@ from astroquery.mast import Catalogs
 from astroquery.skyview import SkyView
 from scipy.ndimage import zoom
 import pandas as pd
-from .utils import (
+from tql.utils import (
     compute_secthresh,
     is_point_inside_mask,
     PadWithZeros,
     parse_aperture_mask,
     TESS_pix_scale,
 )
-from .measure import find_contours
+from tql.measure import find_contours
 
 __all__ = [
     "plot_odd_even_transit",
@@ -124,14 +124,17 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         print(e)
         secthresh = np.nan
     fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
-    fold_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
-        ax=ax,
-        marker="o",
-        markersize=8,
-        lw=2,
-        label=f"secthresh={secthresh*1e3:.2f} ppt",
-        zorder=2,
-    )
+    try:
+        fold_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            ax=ax,
+            marker="o",
+            markersize=8,
+            lw=2,
+            label=f"secthresh={secthresh*1e3:.2f} ppt",
+            zorder=2,
+        )
+    except Exception as e:
+        print(e)
     ax.set_xlabel("Phase")
     ax.set_xlim(half_phase - t14 * 2, half_phase + t14 * 2)
     ax.legend()
@@ -282,6 +285,7 @@ def plot_gaia_sources_on_tpf(
     img = np.nanmedian(tpf.flux, axis=0)
     # make aperture mask
     mask = parse_aperture_mask(tpf, sap_mask=sap_mask, **mask_kwargs)
+
     ax = plot_aperture_outline(
         img, mask=mask, imgwcs=tpf.wcs, figsize=figsize, cmap=cmap, ax=ax
     )

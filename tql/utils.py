@@ -8,6 +8,14 @@ TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD
 # Kepler_pix_scale = 3.98 * u.arcsec  # /pix
 
+__all__ = [
+    "get_tfop_info",
+    "parse_aperture_mask",
+    "compute_secthresh",
+    "is_point_inside_mask",
+    "PadWithZeros",
+]
+
 
 def get_tfop_info(target_name: str) -> dict:
     base_url = "https://exofop.ipac.caltech.edu/tess"
@@ -69,7 +77,7 @@ def parse_aperture_mask(
         else:
             print("aperture photometry mask: {}\n".format(sap_mask))
 
-    # stacked_img = np.median(tpf.flux,axis=0)
+    median_img = np.nanmedian(tpf.flux, axis=0).value
     if (sap_mask == "pipeline") or (sap_mask is None):
         errmsg = "tpf does not have pipeline mask"
         assert tpf.pipeline_mask is not None, errmsg
@@ -78,17 +86,16 @@ def parse_aperture_mask(
         mask = np.ones((tpf.shape[1], tpf.shape[2]), dtype=bool)
     elif sap_mask == "round":
         assert aper_radius is not None, "supply aper_radius"
-        mask = make_round_mask(tpf.flux[0], radius=aper_radius)
+        mask = make_round_mask(median_img, radius=aper_radius)
     elif sap_mask == "square":
         assert aper_radius is not None, "supply aper_radius/size"
-        mask = make_square_mask(tpf.flux[0], size=aper_radius, angle=None)
+        mask = make_square_mask(median_img, size=aper_radius)
     elif sap_mask == "threshold":
         assert threshold_sigma is not None, "supply threshold_sigma"
         # FIXME: make sure aperture is contiguous
         mask = tpf.create_threshold_mask(threshold_sigma)
     elif sap_mask == "percentile":
         assert percentile is not None, "supply percentile"
-        median_img = np.nanmedian(tpf.flux, axis=0)
         mask = median_img > np.nanpercentile(median_img, percentile)
     else:
         raise ValueError("Unknown aperture mask")
@@ -132,7 +139,7 @@ def make_round_mask(img, radius, xy_center=None):
     return np.ma.masked_array(img, mask=mask).mask
 
 
-def make_square_mask(img, size, xy_center=None, angle=None):
+def make_square_mask(img, size, xy_center=None):
     """Make rectangular mask with optional rotation
 
     Parameters

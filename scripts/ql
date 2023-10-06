@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-# Import standard library
+#!/usr/bin/env python
 import sys
 import argparse
 import logging
@@ -8,7 +7,9 @@ from tql.tql import TessQuickLook
 
 log = logging.getLogger(__name__)
 
-parser = argparse.ArgumentParser(description="create tql based on chronos")
+parser = argparse.ArgumentParser(
+    description="create quick look image of TESS data"
+)
 # parser.add_argument("-gaia2id", type=int, help="Gaia DR2 ID", default=None)
 # parser.add_argument("-gaia3id", type=int, help="Gaia DR3 ID", default=None)
 # parser.add_argument("-toi", type=int, help="TOI ID", default=None)
@@ -22,7 +23,7 @@ parser = argparse.ArgumentParser(description="create tql based on chronos")
 # )
 parser.add_argument("-name", type=str, help="target name", default=None)
 parser.add_argument(
-    "-sec", "--sector", type=int, help="TESS sector", default=None
+    "-sec", "--sector", type=int, help="TESS sector", default=-1
 )
 # parser.add_argument(
 #     "-c",
@@ -56,12 +57,14 @@ parser.add_argument(
     type=str,
     help="lightcurve produced from which pipeline",
     choices=[
-        "custom",
+        "spoc",
+        "tess-spoc",
+        # "custom",
         "cdips",
         "pathos",
         "qlp",
         "tglc",
-        "diamante",
+        # "diamante",
     ],
     default="SPOC",
 )
@@ -69,8 +72,8 @@ parser.add_argument(
     "-e",
     "--exptime",
     type=int,
-    help="exposure time (default=1800 s)",
-    default=1800,
+    help="exposure time (default is whatever is found in last sector)",
+    default=None,
 )
 # parser.add_argument(
 #     "-m",
@@ -137,7 +140,7 @@ parser.add_argument(
     type=float,
     help="(sigma_lo,sigma_hi) for outlier rejection after flattening lc",
     nargs=2,
-    default=(5, 5),
+    default=(10, 5),
 )
 parser.add_argument(
     "--sigma_clip_flat",
@@ -161,20 +164,6 @@ parser.add_argument(
     type=float,
     default=None,
 )
-# parser.add_argument(
-#     "-b",
-#     "--bin_hr",
-#     type=float,
-#     help="bin size in folded lc (default=4 hr if -c=long else 0.5 hr)",
-#     default=0.5,
-# )
-# parser.add_argument(
-#     "-n",
-#     "--nearby_gaia_radius",
-#     type=float,
-#     help="nearby gaia sources to consider (default=120 arcsec)",
-#     default=120,
-# )
 parser.add_argument(
     "-u",
     "--use_priors",
@@ -182,16 +171,6 @@ parser.add_argument(
     help="use star priors for detrending and periodogram",
     default=False,
 )
-# parser.add_argument(
-#     "-g", "--gls", action="store_true", help="run GLS pipeline", default=False
-# )
-# parser.add_argument(
-#     "-f",
-#     "--find_cluster",
-#     action="store_true",
-#     help="find if target is in cluster (default=False)",
-#     default=False,
-# )
 parser.add_argument(
     "-s",
     "--save",
@@ -216,33 +195,12 @@ parser.add_argument(
     default=False,
 )
 parser.add_argument(
-    "-var",
-    "--check_if_variable",
-    action="store_true",
-    help="check if target is in variable star catalog",
-    default=False,
-)
-parser.add_argument(
     "-em",
     "--ephem_mask",
     help="mask ephemeris given period and t0",
     nargs=3,
     type=float,
     default=None,
-)
-parser.add_argument(
-    "-st",
-    "--spec_type",
-    action="store_true",
-    help="estimate spectral type",
-    default=False,
-)
-parser.add_argument(
-    "-age",
-    "--gyro_age",
-    action="store_true",
-    help="estimate gyro age using stardate",
-    default=False,
 )
 # prints help if no argument supplied
 args = parser.parse_args(None if sys.argv[1:] else ["-h"])
