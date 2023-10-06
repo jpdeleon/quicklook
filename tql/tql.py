@@ -284,10 +284,8 @@ class TessQuickLook:
             self.exptime = exptime
         self.cadence = "short" if self.exptime < 1800 else "long"
         if self.sigma_clip_raw is not None:
-            print(
-                f"Applying sigma clip on raw lc with \
-                 (upper,lower)=({self.sigma_clip_raw})"
-            )
+            print("Applying sigma clip on raw lc with ")
+            print(f"(upper,lower)=({self.sigma_clip_raw})")
             return lc.normalize().remove_outliers(
                 sigma_lower=self.sigma_clip_raw[0],
                 sigma_upper=self.sigma_clip_raw[1],
@@ -364,6 +362,7 @@ class TessQuickLook:
             err = float(err) if err else 0.1
             print(f"{p}: {val}, {err}")
             vals.append((val, err))
+        print("\n")
         self.tfop_epoch = np.array(vals[0]) - 2457000
         self.tfop_period = np.array(vals[1])
         self.tfop_dur = np.array(vals[2]) / 24
@@ -573,7 +572,13 @@ class TessQuickLook:
         self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
         # +++++++++++++++++++++ax: tpf
         ax = axes.flatten()[5].remove()
-        if self.pipeline in ["cdips", "pathos", "tglc"]:
+        if self.pipeline in [
+            "cdips",
+            "pathos",
+            "tglc",
+            "tasoc",
+            "gsfc-eleanor-lite",
+        ]:
             errmsg = "Pipeline to be added soon."
             raise NotImplementedError(errmsg)
         elif self.pipeline == "qlp":
