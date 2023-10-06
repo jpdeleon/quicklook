@@ -259,7 +259,7 @@ class TessQuickLook:
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
             exptime = search_result.exptime[idx].value
-            msg = f"\nDownloaded {kwargs.get('author')} "
+            msg = f"\nDownloaded {kwargs.get('author').upper()} "
             msg += f"(exp={exptime} s) lc in sector {lc.sector}.\n"
             print(msg)
             self.sector = lc.sector
@@ -318,7 +318,7 @@ class TessQuickLook:
         # author = tpf.meta['PROCVER'].split('-')[0]
         author = search_result.author[idx].upper()
         exptime = search_result.exptime[idx].value
-        msg = f"Downloaded {author} (exp={exptime} s) tpf "
+        msg = f"Downloaded {author.upper()} (exp={exptime} s) tpf "
         msg += f"in sector {tpf.meta['SECTOR']}."
         print(msg)
         return tpf
@@ -632,7 +632,9 @@ class TessQuickLook:
         title = ""
         if self.toiid is not None:
             title = f"TOI {self.toiid} | "
-        title += f"TIC {self.ticid} | sector {self.sector} | {self.pipeline} pipeline"
+        title += f"TIC {self.ticid} "
+        title += f"| sector {self.sector} "
+        title += f"| {self.pipeline.upper()} pipeline"
         # if toi_params["Comments"] or toi_params["Comments"] != "nan":
         #     comment = f"Comment: {toi_params['Comments']}"
         #     msg += "\n".join(textwrap.wrap(comment, 60))
