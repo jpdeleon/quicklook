@@ -302,11 +302,11 @@ class TessQuickLook:
             "author"
         ].unique()
         if kwargs.get("author").upper() not in tpf_authors:
-            print(f"No TPF for {kwargs.get('author')} pipeline.")
+            print(f"No TPF for {kwargs.get('author').upper()} pipeline.")
             kwargs["author"] = [
                 tpf_authors[i] for i in range(len(tpf_authors)) if i != "QLP"
             ][0]
-        print(f"\nUsing {kwargs.get('author')} TPF.\n")
+        print(f"\nUsing {kwargs.get('author').upper()} TPF.\n")
 
         search_result = lk.search_targetpixelfile(self.query_name, **kwargs)
         errmsg = f"Search using '{self.query_name}' {kwargs} "
@@ -318,7 +318,7 @@ class TessQuickLook:
         # author = tpf.meta['PROCVER'].split('-')[0]
         author = search_result.author[idx].upper()
         exptime = search_result.exptime[idx].value
-        msg = f"Downloaded {author.upper()} (exp={exptime} s) tpf "
+        msg = f"Downloaded {author.upper()} (exp={exptime} s) TPF "
         msg += f"in sector {tpf.meta['SECTOR']}."
         print(msg)
         return tpf
@@ -427,10 +427,10 @@ class TessQuickLook:
         msg = "\nCandidate Properties\n"
         msg += "-" * 30 + "\n"
         text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector}"
-        text += f" in {self.all_sectors}, {self.pipeline.upper()} pipeline)"
+        text += f" in {self.all_sectors}"
         msg += "\n".join(textwrap.wrap(text, 60))
-        msg += f"\nPeriod={self.tls_results.period:.4f} "
-        msg += f"+/-{self.tls_results.period_uncertainty:.4f} d" + " " * 5
+        msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
+        msg += f"{self.tls_results.period_uncertainty:.4f} d" + " " * 5
         msg += f"Duration={self.tls_results.duration*24:.2f} hr" + "\n"
         msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} BJD" + " " * 11
         msg += f"Depth={(1-self.tls_results.depth)*100:.2f}%\n"
@@ -458,23 +458,40 @@ class TessQuickLook:
         msg += f"TIC ID={self.ticid}" + " " * 5
         msg += f"Tmag={meta['TESSMAG']:.2f}\n"
         # msg += f"Gaia DR2 ID={self.gaiaid}\n"
-        msg += f"Distance={params['dist']:.1f}+/-{params['dist_e']:.1f}pc\n"
+        msg += (
+            f"Distance={params['dist']:.1f}"
+            + r"$\pm$"
+            + f"{params['dist_e']:.1f}pc\n"
+        )
         # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
         # D = gp.astrometric_excess_noise_sig
         # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
         msg += (
-            f"Rstar={params['srad_e']:.2f}+/-{params['srad_e']:.2f} "
+            f"Rstar={params['srad_e']:.2f}"
+            + r"$\pm$"
+            + f"{params['srad_e']:.2f} "
             + r"R$_{\odot}$"
             + " " * 5
         )
-        msg += f"Teff={params['teff']}+/-{params['teff_e']} K" + "\n"
         msg += (
-            f"Mstar={params['mass']:.2f}+/-{params['mass_e']:.2f} "
+            f"Teff={params['teff']}"
+            + r"$\pm$"
+            + f"{params['teff_e']} K"
+            + "\n"
+        )
+        msg += (
+            f"Mstar={params['mass']:.2f}"
+            + r"$\pm$"
+            + f"{params['mass_e']:.2f} "
             + r"M$_{\odot}$"
             + " " * 5
         )
-        msg += f"logg={params['logg']:.2f}+/-{params['logg_e']:.2f} cgs\n"
-        # msg += f"met={feh:.2f}+/-{feh_err:.2f} dex " + " " * 6
+        msg += (
+            f"logg={params['logg']:.2f}"
+            + r"$\pm$"
+            + f"{params['logg_e']:.2f} cgs\n"
+        )
+        # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
         return msg
 
     def plot_tql(self, **kwargs: dict) -> pl.Figure:
