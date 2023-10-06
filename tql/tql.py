@@ -405,30 +405,20 @@ class TessQuickLook:
 
     def make_summary_info(self):
         star_params = self.tfop_info["stellar_parameters"][1]
-        Rstar = float(star_params["srad"])
-        try:
-            Rstar_err = float(star_params["srad_e"])
-        except:
-            Rstar_err = np.nan
-        Mstar = float(star_params["mass"])
-        try:
-            Mstar_err = float(star_params["mass_e"])
-        except:
-            Mstar_err = np.nan
-        Teff = float(star_params["teff"])
-        Teff_err = float(star_params["teff_e"])
-        logg = float(star_params["logg"])
-        try:
-            logg_err = float(star_params["logg_e"])
-        except:
-            logg_err = np.nan
-        # feh = star_params["met"]
-        # feh_err = star_params["met_e"]
-        dist = float(star_params["dist"])
-        dist_err = float(star_params["dist_e"])
+        params = {}
+        param_names = ["srad", "mass", "teff", "logg", "dist"]
+        for name in param_names:
+            try:
+                params[name] = float(star_params.get(name))
+            except:
+                params[name] = np.nan
+            try:
+                params[name + "_e"] = float(star_params.get(name + "_e"))
+            except:
+                params[name + "_e"] = np.nan
         meta = self.raw_lc.meta
 
-        Rp = self.tls_results["rp_rs"] * Rstar * u.Rsun.to(u.Rearth)
+        Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
         if self.pipeline.lower() in ["spoc", "tess-spoc"]:
             Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
         else:
@@ -468,18 +458,22 @@ class TessQuickLook:
         msg += f"TIC ID={self.ticid}" + " " * 5
         msg += f"Tmag={meta['TESSMAG']:.2f}\n"
         # msg += f"Gaia DR2 ID={self.gaiaid}\n"
-        msg += f"Distance={dist:.1f}+/-{dist_err:.1f}pc\n"
+        msg += f"Distance={params['dist']:.1f}+/-{params['dist_e']:.1f}pc\n"
         # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
         # D = gp.astrometric_excess_noise_sig
         # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
         msg += (
-            f"Rstar={Rstar:.2f}+/-{Rstar_err:.2f} " + r"R$_{\odot}$" + " " * 5
+            f"Rstar={params['srad_e']:.2f}+/-{params['srad_e']:.2f} "
+            + r"R$_{\odot}$"
+            + " " * 5
         )
-        msg += f"Teff={Teff}+/-{Teff_err} K" + "\n"
+        msg += f"Teff={params['teff']}+/-{params['teff_e']} K" + "\n"
         msg += (
-            f"Mstar={Mstar:.2f}+/-{Mstar_err:.2f} " + r"M$_{\odot}$" + " " * 5
+            f"Mstar={params['mass']:.2f}+/-{params['mass_e']:.2f} "
+            + r"M$_{\odot}$"
+            + " " * 5
         )
-        msg += f"logg={logg:.2f}+/-{logg_err:.2f} cgs\n"
+        msg += f"logg={params['logg']:.2f}+/-{params['logg_e']:.2f} cgs\n"
         # msg += f"met={feh:.2f}+/-{feh_err:.2f} dex " + " " * 6
         return msg
 
