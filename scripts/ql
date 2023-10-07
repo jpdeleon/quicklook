@@ -232,7 +232,7 @@ if __name__ == "__main__":
         sigma_clip_flat=args.sigma_clip_flat,
         # cutout_size=args.cutout_size,
         # bin_hr=args.bin_hr,
-        # Porb_limits=args.period_limits,
+        Porb_limits=args.period_limits,
         # use_star_priors=args.use_priors,
         edge_cutoff=args.edge_cutoff,
         # find_cluster=args.find_cluster,

@@ -39,7 +39,6 @@ class TessQuickLook:
         sector=-1,
         pipeline: str = "SPOC",
         flux_type="pdcsap",
-        # cadence: str = "short",
         exptime: float = None,
         pg_method: str = "lombscargle",
         flatten_method: str = "biweight",
@@ -50,8 +49,7 @@ class TessQuickLook:
         sigma_clip_raw: tuple = None,
         sigma_clip_flat: tuple = None,
         ephem_mask: list = None,
-        Porb_min: float = None,
-        Porb_max: float = None,
+        Porb_limits: tuple = None,
         plot: bool = True,
         savefig: bool = False,
         savetls: bool = False,
@@ -115,6 +113,7 @@ class TessQuickLook:
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
         self.tmask = self.get_transit_mask()
+        Porb_min, Porb_max = Porb_limits
         self.Porb_min = 0.1 if Porb_min is None else Porb_min
         self.Porb_max = (
             (max(self.flat_lc.time.value) - min(self.flat_lc.time.value)) / 2
@@ -127,6 +126,7 @@ class TessQuickLook:
             flux_err += np.nanstd(self.flat_lc.flux)
         else:
             flux_err = self.flat_lc.flux_err.value
+        # Run TLS
         self.tls_results = tls(
             self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
         ).power(
@@ -567,7 +567,7 @@ class TessQuickLook:
         tmask2 = self.flat_lc.create_transit_mask(
             transit_time=self.tls_results.T0,
             period=self.tls_results.period,
-            duration=self.tls_results.duration * 24,
+            duration=self.tls_results.duration,
         )
         self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
         # +++++++++++++++++++++ax: tpf
