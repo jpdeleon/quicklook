@@ -113,12 +113,11 @@ class TessQuickLook:
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
         self.tmask = self.get_transit_mask()
-        Porb_min, Porb_max = Porb_limits
-        self.Porb_min = 0.1 if Porb_min is None else Porb_min
+        self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
         self.Porb_max = (
             (max(self.flat_lc.time.value) - min(self.flat_lc.time.value)) / 2
-            if Porb_max is None
-            else Porb_max
+            if Porb_limits is None
+            else Porb_limits[1]
         )
         # CDIPS light curve has no flux err
         if math.isnan(np.median(self.flat_lc.flux_err.value)):
