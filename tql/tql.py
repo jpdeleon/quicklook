@@ -382,7 +382,7 @@ class TessQuickLook:
                     float(planet_params.get("dep_p_e")),
                 )
             )
-            * 1e3
+            / 1e3
         )
         return vals
 
@@ -461,25 +461,21 @@ class TessQuickLook:
         text += f" in {self.all_sectors})"
         msg += "\n".join(textwrap.wrap(text, 60))
         msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
-        msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)" + " " * 5
+        msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)"
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
-        msg += (
-            f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} d (TLS)" + " " * 5
-        )
+        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} d (TLS)"
         if self.tfop_period is not None:
             msg += (
                 f", {self.tfop_epoch[0]+TESS_TIME_OFFSET:.4f} BJD" + r"$\pm$"
             )
-            msg += f"{self.tfop_epoch[1]:.4f} d (TFOP)\n"
-        msg += f"Duration={self.tls_results.duration*24:.2f} hr" + " " * 5
+            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f} d (TFOP)\n"
+        msg += f"Duration={self.tls_results.duration*24:.2f} hr"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
             msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
-        msg += (
-            f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)" + " " * 5
-        )
+        msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
         if self.tfop_depth is not None:
             msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
             msg += f"{self.tfop_depth[1]:.1f} ppt (TFOP)\n"
