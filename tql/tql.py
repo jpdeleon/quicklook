@@ -465,13 +465,12 @@ class TessQuickLook:
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
-        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} d (TLS)"
+        msg += f"T0={self.tls_results.T0:.4f} BJD (TLS)"
         if self.tfop_period is not None:
-            msg += (
-                f", {self.tfop_epoch[0]+TESS_TIME_OFFSET:.4f} BJD" + r"$\pm$"
-            )
-            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f} d (TFOP)\n"
-        msg += f"Duration={self.tls_results.duration*24:.2f} hr"
+            msg += f", {self.tfop_epoch[0]:.4f}" + r"$\pm$"
+            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f}"
+            msg += f" BJD-{TESS_TIME_OFFSET} (TFOP)\n"
+        msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
             msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
@@ -491,7 +490,7 @@ class TessQuickLook:
                 + "\n"
             )
         else:
-            msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 10
+            msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
         msg += (
             f"Odd-Even mismatch={self.tls_results.odd_even_mismatch:.2f}"
@@ -500,9 +499,9 @@ class TessQuickLook:
         msg += "\n" * 2
         msg += "Stellar Properties\n"
         msg += "-" * 30 + "\n"
-        msg += f"TIC ID={self.ticid}" + " " * 5
-        msg += f"Tmag={meta['TESSMAG']:.2f}\n"
-        # msg += f"Gaia DR2 ID={self.gaiaid}\n"
+        msg += f"Gaia DR2 ID={self.gaiaid}"
+        # msg += f"TIC ID={self.ticid}" + " " * 5
+        msg += f", Tmag={meta['TESSMAG']:.2f}"
         msg += (
             f"Distance={params['dist']:.1f}"
             + r"$\pm$"
