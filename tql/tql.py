@@ -355,7 +355,7 @@ class TessQuickLook:
             tpf = tpf[~zero_mask]
         return tpf
 
-    def get_toi_ephem(self, idx=1, params=["epoch", "per", "dur"]) -> list:
+    def get_toi_ephem(self, idx=-1, params=["epoch", "per", "dur"]) -> list:
         print(f"Querying ephemeris for {self.target_name}:")
         planet_params = self.tfop_info.get("planet_parameters")[idx]
         vals = []
@@ -375,12 +375,12 @@ class TessQuickLook:
             self.tfop_epoch = None
             self.tfop_period = None
             self.tfop_dur = None
-        import pdb
-
-        pdb.set_trace()
         self.tfop_depth = (
-            planet_params.get("dep_p"),
-            planet_params.get("dep_p_e"),
+            np.array(
+                planet_params.get("dep_p"),
+                planet_params.get("dep_p_e"),
+            )
+            * 1e3
         )
         return vals
 
