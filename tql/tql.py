@@ -377,8 +377,10 @@ class TessQuickLook:
             self.tfop_dur = None
         self.tfop_depth = (
             np.array(
-                float(planet_params.get("dep_p")),
-                float(planet_params.get("dep_p_e")),
+                (
+                    float(planet_params.get("dep_p")),
+                    float(planet_params.get("dep_p_e")),
+                )
             )
             * 1e3
         )
