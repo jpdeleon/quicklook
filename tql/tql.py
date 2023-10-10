@@ -50,6 +50,7 @@ class TessQuickLook:
         sigma_clip_flat: tuple = None,
         ephem_mask: list = None,
         Porb_limits: tuple = None,
+        archival_survey="dss1",
         plot: bool = True,
         savefig: bool = False,
         savetls: bool = False,
@@ -75,8 +76,11 @@ class TessQuickLook:
         if target_name.lower()[:3] == "toi":
             toiid = int(target_name.split("-")[-1])
         else:
-            idx = [i[:3].lower() == "toi" for i in self.names]
-            toiid = int(self.names[idx][0].split("-")[-1])
+            idx = [i[:3].lower() == "toi" for i in self.star_names]
+            if sum(idx) > 0:
+                toiid = int(self.star_names[idx][0].split("-")[-1])
+            else:
+                toiid = None
         self.toiid = toiid
         self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
         if self.target_name[:3].lower() == "toi":
@@ -142,6 +146,7 @@ class TessQuickLook:
         self.plot = plot
         self.savefig = savefig
         self.savetls = savetls
+        self.archival_survey = archival_survey
         _ = self.plot_tql()
 
     def __repr__(self):
@@ -440,12 +445,12 @@ class TessQuickLook:
         msg = "\nCandidate Properties\n"
         msg += "-" * 30 + "\n"
         text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector}"
-        text += f" in {self.all_sectors}"
+        text += f" in {self.all_sectors})"
         msg += "\n".join(textwrap.wrap(text, 60))
         msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
         msg += f"{self.tls_results.period_uncertainty:.4f} d" + " " * 5
         msg += f"Duration={self.tls_results.duration*24:.2f} hr" + "\n"
-        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} BJD" + " " * 11
+        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} BJD" + " " * 10
         msg += f"Depth={(1-self.tls_results.depth)*100:.2f}%\n"
 
         if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (
@@ -480,16 +485,16 @@ class TessQuickLook:
         # D = gp.astrometric_excess_noise_sig
         # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
         msg += (
-            f"Rstar={params['srad_e']:.2f}"
+            f"Rstar={params['srad']:.2f}"
             + r"$\pm$"
             + f"{params['srad_e']:.2f} "
             + r"R$_{\odot}$"
             + " " * 5
         )
         msg += (
-            f"Teff={params['teff']}"
+            f"Teff={int(params['teff'])}"
             + r"$\pm$"
-            + f"{params['teff_e']} K"
+            + f"{int(params['teff_e'])} K"
             + "\n"
         )
         msg += (
@@ -570,7 +575,7 @@ class TessQuickLook:
         )
         self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
         # +++++++++++++++++++++ax: tpf
-        ax = axes.flatten()[5].remove()
+        ax = axes.flatten()[5]
         if self.pipeline in [
             "cdips",
             "pathos",
@@ -590,7 +595,6 @@ class TessQuickLook:
             )
             self.sap_mask = "pipeline"
         try:
-            survey = "DSS2 Red"
             # query image to get projection
             ny, nx = self.tpf.flux.shape[1:]
             diag = np.sqrt(nx**2 + ny**2)
@@ -598,8 +602,8 @@ class TessQuickLook:
             position = self.target_coord.icrs.to_string()
             results = SkyView.get_images(
                 position=position,
-                coordinates="icrs",
-                survey=survey,
+                # coordinates="icrs",
+                survey=self.archival_survey,
                 radius=fov_rad,
                 grid=True,
             )
@@ -610,6 +614,7 @@ class TessQuickLook:
                     "SkyView returned empty result. Try a different survey."
                 )
                 raise ValueError(errmsg)
+            ax.remove()
             ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
             _ = plot_gaia_sources_on_survey(
                 tpf=self.tpf,
@@ -622,7 +627,7 @@ class TessQuickLook:
                 aper_radius=2,
                 # threshold_sigma=l.threshold_sigma,
                 # percentile=l.percentile,
-                survey=survey,
+                survey=self.archival_survey,
                 fov_rad=fov_rad,
                 verbose=True,
                 ax=ax,
@@ -633,7 +638,7 @@ class TessQuickLook:
             _ = plot_gaia_sources_on_tpf(
                 tpf=self.tpf,
                 target_gaiaid=self.gaiaid,
-                # gaia_sources=None,
+                gaia_sources=None,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
                 sap_mask=self.sap_mask,

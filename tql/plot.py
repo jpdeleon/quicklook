@@ -339,7 +339,6 @@ def plot_gaia_sources_on_tpf(
             if dmag_limit is None
             else dmag_limit
         )
-
     base_ms = 128.0  # base marker size
     starid = 1
     # if very crowded, plot only top N
@@ -448,7 +447,7 @@ def plot_gaia_sources_on_survey(
     depth=0.0,
     kmax=1.0,
     sap_mask="pipeline",
-    survey="DSS2 Red",
+    survey="dss1",
     ax=None,
     color_aper="C0",  # pink
     figsize=None,
@@ -487,6 +486,8 @@ def plot_gaia_sources_on_survey(
     TODO: correct for proper motion difference between
     survey image and gaia DR2 positions
     """
+    errmsg = f"{survey} not in {list(dss_description.keys())}"
+    assert survey in list(dss_description.keys()), errmsg
     if verbose:
         print("Plotting nearby gaia sources on survey image.")
     assert target_gaiaid is not None
