@@ -403,10 +403,9 @@ class TessQuickLook:
             cval=5.0,  # Tuning parameter for the robust estimators
         )
         if self.sigma_clip_flat is not None:
-            print(
-                f"Applying sigma clip on flattened lc with \
-                 (lower,upper)=({self.sigma_clip_flat})"
-            )
+            msg = "Applying sigma clip on flattened lc with "
+            msg += f"(lower,upper)=({self.sigma_clip_flat})"
+            print(msg)
             idx = sigma_clip(
                 wflat_lc,
                 sigma_lower=self.sigma_clip_flat[0],
@@ -466,8 +465,9 @@ class TessQuickLook:
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
-        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f}" + r"$\pm$"
-        msg += f"{self.tls_results.T0_uncertainty:.4f} d (TLS)" + " " * 5
+        msg += (
+            f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} d (TLS)" + " " * 5
+        )
         if self.tfop_period is not None:
             msg += (
                 f", {self.tfop_epoch[0]+TESS_TIME_OFFSET:.4f} BJD" + r"$\pm$"
