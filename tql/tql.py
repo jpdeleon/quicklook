@@ -2,7 +2,6 @@ import sys
 import math
 import traceback
 import textwrap
-from ast import literal_eval
 from pathlib import Path
 from time import time as timer
 import matplotlib.pyplot as pl
@@ -14,12 +13,12 @@ from astropy.stats import sigma_clip
 from astropy.wcs import WCS
 import astropy.units as u
 import lightkurve as lk
-from astroquery.skyview import SkyView
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
 from tql.utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
 from tql.plot import (
+    get_dss_data,
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
     plot_odd_even_transit,
@@ -84,7 +83,7 @@ class TessQuickLook:
                 toiid = None
         self.toiid = toiid
         self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
-        if self.target_name[:3].lower() == "toi":
+        if self.ticid is not None:
             self.query_name = f"TIC{self.ticid}"
         else:
             self.query_name = self.target_name.replace(" ", "")
@@ -292,7 +291,7 @@ class TessQuickLook:
         self.cadence = "short" if self.exptime < 1800 else "long"
         if self.sigma_clip_raw is not None:
             print("Applying sigma clip on raw lc with ")
-            print(f"(upper,lower)=({self.sigma_clip_raw})")
+            print(f"(lower,upper)={self.sigma_clip_raw}")
             return lc.normalize().remove_outliers(
                 sigma_lower=self.sigma_clip_raw[0],
                 sigma_upper=self.sigma_clip_raw[1],
@@ -384,16 +383,12 @@ class TessQuickLook:
             self.tfop_period = None
             self.tfop_dur = None
 
-        if planet_params.get("dep_p") is not None:
-            self.tfop_depth = (
-                np.array(
-                    (
-                        float(planet_params.get("dep_p")),
-                        float(planet_params.get("dep_p_e")),
-                    )
-                )
-                / 1e3
-            )
+        d = planet_params.get("dep_p")
+        de = planet_params.get("dep_p_e")
+        d = float(d) if d and (d != "") else np.nan
+        de = float(de) if de and (de != "") else np.nan
+        if not math.isnan(d) or not math.isnan(de):
+            self.tfop_depth = np.array((d, de)) / 1e3
         else:
             self.tfop_depth = None
         return vals
@@ -477,20 +472,27 @@ class TessQuickLook:
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"T0={self.tls_results.T0:.4f} BJD (TLS)"
         if self.tfop_period is not None:
             msg += f", {self.tfop_epoch[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f}"
             msg += f" BJD-{TESS_TIME_OFFSET} (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
             msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
         if self.tfop_depth is not None:
             msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
             msg += f"{self.tfop_depth[1]:.1f} ppt (TFOP)\n"
-
+        else:
+            msg += "\n"
         if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (
             meta["FLUX_ORIGIN"].lower() == "sap"
         ):
@@ -636,22 +638,14 @@ class TessQuickLook:
             # query image to get projection
             ny, nx = self.tpf.flux.shape[1:]
             diag = np.sqrt(nx**2 + ny**2)
-            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin)
-            position = self.target_coord.icrs.to_string()
-            results = SkyView.get_images(
-                position=position,
-                # coordinates="icrs",
+            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(0)
+            hdu = get_dss_data(
+                ra=self.target_coord.ra.deg,
+                dec=self.target_coord.dec.deg,
                 survey=self.archival_survey,
-                radius=fov_rad,
-                grid=True,
+                width=fov_rad.value,
+                height=fov_rad.value,
             )
-            if len(results) > 0:
-                hdu = results[0][0]
-            else:
-                errmsg = (
-                    "SkyView returned empty result. Try a different survey."
-                )
-                raise ValueError(errmsg)
             ax.remove()
             ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
             _ = plot_gaia_sources_on_survey(

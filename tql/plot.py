@@ -10,7 +10,6 @@ import astropy.units as u
 
 # from astroplan.plots import plot_finder_image
 from astroquery.mast import Catalogs
-from astroquery.skyview import SkyView
 from scipy.ndimage import zoom
 import pandas as pd
 from tql.utils import (
@@ -292,7 +291,7 @@ def plot_gaia_sources_on_tpf(
     if fov_rad is None:
         nx, ny = tpf.shape[1:]
         diag = np.sqrt(nx**2 + ny**2)
-        fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(0)
+        fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(0).value
 
     if gaia_sources is None:
         print("Querying Gaia sources around the target.")
@@ -468,8 +467,7 @@ def plot_gaia_sources_on_survey(
     fov_rad : astropy.unit
         FOV radius
     survey : str
-        image survey; see from astroquery.skyview import SkyView;
-        SkyView.list_surveys()
+        image survey
     verbose : bool
         print texts
     ax : axis
@@ -520,13 +518,13 @@ def plot_gaia_sources_on_survey(
     if (ax is None) or (hdu is None):
         # get img hdu for subplot projection
         try:
-            hdu = SkyView.get_images(
-                position=target_coord.icrs.to_string(),
-                coordinates="icrs",
+            hdu = get_dss_data(
+                ra=target_coord.ra.deg,
+                dec=target_coord.dec.deg,
                 survey=survey,
-                radius=fov_rad,
-                grid=False,
-            )[0][0]
+                width=fov_rad.value,
+                height=fov_rad.value,
+            )
         except Exception:
             errmsg = "survey image not available"
             raise FileNotFoundError(errmsg)
@@ -661,8 +659,8 @@ def get_dss_data(
     if survey not in survey_list:
         raise ValueError(f"{survey} not in:\n{survey_list}")
     base_url = "http://archive.stsci.edu/cgi-bin/dss_search?v="
-    url = f"{base_url}{survey}&r={ra}&d={dec}&e={epoch}&h={height}&w={width}\
-            &f=fits&c=none&s=on&fov=NONE&v3"
+    url = f"{base_url}{survey}&r={ra}&d={dec}&e={epoch}&h={height}&w={width}"
+    url += "&f=fits&c=none&s=on&fov=NONE&v3"
     try:
         hdulist = fits.open(url)
         # hdulist.info()

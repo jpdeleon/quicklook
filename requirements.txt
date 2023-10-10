@@ -7,4 +7,4 @@ aesthetic
 flammkuchen==1.0.3
 reproject==0.12.0
 astroplan==0.9
-astroquery==0.4.6
+# astroquery==0.4.6
