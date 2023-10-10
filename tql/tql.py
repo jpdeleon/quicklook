@@ -367,9 +367,21 @@ class TessQuickLook:
             print(f"{p}: {val}, {err}")
             vals.append((val, err))
         print("\n")
-        self.tfop_epoch = np.array(vals[0]) - 2457000
-        self.tfop_period = np.array(vals[1])
-        self.tfop_dur = np.array(vals[2]) / 24
+        if len(vals) > 0:
+            self.tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
+            self.tfop_period = np.array(vals[1])
+            self.tfop_dur = np.array(vals[2]) / 24
+        else:
+            self.tfop_epoch = None
+            self.tfop_period = None
+            self.tfop_dur = None
+        import pdb
+
+        pdb.set_trace()
+        self.tfop_depth = (
+            planet_params.get("dep_p"),
+            planet_params.get("dep_p_e"),
+        )
         return vals
 
     def flatten_raw_lc(self):
@@ -448,10 +460,27 @@ class TessQuickLook:
         text += f" in {self.all_sectors})"
         msg += "\n".join(textwrap.wrap(text, 60))
         msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
-        msg += f"{self.tls_results.period_uncertainty:.4f} d" + " " * 5
-        msg += f"Duration={self.tls_results.duration*24:.2f} hr" + "\n"
-        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f} BJD" + " " * 10
-        msg += f"Depth={(1-self.tls_results.depth)*100:.2f}%\n"
+        msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)" + " " * 5
+        if self.tfop_period is not None:
+            msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
+            msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
+        msg += f"T0={self.tls_results.T0+TESS_TIME_OFFSET:.4f}" + r"$\pm$"
+        msg += f"{self.tls_results.T0_uncertainty:.4f} d (TLS)" + " " * 5
+        if self.tfop_period is not None:
+            msg += (
+                f", {self.tfop_epoch[0]+TESS_TIME_OFFSET:.4f} BJD" + r"$\pm$"
+            )
+            msg += f"{self.tfop_epoch[1]:.4f} d (TFOP)\n"
+        msg += f"Duration={self.tls_results.duration*24:.2f} hr" + " " * 5
+        if self.tfop_dur is not None:
+            msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
+            msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
+        msg += (
+            f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)" + " " * 5
+        )
+        if self.tfop_depth is not None:
+            msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
+            msg += f"{self.tfop_depth[1]:.1f} ppt (TFOP)\n"
 
         if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (
             meta["FLUX_ORIGIN"].lower() == "sap"
