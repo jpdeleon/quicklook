@@ -2,6 +2,7 @@ import sys
 import math
 import traceback
 import textwrap
+from ast import literal_eval
 from pathlib import Path
 from time import time as timer
 import matplotlib.pyplot as pl
@@ -192,6 +193,8 @@ class TessQuickLook:
 
     def check_file_exists(self):
         name = self.target_name.replace(" ", "")
+        if name.lower()[:3] == "toi":
+            name = f"TOI{str(self.toiid).zfill(4)}"
         lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
         fp = Path(
             self.outdir,
@@ -232,14 +235,14 @@ class TessQuickLook:
         print("All available lightcurves:")
         print(search_result_all_lcs.table.to_pandas()[cols])
 
-        all_sectors = sorted(
-            set(
-                [
-                    int(i[-2:])
-                    for i in search_result_all_lcs.table["mission"].tolist()
-                ]
-            )
-        )
+        all_sectors = []
+        for i in search_result_all_lcs.table["mission"].tolist():
+            x = i.split()
+            if len(x) == 3:
+                s = int(x[-1])
+                all_sectors.append(s)
+        all_sectors = sorted(set(all_sectors))
+
         if kwargs.get("sector") is None:
             print(f"Available sectors: {all_sectors}")
         else:
@@ -355,9 +358,14 @@ class TessQuickLook:
             tpf = tpf[~zero_mask]
         return tpf
 
-    def get_toi_ephem(self, idx=-1, params=["epoch", "per", "dur"]) -> list:
+    def get_toi_ephem(self, idx=None, params=["epoch", "per", "dur"]) -> list:
         print(f"Querying ephemeris for {self.target_name}:")
-        planet_params = self.tfop_info.get("planet_parameters")[idx]
+        params_dict = self.tfop_info.get("planet_parameters")
+        if idx is None:
+            idx = np.argmax(
+                [len(params_dict[x]) for x in range(len(params_dict))]
+            )
+        planet_params = params_dict[idx]
         vals = []
         for p in params:
             val = planet_params.get(p)
@@ -366,7 +374,7 @@ class TessQuickLook:
             err = float(err) if err else 0.1
             print(f"{p}: {val}, {err}")
             vals.append((val, err))
-        print("\n")
+        print("")
         if len(vals) > 0:
             self.tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
             self.tfop_period = np.array(vals[1])
@@ -375,15 +383,19 @@ class TessQuickLook:
             self.tfop_epoch = None
             self.tfop_period = None
             self.tfop_dur = None
-        self.tfop_depth = (
-            np.array(
-                (
-                    float(planet_params.get("dep_p")),
-                    float(planet_params.get("dep_p_e")),
+
+        if planet_params.get("dep_p") is not None:
+            self.tfop_depth = (
+                np.array(
+                    (
+                        float(planet_params.get("dep_p")),
+                        float(planet_params.get("dep_p_e")),
+                    )
                 )
+                / 1e3
             )
-            / 1e3
-        )
+        else:
+            self.tfop_depth = None
         return vals
 
     def flatten_raw_lc(self):
