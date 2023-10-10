@@ -501,7 +501,7 @@ class TessQuickLook:
         msg += "-" * 30 + "\n"
         msg += f"Gaia DR2 ID={self.gaiaid}"
         # msg += f"TIC ID={self.ticid}" + " " * 5
-        msg += f", Tmag={meta['TESSMAG']:.2f}"
+        msg += f", Tmag={meta['TESSMAG']:.2f}\n"
         msg += (
             f"Distance={params['dist']:.1f}"
             + r"$\pm$"
