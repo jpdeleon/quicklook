@@ -136,10 +136,6 @@ class TessQuickLook:
             period_min=self.Porb_min,  # Roche limit default
             period_max=self.Porb_max,
         )
-        self.tls_results["Porb_min"], self.tls_results["Porb_max"] = (
-            self.Porb_min,
-            self.Porb_max,
-        )
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period, epoch_time=self.tls_results.T0
         )
@@ -147,6 +143,7 @@ class TessQuickLook:
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
+        self.append_tls_results()
         _ = self.plot_tql()
 
     def __repr__(self):
@@ -385,6 +382,18 @@ class TessQuickLook:
             / 1e3
         )
         return vals
+
+    def append_tls_results(self):
+        self.tls_results["Porb_min"] = self.Porb_min
+        self.tls_results["Porb_max"] = self.Porb_max
+        self.tls_results["period_tfop"] = self.tfop_period
+        self.tls_results["T0_tfop"] = self.tfop_epoch
+        self.tls_results["duration_tfop"] = self.tfop_duration
+        self.tls_results["depth_tfop"] = self.tfop_depth
+        self.tls_results["gaiaid"] = self.gaiaid
+        self.tls_results["ticid"] = self.ticid
+        self.tls_results["toiid"] = self.toiid
+
 
     def flatten_raw_lc(self):
         print(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
@@ -723,8 +732,6 @@ class TessQuickLook:
 
         if self.savetls:
             h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
-            # self.tls_results["gaiaid"] = self.gaiaid
-            self.tls_results["ticid"] = self.ticid
             fk.save(h5_file, self.tls_results)
             print("Saved: ", h5_file)
         print(f"#----------Runtime: {end-start:.2f} s----------#\n")
