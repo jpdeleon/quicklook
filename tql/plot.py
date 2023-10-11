@@ -492,7 +492,7 @@ def plot_gaia_sources_on_survey(
     ny, nx = tpf.flux.shape[1:]
     if fov_rad is None:
         diag = np.sqrt(nx**2 + ny**2)
-        fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(0)
+        fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(2)
     target_coord = SkyCoord(ra=tpf.ra * u.deg, dec=tpf.dec * u.deg)
     if gaia_sources is None:
         print("Querying Gaia sources around the target.")
