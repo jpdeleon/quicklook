@@ -67,7 +67,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
         lw=2,
         markersize=8,
         ax=ax,
-        zorder=3,
+        zorder=2,
     )
     ax.plot(
         (tls_results.model_folded_phase - 0.5) * tls_results.period,

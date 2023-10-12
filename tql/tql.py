@@ -17,6 +17,7 @@ from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
 from tql.utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
+from tql.gls import Gls
 from tql.plot import (
     get_dss_data,
     plot_gaia_sources_on_survey,
@@ -110,7 +111,10 @@ class TessQuickLook:
         _ = self.get_toi_ephem()
         if window_length is None:
             self.window_length = (
-                self.tfop_dur[0] * 3 if self.tfop_dur[0] else 0.5
+                self.tfop_dur[0] * 3
+                if (self.tfop_dur is not None)
+                and (self.tfop_dur[0] * 3 >= 0.1)
+                else 0.5
             )
         else:
             self.window_length = window_length
@@ -123,19 +127,8 @@ class TessQuickLook:
             if Porb_limits is None
             else Porb_limits[1]
         )
-        # CDIPS light curve has no flux err
-        if math.isnan(np.median(self.flat_lc.flux_err.value)):
-            flux_err = np.zeros_like(self.flat_lc.flux_err)
-            flux_err += np.nanstd(self.flat_lc.flux)
-        else:
-            flux_err = self.flat_lc.flux_err.value
-        # Run TLS
-        self.tls_results = tls(
-            self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
-        ).power(
-            period_min=self.Porb_min,  # Roche limit default
-            period_max=self.Porb_max,
-        )
+        self.run_tls()
+        self.run_gls()
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period, epoch_time=self.tls_results.T0
         )
@@ -143,7 +136,7 @@ class TessQuickLook:
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
-        self.append_tql_results()
+        self.append_tls_results()
         _ = self.plot_tql()
 
     def __repr__(self):
@@ -152,21 +145,12 @@ class TessQuickLook:
         included_args = [
             # ===target attributes===
             "name",
-            # "toiid",
-            # "ctoiid",
-            # "ticid",
-            # "epicid",
-            # "gaiaDR2id",
-            # "ra_deg",
-            # "dec_deg",
-            # "target_coord",
             "search_radius",
             "sector",
             "exptime",
             "mission",
             "campaign",
             # "all_sectors",
-            # "all_campaigns",
             # ===tpf attributes===
             "sap_mask",
             "quality_bitmask",
@@ -390,7 +374,28 @@ class TessQuickLook:
             self.tfop_depth = None
         return vals
 
+    def run_tls(self):
+        # CDIPS light curve has no flux err
+        if math.isnan(np.median(self.flat_lc.flux_err.value)):
+            flux_err = np.zeros_like(self.flat_lc.flux_err)
+            flux_err += np.nanstd(self.flat_lc.flux)
+        else:
+            flux_err = self.flat_lc.flux_err.value
+        # Run TLS
+        self.tls_results = tls(
+            self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
+        ).power(
+            period_min=self.Porb_min,  # Roche limit default
+            period_max=self.Porb_max,
+        )
+
     def append_tls_results(self):
+        self.tls_results["time_raw"] = self.raw_lc.time.value
+        self.tls_results["flux_raw"] = self.raw_lc.flux.value
+        self.tls_results["err_raw"] = self.raw_lc.flux_err.value
+        self.tls_results["time_flat"] = self.flat_lc.time.value
+        self.tls_results["flux_flat"] = self.flat_lc.flux.value
+        self.tls_results["err_flat"] = self.flat_lc.flux_err.value
         self.tls_results["Porb_min"] = self.Porb_min
         self.tls_results["Porb_max"] = self.Porb_max
         self.tls_results["period_tfop"] = self.tfop_period
@@ -400,6 +405,36 @@ class TessQuickLook:
         self.tls_results["gaiaid"] = self.gaiaid
         self.tls_results["ticid"] = self.ticid
         self.tls_results["toiid"] = self.toiid
+        self.tls_results["sector"] = self.sector
+        # self.tls_results["Prot_ls"] = self.Prot_ls
+        self.tls_results["power_gls"] = (
+            self.gls.power.max(),
+            self.gls.power.std(),
+        )
+        self.tls_results["Prot_gls"] = (
+            self.gls.hpstat["P"],
+            self.gls.hpstat["e_P"],
+        )
+        self.tls_results["amp_gls"] = (
+            self.gls.hpstat["amp"],
+            self.gls.hpstat["e_amp"],
+        )
+
+    def run_gls(self):
+        if self.pipeline == "pathos":
+            # pathos do not have flux_err
+            cols = ["time", "flux"]
+        else:
+            cols = ["time", "flux", "flux_err"]
+        data = (
+            self.raw_lc.to_pandas().reset_index()[cols][~self.tmask].values.T
+        )
+        self.gls = Gls(data, Pbeg=self.Porb_min, verbose=True)
+        print(
+            "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram."
+        )
+        # show plot if not saved
+        # fig2 = self.gls.plot(block=~self.savefig, figsize=(10, 8))
 
     def flatten_raw_lc(self):
         print(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
@@ -581,7 +616,7 @@ class TessQuickLook:
         # +++++++++++++++++++++ax2 Lomb-scargle periodogram
         ax = axes.flatten()[1]
 
-        best_period, ls_model = plot_periodogram(
+        self.Prot_ls, ls_model = plot_periodogram(
             self.raw_lc[~self.tmask], method=self.pg_method, ax=ax
         )
         # +++++++++++++++++++++ax phase-folded at Prot + sinusoidal model
@@ -589,7 +624,7 @@ class TessQuickLook:
         # raw
         _ = (
             self.raw_lc[~self.tmask]
-            .fold(best_period)
+            .fold(self.Prot_ls)
             .scatter(
                 ax=ax,
                 c=self.raw_lc.time.value[~self.tmask],
@@ -600,7 +635,7 @@ class TessQuickLook:
         )
         _ = (
             ls_model(self.raw_lc.time)
-            .fold(best_period)
+            .fold(self.Prot_ls)
             .plot(label=f"{self.pg_method} model", color="r", lw=3, ax=ax)
         )
 
