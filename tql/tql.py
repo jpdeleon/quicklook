@@ -13,12 +13,13 @@ from astropy.stats import sigma_clip
 from astropy.wcs import WCS
 import astropy.units as u
 import lightkurve as lk
-from astroquery.skyview import SkyView
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
 from tql.utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
+from tql.gls import Gls
 from tql.plot import (
+    get_dss_data,
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
     plot_odd_even_transit,
@@ -83,7 +84,7 @@ class TessQuickLook:
                 toiid = None
         self.toiid = toiid
         self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
-        if self.target_name[:3].lower() == "toi":
+        if self.ticid is not None:
             self.query_name = f"TIC{self.ticid}"
         else:
             self.query_name = self.target_name.replace(" ", "")
@@ -110,7 +111,10 @@ class TessQuickLook:
         _ = self.get_toi_ephem()
         if window_length is None:
             self.window_length = (
-                self.tfop_dur[0] * 3 if self.tfop_dur[0] else 0.5
+                self.tfop_dur[0] * 3
+                if (self.tfop_dur is not None)
+                and (self.tfop_dur[0] * 3 >= 0.1)
+                else 0.5
             )
         else:
             self.window_length = window_length
@@ -123,19 +127,8 @@ class TessQuickLook:
             if Porb_limits is None
             else Porb_limits[1]
         )
-        # CDIPS light curve has no flux err
-        if math.isnan(np.median(self.flat_lc.flux_err.value)):
-            flux_err = np.zeros_like(self.flat_lc.flux_err)
-            flux_err += np.nanstd(self.flat_lc.flux)
-        else:
-            flux_err = self.flat_lc.flux_err.value
-        # Run TLS
-        self.tls_results = tls(
-            self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
-        ).power(
-            period_min=self.Porb_min,  # Roche limit default
-            period_max=self.Porb_max,
-        )
+        self.run_tls()
+        self.run_gls()
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period, epoch_time=self.tls_results.T0
         )
@@ -152,21 +145,12 @@ class TessQuickLook:
         included_args = [
             # ===target attributes===
             "name",
-            # "toiid",
-            # "ctoiid",
-            # "ticid",
-            # "epicid",
-            # "gaiaDR2id",
-            # "ra_deg",
-            # "dec_deg",
-            # "target_coord",
             "search_radius",
             "sector",
             "exptime",
             "mission",
             "campaign",
             # "all_sectors",
-            # "all_campaigns",
             # ===tpf attributes===
             "sap_mask",
             "quality_bitmask",
@@ -189,6 +173,8 @@ class TessQuickLook:
 
     def check_file_exists(self):
         name = self.target_name.replace(" ", "")
+        if name.lower()[:3] == "toi":
+            name = f"TOI{str(self.toiid).zfill(4)}"
         lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
         fp = Path(
             self.outdir,
@@ -229,14 +215,14 @@ class TessQuickLook:
         print("All available lightcurves:")
         print(search_result_all_lcs.table.to_pandas()[cols])
 
-        all_sectors = sorted(
-            set(
-                [
-                    int(i[-2:])
-                    for i in search_result_all_lcs.table["mission"].tolist()
-                ]
-            )
-        )
+        all_sectors = []
+        for i in search_result_all_lcs.table["mission"].tolist():
+            x = i.split()
+            if len(x) == 3:
+                s = int(x[-1])
+                all_sectors.append(s)
+        all_sectors = sorted(set(all_sectors))
+
         if kwargs.get("sector") is None:
             print(f"Available sectors: {all_sectors}")
         else:
@@ -286,7 +272,7 @@ class TessQuickLook:
         self.cadence = "short" if self.exptime < 1800 else "long"
         if self.sigma_clip_raw is not None:
             print("Applying sigma clip on raw lc with ")
-            print(f"(upper,lower)=({self.sigma_clip_raw})")
+            print(f"(lower,upper)={self.sigma_clip_raw}")
             return lc.normalize().remove_outliers(
                 sigma_lower=self.sigma_clip_raw[0],
                 sigma_upper=self.sigma_clip_raw[1],
@@ -352,9 +338,14 @@ class TessQuickLook:
             tpf = tpf[~zero_mask]
         return tpf
 
-    def get_toi_ephem(self, idx=-1, params=["epoch", "per", "dur"]) -> list:
+    def get_toi_ephem(self, idx=None, params=["epoch", "per", "dur"]) -> list:
         print(f"Querying ephemeris for {self.target_name}:")
-        planet_params = self.tfop_info.get("planet_parameters")[idx]
+        params_dict = self.tfop_info.get("planet_parameters")
+        if idx is None:
+            idx = np.argmax(
+                [len(params_dict[x]) for x in range(len(params_dict))]
+            )
+        planet_params = params_dict[idx]
         vals = []
         for p in params:
             val = planet_params.get(p)
@@ -363,7 +354,7 @@ class TessQuickLook:
             err = float(err) if err else 0.1
             print(f"{p}: {val}, {err}")
             vals.append((val, err))
-        print("\n")
+        print("")
         if len(vals) > 0:
             self.tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
             self.tfop_period = np.array(vals[1])
@@ -372,28 +363,78 @@ class TessQuickLook:
             self.tfop_epoch = None
             self.tfop_period = None
             self.tfop_dur = None
-        self.tfop_depth = (
-            np.array(
-                (
-                    float(planet_params.get("dep_p")),
-                    float(planet_params.get("dep_p_e")),
-                )
-            )
-            / 1e3
-        )
+
+        d = planet_params.get("dep_p")
+        de = planet_params.get("dep_p_e")
+        d = float(d) if d and (d != "") else np.nan
+        de = float(de) if de and (de != "") else np.nan
+        if not math.isnan(d) or not math.isnan(de):
+            self.tfop_depth = np.array((d, de)) / 1e3
+        else:
+            self.tfop_depth = None
         return vals
 
+    def run_tls(self):
+        # CDIPS light curve has no flux err
+        if math.isnan(np.median(self.flat_lc.flux_err.value)):
+            flux_err = np.zeros_like(self.flat_lc.flux_err)
+            flux_err += np.nanstd(self.flat_lc.flux)
+        else:
+            flux_err = self.flat_lc.flux_err.value
+        # Run TLS
+        self.tls_results = tls(
+            self.flat_lc.time.value, self.flat_lc.flux.value, flux_err
+        ).power(
+            period_min=self.Porb_min,  # Roche limit default
+            period_max=self.Porb_max,
+        )
+
     def append_tls_results(self):
+        self.tls_results["time_raw"] = self.raw_lc.time.value
+        self.tls_results["flux_raw"] = self.raw_lc.flux.value
+        self.tls_results["err_raw"] = self.raw_lc.flux_err.value
+        self.tls_results["time_flat"] = self.flat_lc.time.value
+        self.tls_results["flux_flat"] = self.flat_lc.flux.value
+        self.tls_results["err_flat"] = self.flat_lc.flux_err.value
         self.tls_results["Porb_min"] = self.Porb_min
         self.tls_results["Porb_max"] = self.Porb_max
         self.tls_results["period_tfop"] = self.tfop_period
         self.tls_results["T0_tfop"] = self.tfop_epoch
-        self.tls_results["duration_tfop"] = self.tfop_duration
+        self.tls_results["duration_tfop"] = self.tfop_dur
         self.tls_results["depth_tfop"] = self.tfop_depth
         self.tls_results["gaiaid"] = self.gaiaid
         self.tls_results["ticid"] = self.ticid
         self.tls_results["toiid"] = self.toiid
+        self.tls_results["sector"] = self.sector
+        # self.tls_results["Prot_ls"] = self.Prot_ls
+        self.tls_results["power_gls"] = (
+            self.gls.power.max(),
+            self.gls.power.std(),
+        )
+        self.tls_results["Prot_gls"] = (
+            self.gls.hpstat["P"],
+            self.gls.hpstat["e_P"],
+        )
+        self.tls_results["amp_gls"] = (
+            self.gls.hpstat["amp"],
+            self.gls.hpstat["e_amp"],
+        )
 
+    def run_gls(self):
+        if self.pipeline == "pathos":
+            # pathos do not have flux_err
+            cols = ["time", "flux"]
+        else:
+            cols = ["time", "flux", "flux_err"]
+        data = (
+            self.raw_lc.to_pandas().reset_index()[cols][~self.tmask].values.T
+        )
+        self.gls = Gls(data, Pbeg=self.Porb_min, verbose=True)
+        print(
+            "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram."
+        )
+        # show plot if not saved
+        # fig2 = self.gls.plot(block=~self.savefig, figsize=(10, 8))
 
     def flatten_raw_lc(self):
         print(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
@@ -474,20 +515,27 @@ class TessQuickLook:
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"T0={self.tls_results.T0:.4f} BJD (TLS)"
         if self.tfop_period is not None:
             msg += f", {self.tfop_epoch[0]:.4f}" + r"$\pm$"
             msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f}"
             msg += f" BJD-{TESS_TIME_OFFSET} (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
             msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
+        else:
+            msg += "\n"
         msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
         if self.tfop_depth is not None:
             msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
             msg += f"{self.tfop_depth[1]:.1f} ppt (TFOP)\n"
-
+        else:
+            msg += "\n"
         if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (
             meta["FLUX_ORIGIN"].lower() == "sap"
         ):
@@ -568,7 +616,7 @@ class TessQuickLook:
         # +++++++++++++++++++++ax2 Lomb-scargle periodogram
         ax = axes.flatten()[1]
 
-        best_period, ls_model = plot_periodogram(
+        self.Prot_ls, ls_model = plot_periodogram(
             self.raw_lc[~self.tmask], method=self.pg_method, ax=ax
         )
         # +++++++++++++++++++++ax phase-folded at Prot + sinusoidal model
@@ -576,7 +624,7 @@ class TessQuickLook:
         # raw
         _ = (
             self.raw_lc[~self.tmask]
-            .fold(best_period)
+            .fold(self.Prot_ls)
             .scatter(
                 ax=ax,
                 c=self.raw_lc.time.value[~self.tmask],
@@ -587,7 +635,7 @@ class TessQuickLook:
         )
         _ = (
             ls_model(self.raw_lc.time)
-            .fold(best_period)
+            .fold(self.Prot_ls)
             .plot(label=f"{self.pg_method} model", color="r", lw=3, ax=ax)
         )
 
@@ -633,22 +681,14 @@ class TessQuickLook:
             # query image to get projection
             ny, nx = self.tpf.flux.shape[1:]
             diag = np.sqrt(nx**2 + ny**2)
-            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin)
-            position = self.target_coord.icrs.to_string()
-            results = SkyView.get_images(
-                position=position,
-                # coordinates="icrs",
+            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
+            hdu = get_dss_data(
+                ra=self.target_coord.ra.deg,
+                dec=self.target_coord.dec.deg,
                 survey=self.archival_survey,
-                radius=fov_rad,
-                grid=True,
+                width=fov_rad.value,
+                height=fov_rad.value,
             )
-            if len(results) > 0:
-                hdu = results[0][0]
-            else:
-                errmsg = (
-                    "SkyView returned empty result. Try a different survey."
-                )
-                raise ValueError(errmsg)
             ax.remove()
             ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
             _ = plot_gaia_sources_on_survey(
