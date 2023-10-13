@@ -66,6 +66,8 @@ class TessQuickLook:
         overwrite: bool = False,
         outdir: str = ".",
     ):
+        self.timer_start = timer()
+
         self.target_name = target_name
         print(f"Generating TQL for {self.target_name}...")
         self.tfop_info = get_tfop_info(target_name)
@@ -556,7 +558,7 @@ class TessQuickLook:
         msg += (
             f"Distance={params['dist']:.1f}"
             + r"$\pm$"
-            + f"{params['dist_e']:.1f}pc\n"
+            + f"{params['dist_e']:.1f} pc\n"
         )
         # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
         # D = gp.astrometric_excess_noise_sig
@@ -636,7 +638,6 @@ class TessQuickLook:
         if kwargs.get("plot"):
             self.plot = kwargs.get("plot")
 
-        start = timer()
         fig, axes = pl.subplots(3, 3, figsize=(16, 12), tight_layout=True)
 
         # +++++++++++++++++++++ax: Raw + trend
@@ -825,7 +826,6 @@ class TessQuickLook:
         #     comment = f"Comment: {toi_params['Comments']}"
         #     msg += "\n".join(textwrap.wrap(comment, 60))
         fig.suptitle(title, y=1.0, fontsize=20)
-        end = timer()
 
         if (self.outdir is not None) & (not Path(self.outdir).exists()):
             Path(self.outdir).mkdir()
@@ -844,7 +844,10 @@ class TessQuickLook:
             h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
             fk.save(h5_file, self.tls_results)
             print("Saved: ", h5_file)
-        print(f"#----------Runtime: {end-start:.2f} s----------#\n")
+
+        self.timer_end = timer()
+        elapsed_time = self.timer_end - self.timer_start
+        print(f"#----------Runtime: {elapsed_time:.2f} s----------#\n")
         if not self.plot:
             # del fig
             pl.clf()

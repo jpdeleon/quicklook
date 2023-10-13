@@ -99,7 +99,8 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         # normalize_phase=False,
         # wrap_phase=tls_results.period
     )
-    fold_lc2.time = fold_lc2.time + 0.5
+    half_phase = 0.5  # tls_results.period/2
+    fold_lc2.time = fold_lc2.time + half_phase * u.day
     fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
     yline = tls_results.depth
     ax.axhline(
@@ -111,7 +112,6 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         c="k",
         ls="--",
     )
-    half_phase = 0.5
     t14 = tls_results.duration
     ax.axvline(
         half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
