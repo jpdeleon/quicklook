@@ -13,5 +13,6 @@ setup(
     author_email="jpdeleon@g.ecc.u-tokyo.ac.jp",
     url="https://github.com/jpdeleon/quicklook",
     packages=find_packages(),
+    include_package_data=True,
     scripts=["scripts/ql"],
 )

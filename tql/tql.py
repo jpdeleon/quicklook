@@ -2,16 +2,19 @@ import sys
 import math
 import traceback
 import textwrap
+from pkg_resources import resource_filename
 from pathlib import Path
 from time import time as timer
 import matplotlib.pyplot as pl
 import numpy as np
+import pandas as pd
 from transitleastsquares import transitleastsquares as tls
 from wotan import flatten
 from astropy.coordinates import SkyCoord
 from astropy.stats import sigma_clip
 from astropy.wcs import WCS
 import astropy.units as u
+from astroquery.simbad import Simbad
 import lightkurve as lk
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
@@ -31,6 +34,10 @@ from tql.plot import (
 set_style("science")
 
 __all__ = ["TessQuickLook"]
+
+simbad_obj_list_file = Path(
+    resource_filename("tql", "../data/simbad_obj_types.csv")
+).resolve()
 
 
 class TessQuickLook:
@@ -88,6 +95,7 @@ class TessQuickLook:
             self.query_name = f"TIC{self.ticid}"
         else:
             self.query_name = self.target_name.replace(" ", "")
+        self.simbad_obj_type = self.get_simbad_obj_type()
         self.flux_type = flux_type
         self.exptime = exptime
         self.pg_method = pg_method
@@ -186,6 +194,25 @@ class TessQuickLook:
                 f"{png_file} already exists! Set overwrite=True."
             )
         return fp
+
+    def get_simbad_obj_type(self):
+        """See also: https://simbad.cds.unistra.fr/guide/otypes.htx"""
+        Simbad.add_votable_fields("otype")
+        try:
+            r = Simbad.query_object("TOI-1150")
+            category = r.to_pandas().squeeze()["OTYPE"]
+            df = pd.read_csv(simbad_obj_list_file)
+            dd = df.query("Id==@category")
+            desc = dd["Description"].squeeze()
+            oid = dd["Id"].squeeze()
+            if dd["Description"].str.contains("(?i)binary").any():
+                print("***" * 5)
+                print(f"Simbad classifies {self.target_name} as a {desc}!")
+                print("***" * 5)
+            return desc
+        except Exception as e:
+            print(f"Simbad cannot resolve {self.target_name}.\n{e}")
+            return None
 
     def get_lc(self, **kwargs: dict) -> lk.TessLightCurve:
         """
@@ -419,6 +446,8 @@ class TessQuickLook:
             self.gls.hpstat["amp"],
             self.gls.hpstat["e_amp"],
         )
+        if self.simbad_obj_type is not None:
+            self.tls_results["simbad_obj"] = self.simbad_obj_type
 
     def run_gls(self):
         if self.pipeline == "pathos":
@@ -498,7 +527,6 @@ class TessQuickLook:
             except:
                 params[name + "_e"] = np.nan
         meta = self.raw_lc.meta
-
         Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
         if self.pipeline in ["spoc", "tess-spoc"]:
             Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
@@ -592,6 +620,8 @@ class TessQuickLook:
             + r"$\pm$"
             + f"{params['logg_e']:.2f} cgs\n"
         )
+        if self.simbad_obj_type is not None:
+            msg += f"Simbad obj: {self.simbad_obj_type}"
         # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
         return msg
 
