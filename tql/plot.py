@@ -82,7 +82,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
     t14 = tls_results.duration
     ax.axvline(-t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.axvline(t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
-    ax.set_xlabel("Phase")
+    ax.set_xlabel("Orbital Phase")
     ax.set_xlim(-t14 * 2, t14 * 2)
     # y1, y2 = ax.get_ylim()
     ax.legend()
@@ -96,8 +96,11 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     fold_lc2 = flat_lc[~tmask].fold(
         period=tls_results.period,
         epoch_time=tls_results.T0 + tls_results.period / 2,
+        # normalize_phase=False,
+        # wrap_phase=tls_results.period
     )
-    fold_lc2.time = fold_lc2.time + 0.5
+    half_phase = 0.5  # tls_results.period/2
+    fold_lc2.time = fold_lc2.time + half_phase * u.day
     fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
     yline = tls_results.depth
     ax.axhline(
@@ -109,7 +112,6 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         c="k",
         ls="--",
     )
-    half_phase = 0.5
     t14 = tls_results.duration
     ax.axvline(
         half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
@@ -134,7 +136,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         )
     except Exception as e:
         print(e)
-    ax.set_xlabel("Phase")
+    ax.set_xlabel("Orbital Phase")
     ax.set_xlim(half_phase - t14 * 2, half_phase + t14 * 2)
     ax.legend()
     return ax
@@ -146,7 +148,11 @@ def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
     baseline = int(lc.time.value[-1] - lc.time.value[0])
     Prot_max = baseline / 2.0
     pg = lc.to_periodogram(
-        method=method, minimum_frequency=1.0 / Prot_max, maximum_frequency=2.0
+        method=method,
+        # minimum_period=0.5,
+        # maximum_period=Prot_max
+        # minimum_frequency = 2.0,
+        # maximum_frequency = 1/Prot_max
     )
     best_period = pg.period_at_max_power.value
     pg.plot(ax=ax, view="period", lw=2, color="k", label="__nolegend__")
@@ -161,10 +167,83 @@ def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
     )
     ax.set_xscale("log")
     ax.set_ylabel("Lomb-Scargle Power")
+    ax.set_xlabel("Rotation period [days]")
     ax.legend(title="Rotation period [d]")
     xmin, _ = ax.get_xlim()
     ax.set_xlim(xmin, Prot_max)
-    return best_period, pg.model
+    print(pg.show_properties())
+    return pg
+
+
+def plot_gls_periodogram(
+    gls,
+    offset=0.1,
+    N_peaks=3,
+    relative_height=10,
+    FAP_levels=[0.1, 0.01, 0.001],
+    ax=None,
+) -> tuple:
+    """
+    Based on:
+    https://github.com/SLSkrzypinski/TESS_diagnosis
+    """
+    from scipy.signal import find_peaks
+
+    linestyles = [":", "dotted", "solid"]
+    if ax is None:
+        _, ax = pl.subplots()
+    x = 1 / gls.freq
+    y = gls.power
+    power_levels = [[gls.powerLevel(i)] * len(x) for i in FAP_levels]
+    best_period = gls.best["P"]
+    # Find peaks
+    max_power = y.max()
+    peaks = find_peaks(y, height=max_power / relative_height)
+    # print(peaks)
+    peak_pos = peaks[0]
+    peak_pos = peak_pos[
+        (x[peak_pos] < best_period - offset)
+        | (x[peak_pos] > best_period + offset)
+    ]
+    peak_pos = peak_pos[
+        (x[peak_pos] < best_period / 2 - offset)
+        | (x[peak_pos] > best_period / 2 + offset)
+    ]
+    peak_pos = peak_pos[
+        (x[peak_pos] < 2 * best_period - offset)
+        | (x[peak_pos] > 2 * best_period + offset)
+    ]
+    while len(peak_pos) > N_peaks:
+        peak_pos = np.delete(peak_pos, peak_pos.argmin())
+    peaks = x[peak_pos]
+    heights = y[peak_pos]
+
+    ax.plot(x, y, c="C0", linewidth=0.8)
+    # mark best period and multiples
+    ax.axvline(x=best_period * 2, color="orange", linewidth=2, alpha=0.5)
+    ax.axvline(x=best_period / 2, color="orange", linewidth=2, alpha=0.5)
+    # mark FAP levels
+    for i in range(len(FAP_levels)):
+        ax.plot(
+            x, power_levels[i], linestyle=linestyles[i], linewidth=0.8, c="red"
+        )
+    # mark best period and multiples
+    ax.scatter(
+        best_period, max_power, c="r", s=20, label=f"best={best_period:.3}"
+    )
+    for i in range(len(peaks)):
+        ax.scatter(
+            peaks[i],
+            heights[i],
+            c="k",
+            s=20,
+            label=f"P$_{i+1}$={peaks[i]:.3f}",
+        )
+    ax.minorticks_on()
+    ax.set_ylabel("Gen. Lomb-Scargle Power (ZK)")
+    ax.set_xlabel("Rotation period [days]")
+    ax.legend(title="Prot peaks [d]")
+    return ax
 
 
 def plot_tpf(tpf, aperture_mask="pipeline", ax=None) -> pl.axis:
@@ -620,14 +699,14 @@ def plot_tls(
         if period_min <= lower_harmonics <= period_max:
             ax.axvline(lower_harmonics, alpha=0.4, lw=1, linestyle="dashed")
     ax.set_ylabel("Transit Least Squares SDE")
-    ax.set_xlabel("Period [days]")
+    ax.set_xlabel("Orbital Period [days]")
     ax.plot(tls_results.periods, tls_results.power, color="black", lw=0.5)
     ax.set_xlim(tls_results["Porb_min"], tls_results["Porb_max"])
     # do not show negative SDE
     y1, y2 = ax.get_ylim()
     y1 = 0 if y1 < 0 else y1
     ax.set_ylim(y1, y2)
-    ax.legend(title="Orbital period [d]")
+    ax.legend(title="Porb peaks [d]")
     return ax
 
 

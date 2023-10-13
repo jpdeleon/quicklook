@@ -116,11 +116,19 @@ parser.add_argument(
 #     default=(12, 12),
 # )
 parser.add_argument(
-    "-method",
+    "-fm",
     "--flatten_method",
     type=str,
     help="wotan flatten method (default=biweight)",
     default="biweight",
+)
+parser.add_argument(
+    "-pm",
+    "--pg_method",
+    type=str,
+    help="periodogran method (default=gls)",
+    default="gls",
+    choices=["gls", "lombscargle", "bls"],
 )
 parser.add_argument(
     "-wl",
@@ -165,13 +173,13 @@ parser.add_argument(
     type=float,
     default=None,
 )
-parser.add_argument(
-    "-u",
-    "--use_priors",
-    action="store_true",
-    help="use star priors for detrending and periodogram",
-    default=False,
-)
+# parser.add_argument(
+#     "-u",
+#     "--use_priors",
+#     action="store_true",
+#     help="use star priors for detrending and periodogram",
+#     default=False,
+# )
 parser.add_argument(
     "-s",
     "--save",
@@ -213,7 +221,7 @@ parser.add_argument(
 args = parser.parse_args(None if sys.argv[1:] else ["-h"])
 
 if __name__ == "__main__":
-    fig = TessQuickLook(
+    ql = TessQuickLook(
         # gaia2id=args.gaia2id,
         # gaia3id=args.gaia3id,
         # toiid=args.toi,
@@ -227,6 +235,7 @@ if __name__ == "__main__":
         pipeline=args.pipeline,
         exptime=args.exptime,
         flux_type=args.fluxtype,
+        pg_method=args.pg_method,
         # sap_mask=args.aper_mask,
         # aper_radius=args.aper_radius,
         # threshold_sigma=args.threshold,
@@ -256,6 +265,7 @@ if __name__ == "__main__":
         # estimate_spec_type=args.spec_type,
         # estimate_gyro_age=args.gyro_age,
     )
+    fig = ql.plot_tql()
     if not args.save:
         pl.show()
     pl.close()

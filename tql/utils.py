@@ -199,9 +199,10 @@ def compute_secthresh(fold_lc, t14):
             x1 = chunks[n - 1]
             x2 = x
         idx = (fold_lc.phase.value > x1) & (fold_lc.phase.value < x2)
-        mean = np.nanmean(fold_lc.flux[idx].value)
-        # print(mean)
-        means.append(mean)
+        if sum(idx) > 3:
+            mean = np.nanmean(fold_lc.flux[idx].value)
+            # print(mean)
+            means.append(mean)
     return 3 * np.nanstd(means)
 
 
