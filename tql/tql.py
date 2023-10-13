@@ -201,20 +201,30 @@ class TessQuickLook:
     def get_simbad_obj_type(self):
         """See also: https://simbad.cds.unistra.fr/guide/otypes.htx"""
         Simbad.add_votable_fields("otype")
+        for name in self.star_names:
+            r = Simbad.query_object(name)
+            if r is not None:
+                r = r[0] if len(r)>1 else r
+                break
+            print(f"Simbad cannot resolve {name}.")
         try:
-            r = Simbad.query_object(self.target_name.replace("-", ""))
             category = r.to_pandas().squeeze()["OTYPE"]
+            if len(category)>=4:
+                return category
             df = pd.read_csv(simbad_obj_list_file)
             dd = df.query("Id==@category")
-            desc = dd["Description"].squeeze()
-            oid = dd["Id"].squeeze()
-            if dd["Description"].str.contains("(?i)binary").any():
-                print("***" * 5)
-                print(f"Simbad classifies {self.target_name} as {oid}={desc}!")
-                print("***" * 5)
-            return desc
+            if len(dd)>0:
+                desc = dd["Description"].squeeze()
+                oid = dd["Id"].squeeze()
+                if dd["Description"].str.contains("(?i)binary").any():
+                    print("***" * 5)
+                    print(f"Simbad classifies {self.target_name} as {oid}={desc}!")
+                    print("***" * 5)
+                else:
+                    print(f"Simbad classifies {name} as {oid}={desc}!")
+                return desc
         except Exception as e:
-            print(f"Simbad cannot resolve {self.target_name}.\n{e}")
+            print(f"Simbad cannot resolve {self.target_coord.to_string('decimal')}.\n{e}")
             return None
 
     def get_lc(self, **kwargs: dict) -> lk.TessLightCurve:
