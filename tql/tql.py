@@ -202,7 +202,7 @@ class TessQuickLook:
         """See also: https://simbad.cds.unistra.fr/guide/otypes.htx"""
         Simbad.add_votable_fields("otype")
         try:
-            r = Simbad.query_object("TOI-1150")
+            r = Simbad.query_object(self.target_name.replace("-", ""))
             category = r.to_pandas().squeeze()["OTYPE"]
             df = pd.read_csv(simbad_obj_list_file)
             dd = df.query("Id==@category")
@@ -210,7 +210,7 @@ class TessQuickLook:
             oid = dd["Id"].squeeze()
             if dd["Description"].str.contains("(?i)binary").any():
                 print("***" * 5)
-                print(f"Simbad classifies {self.target_name} as a {desc}!")
+                print(f"Simbad classifies {self.target_name} as {oid}={desc}!")
                 print("***" * 5)
             return desc
         except Exception as e:
