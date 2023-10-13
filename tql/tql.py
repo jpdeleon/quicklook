@@ -29,6 +29,7 @@ from tql.plot import (
     plot_secondary_eclipse,
     plot_tls,
     plot_periodogram,
+    plot_gls_periodogram,
 )
 
 set_style("science")
@@ -48,7 +49,7 @@ class TessQuickLook:
         pipeline: str = "SPOC",
         flux_type="pdcsap",
         exptime: float = None,
-        pg_method: str = "lombscargle",
+        pg_method: str = "gls",
         flatten_method: str = "biweight",
         gp_kernel: str = "matern",
         gp_kernel_size: float = 1,
@@ -136,16 +137,16 @@ class TessQuickLook:
             else Porb_limits[1]
         )
         self.run_tls()
-        self.run_gls()
         self.fold_lc = self.flat_lc.fold(
-            period=self.tls_results.period, epoch_time=self.tls_results.T0
+            period=self.tls_results.period,
+            epoch_time=self.tls_results.T0,
+            normalize_phase=False,
+            wrap_phase=self.tls_results.period / 2,
         )
         self.plot = plot
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
-        self.append_tls_results()
-        _ = self.plot_tql()
 
     def __repr__(self):
         """Override to print a readable string representation of class"""
@@ -416,40 +417,7 @@ class TessQuickLook:
             period_max=self.Porb_max,
         )
 
-    def append_tls_results(self):
-        self.tls_results["time_raw"] = self.raw_lc.time.value
-        self.tls_results["flux_raw"] = self.raw_lc.flux.value
-        self.tls_results["err_raw"] = self.raw_lc.flux_err.value
-        self.tls_results["time_flat"] = self.flat_lc.time.value
-        self.tls_results["flux_flat"] = self.flat_lc.flux.value
-        self.tls_results["err_flat"] = self.flat_lc.flux_err.value
-        self.tls_results["Porb_min"] = self.Porb_min
-        self.tls_results["Porb_max"] = self.Porb_max
-        self.tls_results["period_tfop"] = self.tfop_period
-        self.tls_results["T0_tfop"] = self.tfop_epoch
-        self.tls_results["duration_tfop"] = self.tfop_dur
-        self.tls_results["depth_tfop"] = self.tfop_depth
-        self.tls_results["gaiaid"] = self.gaiaid
-        self.tls_results["ticid"] = self.ticid
-        self.tls_results["toiid"] = self.toiid
-        self.tls_results["sector"] = self.sector
-        # self.tls_results["Prot_ls"] = self.Prot_ls
-        self.tls_results["power_gls"] = (
-            self.gls.power.max(),
-            self.gls.power.std(),
-        )
-        self.tls_results["Prot_gls"] = (
-            self.gls.hpstat["P"],
-            self.gls.hpstat["e_P"],
-        )
-        self.tls_results["amp_gls"] = (
-            self.gls.hpstat["amp"],
-            self.gls.hpstat["e_amp"],
-        )
-        if self.simbad_obj_type is not None:
-            self.tls_results["simbad_obj"] = self.simbad_obj_type
-
-    def run_gls(self):
+    def init_gls(self):
         if self.pipeline == "pathos":
             # pathos do not have flux_err
             cols = ["time", "flux"]
@@ -458,12 +426,10 @@ class TessQuickLook:
         data = (
             self.raw_lc.to_pandas().reset_index()[cols][~self.tmask].values.T
         )
-        self.gls = Gls(data, Pbeg=self.Porb_min, verbose=True)
         print(
             "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram."
         )
-        # show plot if not saved
-        # fig2 = self.gls.plot(block=~self.savefig, figsize=(10, 8))
+        return Gls(data, Pbeg=self.Porb_min, Pend=self.Porb_max, verbose=True)
 
     def flatten_raw_lc(self):
         print(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
@@ -545,13 +511,13 @@ class TessQuickLook:
             msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
         else:
             msg += "\n"
-        msg += f"T0={self.tls_results.T0:.4f} BJD (TLS)"
+        msg += f"T0={self.tls_results.T0:.4f} "
         if self.tfop_period is not None:
-            msg += f", {self.tfop_epoch[0]:.4f}" + r"$\pm$"
-            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f}"
-            msg += f" BJD-{TESS_TIME_OFFSET} (TFOP)\n"
+            msg += f"(TLS), {self.tfop_epoch[0]:.4f}" + r"$\pm$"
+            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f} "
+            msg += f"BJD-{TESS_TIME_OFFSET} (TFOP)\n"
         else:
-            msg += "\n"
+            msg += "BJD-{TESS_TIME_OFFSET} (TLS)\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
@@ -620,10 +586,47 @@ class TessQuickLook:
             + r"$\pm$"
             + f"{params['logg_e']:.2f} cgs\n"
         )
+        msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
+        per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
+        t = self.Prot_ls * u.day.to(u.second)
+        msg += f"Rotation speed={per/t:.2f} km/s\n"
         if self.simbad_obj_type is not None:
-            msg += f"Simbad obj: {self.simbad_obj_type}"
+            msg += f"Simbad Object: {self.simbad_obj_type}"
         # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
         return msg
+
+    def append_tls_results(self):
+        self.tls_results["time_raw"] = self.raw_lc.time.value
+        self.tls_results["flux_raw"] = self.raw_lc.flux.value
+        self.tls_results["err_raw"] = self.raw_lc.flux_err.value
+        self.tls_results["time_flat"] = self.flat_lc.time.value
+        self.tls_results["flux_flat"] = self.flat_lc.flux.value
+        self.tls_results["err_flat"] = self.flat_lc.flux_err.value
+        self.tls_results["Porb_min"] = self.Porb_min
+        self.tls_results["Porb_max"] = self.Porb_max
+        self.tls_results["period_tfop"] = self.tfop_period
+        self.tls_results["T0_tfop"] = self.tfop_epoch
+        self.tls_results["duration_tfop"] = self.tfop_dur
+        self.tls_results["depth_tfop"] = self.tfop_depth
+        self.tls_results["gaiaid"] = self.gaiaid
+        self.tls_results["ticid"] = self.ticid
+        self.tls_results["toiid"] = self.toiid
+        self.tls_results["sector"] = self.sector
+        if self.gls is not None:
+            self.tls_results["power_gls"] = (
+                self.gls.power.max(),
+                self.gls.power.std(),
+            )
+            self.tls_results["Prot_gls"] = (
+                self.gls.hpstat["P"],
+                self.gls.hpstat["e_P"],
+            )
+            self.tls_results["amp_gls"] = (
+                self.gls.hpstat["amp"],
+                self.gls.hpstat["e_amp"],
+            )
+        if self.simbad_obj_type is not None:
+            self.tls_results["simbad_obj"] = self.simbad_obj_type
 
     def plot_tql(self, **kwargs: dict) -> pl.Figure:
         if kwargs.get("savefig"):
@@ -646,28 +649,65 @@ class TessQuickLook:
         # +++++++++++++++++++++ax2 Lomb-scargle periodogram
         ax = axes.flatten()[1]
 
-        self.Prot_ls, ls_model = plot_periodogram(
-            self.raw_lc[~self.tmask], method=self.pg_method, ax=ax
-        )
+        if self.pg_method == "gls":
+            self.gls = self.init_gls()
+            ax = plot_gls_periodogram(
+                self.gls,
+                offset=0.1,
+                N_peaks=3,
+                relative_height=10,
+                FAP_levels=[0.1, 0.01, 0.001],
+                ax=ax,
+            )
+            # create a dummy pg class
+            pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
+            self.Prot_ls = self.gls.best["P"]
+            if math.isnan(self.gls.power.max()):
+                ax.clear()
+                self.pg_method = "lombscargle"
+                pg = plot_periodogram(
+                    self.raw_lc[~self.tmask], method="lombscargle", ax=ax
+                )
+                self.Prot_ls = pg.period_at_max_power.value
+        else:
+            self.gls = None
+            pg = plot_periodogram(
+                self.raw_lc[~self.tmask], method=self.pg_method, ax=ax
+            )
+            self.Prot_ls = pg.period_at_max_power.value
+
+        # add gls to tls_results
+        self.append_tls_results()
+
         # +++++++++++++++++++++ax phase-folded at Prot + sinusoidal model
         ax = axes.flatten()[2]
         # raw
         _ = (
             self.raw_lc[~self.tmask]
-            .fold(self.Prot_ls)
+            .fold(
+                self.Prot_ls,
+                normalize_phase=False,
+                wrap_phase=self.Prot_ls / 2,
+            )
             .scatter(
                 ax=ax,
-                c=self.raw_lc.time.value[~self.tmask],
+                c=self.raw_lc[~self.tmask].time.value,
                 cmap=pl.get_cmap("Blues_r"),
                 label="masked and folded at Prot",
                 show_colorbar=False,  # colorbar_label="Time [BTJD]"
             )
         )
         _ = (
-            ls_model(self.raw_lc.time)
-            .fold(self.Prot_ls)
+            pg.model(self.raw_lc[~self.tmask].time)
+            .fold(
+                self.Prot_ls,
+                normalize_phase=False,
+                wrap_phase=self.Prot_ls / 2,
+            )
             .plot(label=f"{self.pg_method} model", color="r", lw=3, ax=ax)
         )
+        ax.set_xlabel("Rotation Phase [days]")
+        # ax.set_xlim(-0.5, 0.5)
 
         # +++++++++++++++++++++ax5: TLS periodogram
         ax = axes.flatten()[4]
@@ -813,11 +853,12 @@ class TessQuickLook:
 
 if __name__ == "__main__":
     try:
-        tql = TessQuickLook(
+        ql = TessQuickLook(
             "TOI-6043",
             sector=-1,
             # pipeline="qlp",
             # exptime=1800,
+            pg_method="gls",
             savefig=True,
             savetls=True,
             overwrite=True,
@@ -831,6 +872,8 @@ if __name__ == "__main__":
             outdir="../tests",
             # author='cdips'
         )
+        fig = ql.plot_tql()
+
     except Exception:
         # Get current system exception
         ex_type, ex_value, ex_traceback = sys.exc_info()
