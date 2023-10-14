@@ -391,9 +391,10 @@ class TessQuickLook:
         print(f"Querying ephemeris for {self.target_name}:")
         try:
             planet_params = get_params_from_tfop(
-                self.tfop_info, "planet_parameters", key="pdate"
+                self.tfop_info, "planet_parameters"
             )
-        except:
+        except Exception as e:
+            print(e)
             planet_params = get_params_from_tfop(
                 self.tfop_info, "planet_parameters", idx=1
             )
@@ -505,11 +506,12 @@ class TessQuickLook:
     def make_summary_info(self):
         try:
             star_params = get_params_from_tfop(
-                self.tfop_info, name="stellar_parameters", key="sdate"
-            )
-        except:
-            star_params = get_params_from_tfop(
                 self.tfop_info, name="stellar_parameters", idx=1
+            )
+        except Exception as e:
+            print(e)
+            star_params = get_params_from_tfop(
+                self.tfop_info, name="stellar_parameters"
             )
         params = {}
         param_names = ["srad", "mass", "teff", "logg", "dist"]

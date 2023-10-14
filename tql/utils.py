@@ -1,7 +1,7 @@
 import json
 from urllib.request import urlopen
 import numpy as np
-import pandas
+import pandas as pd
 import astropy.units as u
 
 TESS_TIME_OFFSET = 2_457_000
@@ -27,11 +27,11 @@ def get_tfop_info(target_name: str) -> dict:
     return data_json
 
 
-def get_params_from_tfop(
-    tfop_info, name="planet_parameters", key="pdate", idx=None
-):
+def get_params_from_tfop(tfop_info, name="planet_parameters", idx=None):
     params_dict = tfop_info.get(name)
     if idx is None:
+        key = "pdate" if name == "planet_parameters" else "sdate"
+        # get the latest parameter based on upload date
         dates = []
         for d in params_dict:
             t = d.get(key)
