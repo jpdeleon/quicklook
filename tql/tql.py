@@ -2,6 +2,7 @@ import sys
 import math
 import traceback
 import textwrap
+import warnings
 from pkg_resources import resource_filename
 from pathlib import Path
 from time import time as timer
@@ -38,6 +39,10 @@ from tql.plot import (
 )
 
 set_style("science")
+# FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
+warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
+warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
+
 
 __all__ = ["TessQuickLook"]
 
@@ -203,16 +208,35 @@ class TessQuickLook:
             )
         return fp
 
-    def get_simbad_obj_type(self):
+    def query_simbad(self, verbose=True):
         """See also: https://simbad.cds.unistra.fr/guide/otypes.htx"""
         Simbad.add_votable_fields("otype")
-        for name in self.star_names:
-            r = Simbad.query_object(name)
-            if r is not None:
-                r = r[0] if len(r) > 1 else r
-                break
-            print(f"Simbad cannot resolve {name}.")
-        try:
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            for name in self.star_names:
+                r = Simbad.query_object(name)
+                if r is not None:
+                    return r
+                if verbose:
+                    print(f"Simbad cannot resolve {name}.")
+
+            # Finally try resolving the coordinates
+            # import pdb; pdb.set_trace()
+            # coord_str = self.target_coord.to_string('hmsdms')
+            # try:
+            #     r = Simbad.query_region(coord_str, radius=0.5 * u.deg)[0]
+            #     return r
+            # except:
+            #     print(
+            #         f"Simbad cannot resolve {coord_str}."
+            #     )
+            #     return None
+
+    def get_simbad_obj_type(self):
+        r = self.query_simbad(verbose=False)
+        if r:
             category = r.to_pandas().squeeze()["OTYPE"]
             if len(category) >= 4:
                 return category
@@ -222,18 +246,17 @@ class TessQuickLook:
                 desc = dd["Description"].squeeze()
                 oid = dd["Id"].squeeze()
                 if dd["Description"].str.contains("(?i)binary").any():
-                    print("***" * 5)
+                    print("***" * 15)
                     print(
                         f"Simbad classifies {self.target_name} as {oid}={desc}!"
                     )
-                    print("***" * 5)
+                    print("***" * 15)
                 else:
-                    print(f"Simbad classifies {name} as {oid}={desc}!")
+                    print(
+                        f"Simbad classifies {self.target_name} as {oid}={desc}!"
+                    )
                 return desc
-        except Exception as e:
-            print(
-                f"Simbad cannot resolve {self.target_coord.to_string('decimal')}.\n{e}"
-            )
+        else:
             return None
 
     def get_lc(self, **kwargs: dict) -> lk.TessLightCurve:
@@ -390,6 +413,7 @@ class TessQuickLook:
     def get_toi_ephem(self, params=["epoch", "per", "dur"]) -> list:
         print(f"Querying ephemeris for {self.target_name}:")
         try:
+            # use TIC latest uploaded ephem as default
             planet_params = get_params_from_tfop(
                 self.tfop_info, "planet_parameters"
             )
@@ -505,6 +529,7 @@ class TessQuickLook:
 
     def make_summary_info(self):
         try:
+            # use TIC stellar params as default
             star_params = get_params_from_tfop(
                 self.tfop_info, name="stellar_parameters", idx=1
             )
@@ -906,6 +931,7 @@ if __name__ == "__main__":
             # author='cdips'
         )
         fig = ql.plot_tql()
+        warnings.resetwarnings()
 
     except Exception:
         # Get current system exception
