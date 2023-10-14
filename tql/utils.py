@@ -1,6 +1,7 @@
 import json
 from urllib.request import urlopen
 import numpy as np
+import pandas
 import astropy.units as u
 
 TESS_TIME_OFFSET = 2_457_000
@@ -10,6 +11,7 @@ TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 
 __all__ = [
     "get_tfop_info",
+    "get_params_from_tfop",
     "parse_aperture_mask",
     "compute_secthresh",
     "is_point_inside_mask",
@@ -23,6 +25,21 @@ def get_tfop_info(target_name: str) -> dict:
     response = urlopen(url)
     data_json = json.loads(response.read())
     return data_json
+
+
+def get_params_from_tfop(
+    tfop_info, name="planet_parameters", key="pdate", idx=None
+):
+    params_dict = tfop_info.get(name)
+    if idx is None:
+        dates = []
+        for d in params_dict:
+            t = d.get(key)
+            dates.append(t)
+        df = pd.DataFrame({"date": dates})
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        idx = df["date"].idxmax()
+    return params_dict[idx]
 
 
 def get_tic_id(target_name: str) -> int:

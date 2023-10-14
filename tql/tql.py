@@ -19,7 +19,12 @@ import lightkurve as lk
 from aesthetic.plot import set_style
 from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
-from tql.utils import get_tfop_info, TESS_TIME_OFFSET, TESS_pix_scale
+from tql.utils import (
+    get_tfop_info,
+    get_params_from_tfop,
+    TESS_TIME_OFFSET,
+    TESS_pix_scale,
+)
 from tql.gls import Gls
 from tql.plot import (
     get_dss_data,
@@ -204,27 +209,31 @@ class TessQuickLook:
         for name in self.star_names:
             r = Simbad.query_object(name)
             if r is not None:
-                r = r[0] if len(r)>1 else r
+                r = r[0] if len(r) > 1 else r
                 break
             print(f"Simbad cannot resolve {name}.")
         try:
             category = r.to_pandas().squeeze()["OTYPE"]
-            if len(category)>=4:
+            if len(category) >= 4:
                 return category
             df = pd.read_csv(simbad_obj_list_file)
             dd = df.query("Id==@category")
-            if len(dd)>0:
+            if len(dd) > 0:
                 desc = dd["Description"].squeeze()
                 oid = dd["Id"].squeeze()
                 if dd["Description"].str.contains("(?i)binary").any():
                     print("***" * 5)
-                    print(f"Simbad classifies {self.target_name} as {oid}={desc}!")
+                    print(
+                        f"Simbad classifies {self.target_name} as {oid}={desc}!"
+                    )
                     print("***" * 5)
                 else:
                     print(f"Simbad classifies {name} as {oid}={desc}!")
                 return desc
         except Exception as e:
-            print(f"Simbad cannot resolve {self.target_coord.to_string('decimal')}.\n{e}")
+            print(
+                f"Simbad cannot resolve {self.target_coord.to_string('decimal')}.\n{e}"
+            )
             return None
 
     def get_lc(self, **kwargs: dict) -> lk.TessLightCurve:
@@ -378,14 +387,16 @@ class TessQuickLook:
             tpf = tpf[~zero_mask]
         return tpf
 
-    def get_toi_ephem(self, idx=None, params=["epoch", "per", "dur"]) -> list:
+    def get_toi_ephem(self, params=["epoch", "per", "dur"]) -> list:
         print(f"Querying ephemeris for {self.target_name}:")
-        params_dict = self.tfop_info.get("planet_parameters")
-        if idx is None:
-            idx = np.argmax(
-                [len(params_dict[x]) for x in range(len(params_dict))]
+        try:
+            planet_params = get_params_from_tfop(
+                self.tfop_info, "planet_parameters", key="pdate"
             )
-        planet_params = params_dict[idx]
+        except:
+            planet_params = get_params_from_tfop(
+                self.tfop_info, "planet_parameters", idx=1
+            )
         vals = []
         for p in params:
             val = planet_params.get(p)
@@ -492,7 +503,14 @@ class TessQuickLook:
         return tmask
 
     def make_summary_info(self):
-        star_params = self.tfop_info["stellar_parameters"][1]
+        try:
+            star_params = get_params_from_tfop(
+                self.tfop_info, name="stellar_parameters", key="sdate"
+            )
+        except:
+            star_params = get_params_from_tfop(
+                self.tfop_info, name="stellar_parameters", idx=1
+            )
         params = {}
         param_names = ["srad", "mass", "teff", "logg", "dist"]
         for name in param_names:
