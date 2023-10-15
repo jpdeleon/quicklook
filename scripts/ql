@@ -128,7 +128,7 @@ parser.add_argument(
     type=str,
     help="periodogran method (default=gls)",
     default="gls",
-    choices=["gls", "lombscargle", "bls"],
+    choices=["gls", "ls", "bls"],
 )
 parser.add_argument(
     "-wl",

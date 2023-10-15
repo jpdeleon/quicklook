@@ -150,7 +150,7 @@ def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
     pg = lc.to_periodogram(
         method=method,
         # minimum_period=0.5,
-        # maximum_period=Prot_max
+        maximum_period=Prot_max
         # minimum_frequency = 2.0,
         # maximum_frequency = 1/Prot_max
     )
