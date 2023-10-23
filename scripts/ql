@@ -60,6 +60,7 @@ parser.add_argument(
     choices=[
         "spoc",
         "tess-spoc",
+        "tasoc",
         # "custom",
         "cdips",
         "pathos",

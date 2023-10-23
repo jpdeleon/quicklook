@@ -609,7 +609,8 @@ class TessQuickLook:
         msg += "-" * 30 + "\n"
         msg += f"Gaia DR2 ID={self.gaiaid}"
         # msg += f"TIC ID={self.ticid}" + " " * 5
-        msg += f", Tmag={meta['TESSMAG']:.2f}\n"
+        mags = self.tfop_info["magnitudes"][0]
+        msg += f", {mags['band']}mag={mags['value']}\n"
         msg += (
             f"Distance={params['dist']:.1f}"
             + r"$\pm$"
@@ -787,14 +788,14 @@ class TessQuickLook:
         ax = axes.flatten()[5]
         if self.pipeline in [
             "cdips",
-            "pathos",
-            "tglc",
-            "tasoc",
+            # "pathos",
+            # "tglc",
+            # "tasoc",
             "gsfc-eleanor-lite",
         ]:
             errmsg = "Pipeline to be added soon."
             raise NotImplementedError(errmsg)
-        elif self.pipeline == "qlp":
+        elif self.pipeline in ["qlp", "cdips", "tasoc", "pathos", "tglc"]:
             self.tpf = self.get_tpf_tesscut()
             self.sap_mask = "square"
         else:
