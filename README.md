@@ -15,7 +15,7 @@ $ conda activate my_env
 (my_env) $ pip install -e .
 ```
 
-## Run
+## Script
 ```bash
 (my_env) $ ql
 usage: ql [-h] [-name NAME] [-sec SECTOR] [-lc {pdcsap,sap}]
@@ -72,5 +72,57 @@ options:
                         mask ephemeris given period and t0
 ```
 
-## Tools
-[pre-commit](https://pre-commit.com/)
+## Examples
+
+1. Show quick look plot of TOI 241.01 with archival image
+
+```shell
+(ql) $ ql -name TOI-241 -img
+```
+
+The generated figure shows 9 panels (see plot below):
+
+* top row
+  * left: background-subtracted, PLD-corrected lightcurve and trend
+  * middle: lomb-scargle periodogram
+  * right: phase-folded at peak stellar rotation period (if any)
+* middle row
+  * left: flattened lightcurve and transit (determined from TLS on the right)
+  * middle: TLS periodogram
+  * right: TESS aperture and annotated gaia sources on archival survey image
+* bottom row
+  * left: phase-folded lightcurve at orbital period of odd and even transits
+  * middle: phase-folded lightcurve zoomed at phase 0.5 with transit depth reference
+  * right: summary info
+
+```shell
+(my_env) $ ql -name TIC52368076 -v -s (uses pdcsap by default)
+(my_env) $ ql -name TOI-125.01 -v  -s -p sap
+(my_env) $ ql -name TOI-125.01 -v  -s -p qlp
+(my_env) $ ql -name TOI-125.01 -v -s -sec 2 (specify sector)
+```
+
+## Advanced usage
+
+If you would like to run tql on a list of TIC IDs (saved as new_tics.txt), then we have to make a batch script named run_tql_new_tics.batch. Its output files containing the plots (*.png) and tls_results (*.h5) will be saved in new_tics directory:
+
+```shell
+$ cat new_tics.txt | while read tic; do echo tql -tic $tic -pld -s -o ../new_tics; done > run_tql_new_tics.batch
+```
+
+To test the Nth line of the batch script,
+
+```shell
+$ cat run_tql_new_tics.batch | sed -n Np | sh
+```
+
+To run all the lines in parallel using N cores (use -j<48 cores so that muscat-ut will not be very slow!),
+
+```shell
+$ cat run_tql_new_tics.batch | parallel -j N
+```
+
+After the batch script is done, we can rank TLS output in terms of SDE using rank_tls script:
+
+```shell
+(my_env) $ read_tls indir

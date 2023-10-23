@@ -95,7 +95,7 @@ class TessQuickLook:
         self.target_coord = SkyCoord(ra=ra, dec=dec, unit="degree")
 
         if target_name.lower()[:3] == "toi":
-            toiid = int(target_name.split("-")[-1])
+            toiid = int(float(target_name.split("-")[-1]))
         else:
             idx = [i[:3].lower() == "toi" for i in self.star_names]
             if sum(idx) > 0:
