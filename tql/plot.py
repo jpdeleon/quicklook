@@ -193,6 +193,9 @@ def plot_gls_periodogram(
     if ax is None:
         _, ax = pl.subplots()
     x = 1 / gls.freq
+    # idx = np.argsort(x)
+    # x = x[idx]
+    # y = gls.power[idx]
     y = gls.power
     power_levels = [[gls.powerLevel(i)] * len(x) for i in FAP_levels]
     best_period = gls.best["P"]
@@ -687,7 +690,7 @@ def plot_tls(
     if ax is None:
         _, ax = pl.subplots()
 
-    label = f"peak={tls_results.period:.3f}"
+    label = f"best={tls_results.period:.3f}"
     ax.axvline(tls_results.period, alpha=0.4, lw=3, label=label)
     ax.set_xlim(np.min(tls_results.periods), np.max(tls_results.periods))
 

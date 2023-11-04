@@ -107,7 +107,7 @@ class TessQuickLook:
         if self.ticid is not None:
             self.query_name = f"TIC{self.ticid}"
         else:
-            self.query_name = self.target_name.replace(" ", "")
+            self.query_name = self.target_name.replace("-", " ")
         self.simbad_obj_type = self.get_simbad_obj_type()
         self.flux_type = flux_type
         self.exptime = exptime
@@ -129,7 +129,12 @@ class TessQuickLook:
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
         self.ephem_mask = ephem_mask
-        _ = self.get_toi_ephem()
+        self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
+            self.get_toi_ephem()
+            if len(self.tfop_info.get("planet_parameters")) != 0
+            else (None, None, None, None)
+        )
+
         if window_length is None:
             self.window_length = (
                 self.tfop_dur[0] * 3
@@ -432,23 +437,23 @@ class TessQuickLook:
             vals.append((val, err))
         print("")
         if len(vals) > 0:
-            self.tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
-            self.tfop_period = np.array(vals[1])
-            self.tfop_dur = np.array(vals[2]) / 24
+            tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
+            tfop_period = np.array(vals[1])
+            tfop_dur = np.array(vals[2]) / 24
         else:
-            self.tfop_epoch = None
-            self.tfop_period = None
-            self.tfop_dur = None
+            tfop_epoch = None
+            tfop_period = None
+            tfop_dur = None
 
         d = planet_params.get("dep_p")
         de = planet_params.get("dep_p_e")
         d = float(d) if d and (d != "") else np.nan
         de = float(de) if de and (de != "") else np.nan
         if not math.isnan(d) or not math.isnan(de):
-            self.tfop_depth = np.array((d, de)) / 1e3
+            tfop_depth = np.array((d, de)) / 1e3
         else:
-            self.tfop_depth = None
-        return vals
+            tfop_depth = None
+        return (tfop_epoch, tfop_period, tfop_dur, tfop_depth)
 
     def run_tls(self):
         # CDIPS light curve has no flux err
@@ -515,7 +520,7 @@ class TessQuickLook:
         return flat_lc, trend_lc
 
     def get_transit_mask(self):
-        if np.all([self.tfop_epoch[0], self.tfop_period[0], self.tfop_dur[0]]):
+        if np.all([self.tfop_epoch, self.tfop_period, self.tfop_dur]):
             tmask = self.raw_lc.create_transit_mask(
                 transit_time=self.tfop_epoch[0],
                 period=self.tfop_period[0],
@@ -607,18 +612,6 @@ class TessQuickLook:
         msg += "\n" * 2
         msg += "Stellar Properties\n"
         msg += "-" * 30 + "\n"
-        msg += f"Gaia DR2 ID={self.gaiaid}"
-        # msg += f"TIC ID={self.ticid}" + " " * 5
-        mags = self.tfop_info["magnitudes"][0]
-        msg += f", {mags['band']}mag={mags['value']}\n"
-        msg += (
-            f"Distance={params['dist']:.1f}"
-            + r"$\pm$"
-            + f"{params['dist_e']:.1f} pc\n"
-        )
-        # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
-        # D = gp.astrometric_excess_noise_sig
-        # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
         msg += (
             f"Rstar={params['srad']:.2f}"
             + r"$\pm$"
@@ -648,6 +641,20 @@ class TessQuickLook:
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
         msg += f"Rotation speed={per/t:.2f} km/s\n"
+        msg += f"Gaia DR2 ID={self.gaiaid}\n"
+        # msg += f"TIC ID={self.ticid}" + " " * 5
+        coords = self.target_coord.to_string("decimal").split()
+        msg += f"RA,Dec={float(coords[0]), float(coords[1])}\n"
+        msg += (
+            f"Distance={params['dist']:.1f}"
+            + r"$\pm$"
+            + f"{params['dist_e']:.1f} pc"
+        )
+        mags = self.tfop_info["magnitudes"][0]
+        msg += f", {mags['band']}mag={float(mags['value']):.1f}\n"
+        # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
+        # D = gp.astrometric_excess_noise_sig
+        # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
         if self.simbad_obj_type is not None:
             msg += f"Simbad Object: {self.simbad_obj_type}"
         # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
@@ -877,7 +884,12 @@ class TessQuickLook:
             title = f"TOI {self.toiid} | "
         title += f"TIC {self.ticid} "
         title += f"| sector {self.sector} "
-        title += f"| {self.pipeline.upper()} pipeline"
+        lctype = (
+            self.flux_type
+            if self.pipeline == "spoc"
+            else self.pipeline.upper()
+        )
+        title += f"| {lctype} lightcurve"
         # if toi_params["Comments"] or toi_params["Comments"] != "nan":
         #     comment = f"Comment: {toi_params['Comments']}"
         #     msg += "\n".join(textwrap.wrap(comment, 60))
