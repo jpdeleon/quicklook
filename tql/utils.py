@@ -23,8 +23,12 @@ def get_tfop_info(target_name: str) -> dict:
     base_url = "https://exofop.ipac.caltech.edu/tess"
     url = f"{base_url}/target.php?id={target_name.replace(' ','')}&json"
     response = urlopen(url)
-    data_json = json.loads(response.read())
-    return data_json
+    assert response.code == 200, "Failed to get data from ExoFOP-TESS"
+    try:
+        data_json = json.loads(response.read())
+        return data_json
+    except Exception:
+        raise ValueError(f"No TIC data found for {target_name}")
 
 
 def get_params_from_tfop(tfop_info, name="planet_parameters", idx=None):

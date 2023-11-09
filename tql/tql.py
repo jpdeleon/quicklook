@@ -579,7 +579,7 @@ class TessQuickLook:
             msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f} "
             msg += f"BJD-{TESS_TIME_OFFSET} (TFOP)\n"
         else:
-            msg += "BJD-{TESS_TIME_OFFSET} (TLS)\n"
+            msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
