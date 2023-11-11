@@ -14,5 +14,5 @@ setup(
     url="https://github.com/jpdeleon/quicklook",
     packages=find_packages(),
     include_package_data=True,
-    scripts=["scripts/ql"],
+    scripts=["scripts/ql", "scripts/read_tls"],
 )
