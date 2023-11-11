@@ -21,20 +21,20 @@ for file in tqdm(files):
     try:
         data = fk.load(file)
         d = {
-            "TOI": data["toiid"],
-            "TIC": data["ticid"],
-            "power_gls": data["power_gls"][0],
-            "SDE_tls": data["SDE"],
-            "Porb_tls": data["period"],
-            "Prot_gls": data["Prot_gls"][0],
-            "Porb_tfop": data["period_tfop"][0],
-            "depth": (1 - data["depth"]) * 1e3,
-            "depth_tfop": data["depth_tfop"][0],
+            "TOI": data.get("toiid"),
+            "TIC": data.get("ticid"),
+            "power_gls": data.get("power_gls")[0],
+            "SDE_tls": data.get("SDE"),
+            "Porb_tls": data.get("period"),
+            "Prot_gls": data.get("Prot_gls")[0],
+            # "Porb_tfop": data.get("period_tfop")[0],
+            "depth": (1 - data.get("depth")) * 1e3,
+            # "depth_tfop": data.get("depth_tfop")[0],
         }
         s = pd.Series(d)
         ss.append(s)
     except Exception as e:
-        errors.append(data["toiid"])
+        errors.append(data.get("ticid"))
 
 # sort by sde
 df = (
