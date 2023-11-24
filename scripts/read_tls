@@ -23,6 +23,7 @@ for file in tqdm(files):
         d = {
             "TOI": data.get("toiid"),
             "TIC": data.get("ticid"),
+            "gaiaid": data.get("gaiaid"),
             "power_gls": data.get("power_gls")[0],
             "SDE_tls": data.get("SDE"),
             "Porb_tls": data.get("period"),
@@ -30,6 +31,8 @@ for file in tqdm(files):
             # "Porb_tfop": data.get("period_tfop")[0],
             "depth": (1 - data.get("depth")) * 1e3,
             # "depth_tfop": data.get("depth_tfop")[0],
+            "simbad_object": data.get("simbad_obj"),
+            "filename": file,
         }
         s = pd.Series(d)
         ss.append(s)
