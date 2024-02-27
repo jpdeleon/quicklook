@@ -1,6 +1,8 @@
 # QuickLook
-Quicklook is a Python program that runs a simple pipeline to search for a transit signal in TESS light curve. This program can be run in a jupyter notebook (see below) or in the terminal using the `tql` script.
+`quicklook` is a Python program that runs a simple pipeline to search for a transit signal in TESS light curve. This program can be run in a jupyter notebook (see below) or from the terminal using the `tql` script.
 
+## Use case
+Given target name, run periodogram on TESS lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet brown, dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Try it on Google colab
@@ -10,18 +12,15 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 
 ![img](tests/TOI1150_s55_pdcsap_sc.png)
 
-## Use case
-* Given target name, run periodogram on TESS lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet brown, dwarf, or star
-
 ## Installation
-* Install editable version within a conda environment
+* Create a conda environment called, say my_env, and install there an editable version of `quicklook`
 ```bash
 
-$ conda create -n tql python=3.10
-$ conda activate tql
-(tql) python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
-(tql) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=tfop-code
-(tql) $ python -m pip install jupyterlab
+$ conda create -n my_env python=3.10
+$ conda activate my_env
+(my_env) python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
+(my_env) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=tql
+(my_env) $ python -m pip install jupyterlab
 ```
 
 ## Script
@@ -91,19 +90,22 @@ options:
 
 The generated figure shows 9 panels (see plot below):
 
+The figure above shows 9 panels. Let's break them down.
+The figure above shows 9 panels. Let's break them down.
 * top row
-  * left: background-subtracted, PLD-corrected lightcurve and trend
-  * middle: lomb-scargle periodogram
-  * right: phase-folded at peak stellar rotation period (if any)
+  - left (panel 1): raw lightcurve (blue marker) and trend (red line)
+  - middle (panel 2): [Lomb-Scargle periodogram](https://docs.astropy.org/en/stable/timeseries/lombscargle.html) used to estimate the star's rotation period; this is useful to find active and variable stars
+  - right (panel 3): raw lightcurve phase-folded at the computed peak of Lomb-Scargle periodogram (corresponding to the stellar rotation period) from panel 1;
 * middle row
-  * left: flattened lightcurve and transit (determined from TLS on the right)
-  * middle: TLS periodogram
-  * right: TESS aperture and annotated gaia sources on archival survey image
+  - left (panel 4): flattened lightcurve and detected transits (determined from the TLS periodogram on panel 5)
+  - middle (panel 5): periodogram using the [TLS](https://arxiv.org/abs/1901.02015) algorithm
+  - right (panel 6): TESS aperture (blue polygon) and annotated Gaia sources (orange and red markers) overlaid on archival [DSS](https://archive.stsci.edu/cgi-bin/dss_form) image centered on the target; this is useful to see if there are potential sources of the signal other than the target
 * bottom row
-  * left: phase-folded lightcurve at orbital period of odd and even transits
-  * middle: phase-folded lightcurve zoomed at phase 0.5 with transit depth reference
-  * right: summary info
+  - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even transits (blue markers) and best-fit transit model (black line) are also shown
+  - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (dashed line) is shown for reference
+  - right (panel 8): summary info about the star and (planet) candidate
 
+Try changing the parameters:
 ```shell
 (my_env) $ ql -name TIC52368076 -v -s (uses pdcsap by default)
 (my_env) $ ql -name TOI-125.01 -v  -s -p sap
@@ -125,7 +127,7 @@ To test the Nth line of the batch script,
 $ cat run_tql_new_tics.batch | sed -n Np | sh
 ```
 
-To run all the lines in parallel using N cores (use -j<48 cores so that muscat-ut will not be very slow!),
+To run all the lines in parallel using N cores,
 
 ```shell
 $ cat run_tql_new_tics.batch | parallel -j N
