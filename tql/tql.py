@@ -620,9 +620,9 @@ class TessQuickLook:
             + " " * 5
         )
         msg += (
-            f"Teff={int(params['teff'])}"
+            f"Teff={int(params.get('teff', 9999))}"
             + r"$\pm$"
-            + f"{int(params['teff_e'])} K"
+            + f"{int(params.get('teff_e', 9999))} K"
             + "\n"
         )
         msg += (

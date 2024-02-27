@@ -1,5 +1,10 @@
 # QuickLook
-quicklook light curve generator for TESS targets
+Quicklook is a Python program that runs a simple pipeline to search for a transit signal in TESS light curve. This program can be run in a jupyter notebook (see below) or in the terminal using the `tql` script.
+
+## Try it on Google colab
+
+<a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/master/notebooks/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+
 
 ![img](tests/TOI1150_s55_pdcsap_sc.png)
 
@@ -10,9 +15,11 @@ quicklook light curve generator for TESS targets
 * Install editable version within a conda environment
 ```bash
 
-$ conda activate my_env
-(my_env) $ pip install -r requirements.txt
-(my_env) $ pip install -e .
+$ conda create -n tql python=3.10
+$ conda activate tql
+(tql) python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
+(tql) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=tfop-code
+(tql) $ python -m pip install jupyterlab
 ```
 
 ## Script
