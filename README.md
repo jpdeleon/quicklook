@@ -3,7 +3,7 @@ Quicklook is a Python program that runs a simple pipeline to search for a transi
 
 ## Try it on Google colab
 
-<a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/master/notebooks/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+<a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/example.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
 
 ![img](tests/TOI1150_s55_pdcsap_sc.png)
