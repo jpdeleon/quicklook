@@ -1,6 +1,8 @@
 # QuickLook
 Quicklook is a Python program that runs a simple pipeline to search for a transit signal in TESS light curve. This program can be run in a jupyter notebook (see below) or in the terminal using the `tql` script.
 
+Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
+
 ## Try it on Google colab
 
 <a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/example.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
