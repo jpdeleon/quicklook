@@ -47,7 +47,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 __all__ = ["TessQuickLook"]
 
 simbad_obj_list_file = Path(
-    resource_filename("tql", "../data/simbad_obj_types.csv")
+    resource_filename("quicklook", "../data/simbad_obj_types.csv")
 ).resolve()
 
 
