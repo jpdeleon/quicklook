@@ -1,8 +1,8 @@
 # QuickLook
-`quicklook` is a Python program that runs a simple pipeline to search for a transit signal in TESS light curve. This program can be run in a jupyter notebook (see below) or from the terminal using the `tql` script.
+`quicklook` is a Python program that runs a simple pipeline to search for a transit signal in TESS and Kepler light curves. This program can be run in a jupyter notebook (see below) or from the terminal using the `ql` script.
 
 ## Use case
-Given target name, run periodogram on TESS lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet brown, dwarf, or star.
+Given target name, run periodogram on a TESS of Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet brown, dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Try it on Google colab
@@ -19,7 +19,7 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 $ conda create -n my_env python=3.10
 $ conda activate my_env
 (my_env) python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
-(my_env) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=tql
+(my_env) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
 (my_env) $ python -m pip install jupyterlab
 ```
 
@@ -88,9 +88,6 @@ options:
 (ql) $ ql -name TOI-241 -img
 ```
 
-The generated figure shows 9 panels (see plot below):
-
-The figure above shows 9 panels. Let's break them down.
 The figure above shows 9 panels. Let's break them down.
 * top row
   - left (panel 1): raw lightcurve (blue marker) and trend (red line)
@@ -103,34 +100,33 @@ The figure above shows 9 panels. Let's break them down.
 * bottom row
   - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even transits (blue markers) and best-fit transit model (black line) are also shown
   - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (dashed line) is shown for reference
-  - right (panel 8): summary info about the star and (planet) candidate
+  - right (panel 9): summary info about the star and (planet) candidate
 
 Try changing the parameters:
 ```shell
 (my_env) $ ql -name TIC52368076 -v -s (uses pdcsap by default)
-(my_env) $ ql -name TOI-125.01 -v  -s -p sap
-(my_env) $ ql -name TOI-125.01 -v  -s -p qlp
-(my_env) $ ql -name TOI-125.01 -v -s -sec 2 (specify sector)
+(my_env) $ ql -name TOI-125.01 -v  -s -p qlp #specific pipeline
+(my_env) $ ql -name TOI-125.01 -v -s -sec 2 #specific TESS sector
 ```
 
 ## Advanced usage
 
-If you would like to run tql on a list of TIC IDs (saved as new_tics.txt), then we have to make a batch script named run_tql_new_tics.batch. Its output files containing the plots (*.png) and tls_results (*.h5) will be saved in new_tics directory:
+If you would like to run `ql` on a list of TIC IDs (saved as new_tics.txt), then we have to make a batch script named run_ql_new_tics.batch. Its output files containing the plots (*.png) and tls_results (*.h5) will be saved in new_tics directory:
 
 ```shell
-$ cat new_tics.txt | while read tic; do echo tql -tic $tic -pld -s -o ../new_tics; done > run_tql_new_tics.batch
+$ cat new_tics.txt | while read tic; do echo ql -tic $tic -pld -s -o ../new_tics; done > run_ql_new_tics.batch
 ```
 
 To test the Nth line of the batch script,
 
 ```shell
-$ cat run_tql_new_tics.batch | sed -n Np | sh
+$ cat run_ql_new_tics.batch | sed -n Np | sh
 ```
 
 To run all the lines in parallel using N cores,
 
 ```shell
-$ cat run_tql_new_tics.batch | parallel -j N
+$ cat run_ql_new_tics.batch | parallel -j N
 ```
 
 After the batch script is done, we can rank TLS output in terms of SDE using rank_tls script:

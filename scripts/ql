@@ -3,8 +3,8 @@ import sys
 import argparse
 import logging
 import matplotlib.pyplot as pl
-from tql.tql import TessQuickLook
-from tql.plot import dss_description
+from quicklook.tql import TessQuickLook
+from quicklook.plot import dss_description
 
 log = logging.getLogger(__name__)
 
