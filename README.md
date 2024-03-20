@@ -2,7 +2,7 @@
 `quicklook` is a Python program that runs a simple pipeline to search for a transit signal in TESS and Kepler light curves. This program can be run in a jupyter notebook (see below) or from the terminal using the `ql` script.
 
 ## Use case
-Given target name, run periodogram on a TESS of Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet brown, dwarf, or star.
+Given target name, run periodogram on a TESS or Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Try it on Google colab
@@ -13,13 +13,16 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 ![img](tests/TOI1150_s55_pdcsap_sc.png)
 
 ## Installation
-* Create a conda environment called, say my_env, and install there an editable version of `quicklook`
+* Create a conda environment called, say `my_env`, and install there an editable version of `quicklook`
 ```bash
-
 $ conda create -n my_env python=3.10
 $ conda activate my_env
-(my_env) python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
-(my_env) python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
+(my_env) $ ppython -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
+(my_env) $ ppython -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
+```
+
+If you want to run the notebook, you need to also install jupyter
+```
 (my_env) $ python -m pip install jupyterlab
 ```
 
@@ -85,7 +88,7 @@ options:
 1. Show quick look plot of TOI 241.01 with archival image
 
 ```shell
-(ql) $ ql -name TOI-241 -img
+(my_env) $ ql -name TOI-241 -img
 ```
 
 The figure above shows 9 panels. Let's break them down.
@@ -100,11 +103,11 @@ The figure above shows 9 panels. Let's break them down.
 * bottom row
   - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even transits (blue markers) and best-fit transit model (black line) are also shown
   - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (dashed line) is shown for reference
-  - right (panel 9): summary info about the star and (planet) candidate
+  - right (panel 9): summary info about the star and potential companion (e.g. planet candidate)
 
 Try changing the parameters:
 ```shell
-(my_env) $ ql -name TIC52368076 -v -s (uses pdcsap by default)
+(my_env) $ ql -name TIC52368076 -v -s
 (my_env) $ ql -name TOI-125.01 -v  -s -p qlp #specific pipeline
 (my_env) $ ql -name TOI-125.01 -v -s -sec 2 #specific TESS sector
 ```
@@ -114,22 +117,23 @@ Try changing the parameters:
 If you would like to run `ql` on a list of TIC IDs (saved as new_tics.txt), then we have to make a batch script named run_ql_new_tics.batch. Its output files containing the plots (*.png) and tls_results (*.h5) will be saved in new_tics directory:
 
 ```shell
-$ cat new_tics.txt | while read tic; do echo ql -tic $tic -pld -s -o ../new_tics; done > run_ql_new_tics.batch
+(my_env) $ cat new_tics.txt | while read tic; do echo ql -tic $tic -pld -s -o ../new_tics; done > run_ql_new_tics.batch
 ```
 
 To test the Nth line of the batch script,
 
 ```shell
-$ cat run_ql_new_tics.batch | sed -n Np | sh
+(my_env) $ cat run_ql_new_tics.batch | sed -n Np | sh
 ```
 
 To run all the lines in parallel using N cores,
 
 ```shell
-$ cat run_ql_new_tics.batch | parallel -j N
+(my_env) $ cat run_ql_new_tics.batch | parallel -j N
 ```
 
 After the batch script is done, we can rank TLS output in terms of SDE using rank_tls script:
 
 ```shell
 (my_env) $ read_tls indir
+```
