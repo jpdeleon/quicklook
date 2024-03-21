@@ -1,10 +1,10 @@
-pre-commit
-matplotlib
+pre-commit==3.4.0
+matplotlib==3.8.0
 lightkurve==2.4.1
 numpy==1.23
 transitleastsquares==1.0.31
 wotan==1.10
-aesthetic
+aesthetic==0.6
 flammkuchen==1.0.3
 reproject==0.12.0
 astroplan==0.9
