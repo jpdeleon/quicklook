@@ -547,11 +547,19 @@ class TessQuickLook:
         param_names = ["srad", "mass", "teff", "logg", "dist"]
         for name in param_names:
             try:
-                params[name] = float(star_params.get(name))
+                params[name] = (
+                    int(star_params.get(name))
+                    if name == "teff"
+                    else float(star_params.get(name))
+                )
             except:
                 params[name] = np.nan
             try:
-                params[name + "_e"] = float(star_params.get(name + "_e"))
+                params[name + "_e"] = (
+                    int(star_params.get(name + "_e"))
+                    if name == "teff"
+                    else float(star_params.get(name + "_e"))
+                )
             except:
                 params[name + "_e"] = np.nan
         meta = self.raw_lc.meta
@@ -620,9 +628,9 @@ class TessQuickLook:
             + " " * 5
         )
         msg += (
-            f"Teff={int(params.get('teff', 9999))}"
+            f"Teff={params.get('teff')}"
             + r"$\pm$"
-            + f"{int(params.get('teff_e', 9999))} K"
+            + f"{params.get('teff_e')} K"
             + "\n"
         )
         msg += (
