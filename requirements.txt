@@ -1,5 +1,5 @@
 pre-commit==3.4.0
-#matplotlib==3.8.0
+#matplotlib==3.8.0 #does not run in python<3.11
 matplotlib
 lightkurve==2.4.1
 numpy==1.23
