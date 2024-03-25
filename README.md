@@ -17,8 +17,8 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 ```bash
 $ conda create -n my_env python=3.10
 $ conda activate my_env
-(my_env) $ ppython -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
-(my_env) $ ppython -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
+(my_env) $ python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
+(my_env) $ python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
 ```
 
 If you want to run the notebook, you need to also install jupyter
@@ -132,7 +132,7 @@ To run all the lines in parallel using N cores,
 (my_env) $ cat run_ql_new_tics.batch | parallel -j N
 ```
 
-After the batch script is done, we can rank TLS output in terms of SDE using rank_tls script:
+After the batch script is done, we can rank TLS output in terms of SDE using `read_tls` script:
 
 ```shell
 (my_env) $ read_tls indir
