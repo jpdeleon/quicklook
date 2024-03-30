@@ -556,7 +556,7 @@ class TessQuickLook:
                 params[name] = np.nan
             try:
                 params[name + "_e"] = (
-                    int(star_params.get(name + "_e"))
+                    int(float(star_params.get(name + "_e")))
                     if name == "teff"
                     else float(star_params.get(name + "_e"))
                 )
@@ -893,7 +893,7 @@ class TessQuickLook:
         title += f"TIC {self.ticid} "
         title += f"| sector {self.sector} "
         lctype = (
-            self.flux_type
+            f"{self.pipeline.upper()}/{self.flux_type}"
             if self.pipeline == "spoc"
             else self.pipeline.upper()
         )
