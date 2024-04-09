@@ -214,13 +214,20 @@ parser.add_argument(
     choices=list(dss_description.keys()),
     default="dss1",
 )
+#parser.add_argument(
+#    "-em",
+#    "--ephem_mask",
+#    help="mask ephemeris given period and t0",
+#    nargs=3,
+#    type=float,
+#    default=None,
+#)
 parser.add_argument(
     "-em",
-    "--ephem_mask",
-    help="mask ephemeris given period and t0",
-    nargs=3,
-    type=float,
-    default=None,
+    "--use_ephem_mask",
+    help="mask transits using TFOP ephemeris if available (default=False)",
+    action="store_true",
+    default=False,
 )
 # prints help if no argument supplied
 args = parser.parse_args(None if sys.argv[1:] else ["-h"])
@@ -240,7 +247,7 @@ if __name__ == "__main__":
         exptime=args.exptime,
         flux_type=args.fluxtype,
         pg_method=args.pg_method,
-        # ephem_mask=args.ephem_mask,
+        use_ephem_mask=args.use_ephem_mask,
         # sap_mask=args.aper_mask,
         # aper_radius=args.aper_radius,
         # threshold_sigma=args.threshold,

@@ -68,6 +68,7 @@ class TessQuickLook:
         sigma_clip_raw: tuple = None,
         sigma_clip_flat: tuple = None,
         #ephem_mask: list = None,
+        use_ephem_mask: bool = True,
         Porb_limits: tuple = None,
         archival_survey="dss1",
         plot: bool = True,
@@ -137,11 +138,16 @@ class TessQuickLook:
         #        if len(self.tfop_info.get("planet_parameters")) != 0
         #        else (None, None, None, None)
         #    )
-        self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
-            self.get_toi_ephem()
-            if len(self.tfop_info.get("planet_parameters")) != 0
-            else (None, None, None, None)
-        )
+        self.use_ephem_mask = use_ephem_mask
+        if self.use_ephem_mask:
+            self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
+                self.get_toi_ephem()
+                if len(self.tfop_info.get("planet_parameters")) != 0
+                else (None, None, None, None)
+            )
+        else:
+            self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (None, None, None, None)
+
 
         if window_length is None:
             self.window_length = (
@@ -723,7 +729,7 @@ class TessQuickLook:
         ax = axes.flatten()[0]
         self.raw_lc.scatter(ax=ax, label=f"raw (exp={self.exptime} s)")
         label = f"baseline trend\nmethod={self.flatten_method}"
-        label += f"(window_size={self.window_length:.2f})"
+        label += f"(window_size={self.window_length:.2f} d)"
         self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
 
         # +++++++++++++++++++++ax2 Lomb-scargle periodogram
@@ -762,6 +768,8 @@ class TessQuickLook:
         # +++++++++++++++++++++ax phase-folded at Prot + sinusoidal model
         ax = axes.flatten()[2]
         # raw
+        label=f"data folded at Prot={self.Prot_ls:.2f} d\n"
+        label+=f"(mask transit={self.use_ephem_mask})"
         _ = (
             self.raw_lc[~self.tmask]
             .fold(
@@ -773,7 +781,7 @@ class TessQuickLook:
                 ax=ax,
                 c=self.raw_lc[~self.tmask].time.value,
                 cmap=pl.get_cmap("Blues_r"),
-                label="masked and folded at Prot",
+                label=label,
                 show_colorbar=False,  # colorbar_label="Time [BTJD]"
             )
         )
@@ -784,7 +792,7 @@ class TessQuickLook:
                 normalize_phase=False,
                 wrap_phase=self.Prot_ls / 2,
             )
-            .plot(label=f"{self.pg_method} model", color="r", lw=3, ax=ax)
+            .plot(label=f"{self.pg_method.upper()} model", color="r", lw=3, ax=ax)
         )
         ax.set_xlabel("Rotation Phase [days]")
         # ax.set_xlim(-0.5, 0.5)

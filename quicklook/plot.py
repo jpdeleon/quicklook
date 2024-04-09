@@ -676,7 +676,7 @@ def plot_gaia_sources_on_survey(
         ylim=(0, my),
     )
     ax.set_title(
-        f"{survey} ({fov_rad.value:.2f}' x {fov_rad.value:.2f}')", y=0.99
+        f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')", y=0.99
     )
     return ax
 

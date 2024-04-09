@@ -67,8 +67,8 @@ options:
                         plot gaia sources on archival image instead of tpf
   --survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}
                         archival image survey name if using img option
-  -em EPHEM_MASK EPHEM_MASK EPHEM_MASK, --ephem_mask EPHEM_MASK EPHEM_MASK EPHEM_MASK
-                        mask ephemeris given period and t0
+  -em, --use_ephem_mask
+                        mask transits using TFOP ephemeris if available (default=False)
 ```
 
 ## Examples
