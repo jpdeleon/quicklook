@@ -67,7 +67,7 @@ class TessQuickLook:
         edge_cutoff: float = 0.1,
         sigma_clip_raw: tuple = None,
         sigma_clip_flat: tuple = None,
-        ephem_mask: list = None,
+        #ephem_mask: list = None,
         Porb_limits: tuple = None,
         archival_survey="dss1",
         plot: bool = True,
@@ -128,7 +128,15 @@ class TessQuickLook:
         )
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
-        self.ephem_mask = ephem_mask
+        #if ephem_mask is not None:
+        #    print(f"Using ephemeris mask:\nP={ephem_mask[0]}d\nt0={ephem_mask[1]}BJD\nt14={ephem_mask[2]}d")
+        #    self.tfop_epoch, self.tfop_period, self.tfop_dur = ephem_mask
+        #else:
+        #    self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
+        #        self.get_toi_ephem()
+        #        if len(self.tfop_info.get("planet_parameters")) != 0
+        #        else (None, None, None, None)
+        #    )
         self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
             self.get_toi_ephem()
             if len(self.tfop_info.get("planet_parameters")) != 0
