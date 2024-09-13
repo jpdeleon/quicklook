@@ -66,8 +66,8 @@ class TessQuickLook:
         edge_cutoff: float = 0.1,
         sigma_clip_raw: tuple = None,
         sigma_clip_flat: tuple = None,
-        #ephem_mask: list = None,
-        use_ephem_mask: bool = True,
+        custom_ephem: list = None,
+        mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
         plot: bool = True,
@@ -128,25 +128,31 @@ class TessQuickLook:
         )
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
-        #if ephem_mask is not None:
-        #    print(f"Using ephemeris mask:\nP={ephem_mask[0]}d\nt0={ephem_mask[1]}BJD\nt14={ephem_mask[2]}d")
-        #    self.tfop_epoch, self.tfop_period, self.tfop_dur = ephem_mask
-        #else:
-        #    self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
-        #        self.get_toi_ephem()
-        #        if len(self.tfop_info.get("planet_parameters")) != 0
-        #        else (None, None, None, None)
-        #    )
-        self.use_ephem_mask = use_ephem_mask
-        if self.use_ephem_mask:
+        if custom_ephem:
+            self.ephem_source = "custom"
+            errmsg = "Custom ephem must be a tuple: (P,Perr,t0,t0err,t14,t14err)"
+            assert len(custom_ephem) == 6, errmsg
+            print(f"Using ephemeris mask:\nP={custom_ephem[0]}d\nt0={custom_ephem[2]}BJD\nt14={custom_ephem[4]}d")
+            #TODO: using tfop in variable name is misleading
+            if custom_ephem[0]>2_457_000:
+                print("Custom transit epoch given in JD. Converting to BTJD = JD-2,457,000.")
+                custom_ephem[0]-=2_457_000
+            self.tfop_epoch = (custom_ephem[0], custom_ephem[1])
+            self.tfop_period = (custom_ephem[2], custom_ephem[3]) 
+            if custom_ephem[4]>1:
+                print("Custom transit duration given in hours. Converting to days.")
+                custom_ephem[4]/=24
+                custom_ephem[5]/=24
+            self.tfop_dur = (custom_ephem[4], custom_ephem[5])
+            self.tfop_depth = None
+        else:
+            # use tfop ephem if available
             self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
                 self.get_toi_ephem()
                 if len(self.tfop_info.get("planet_parameters")) != 0
                 else (None, None, None, None)
             )
-        else:
-            self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (None, None, None, None)
-
+            self.ephem_source = "tfop" if self.tfop_epoch[0] else None
 
         if window_length is None:
             self.window_length = (
@@ -157,9 +163,17 @@ class TessQuickLook:
             )
         else:
             self.window_length = window_length
+
+        self.tmask = self.get_transit_mask()
+        err_msg = "No masked transits"
+        assert self.tmask.sum() > 0, err_msg
+        if mask_ephem:
+            print(f"Masking transits in raw lightcurve using {self.ephem_source} ephem.")
+            self.raw_lc = self.raw_lc[~self.tmask]
+            #update tmask
+            self.tmask = self.get_transit_mask()
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
-        self.tmask = self.get_transit_mask()
         self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
         self.Porb_max = (
             (max(self.flat_lc.time.value) - min(self.flat_lc.time.value)) / 2
@@ -539,8 +553,6 @@ class TessQuickLook:
                 period=self.tfop_period[0],
                 duration=self.tfop_dur[0],
             )
-            err_msg = "No masked transits"
-            assert tmask.sum() > 0, err_msg
         else:
             tmask = np.zeros_like(self.raw_lc.time.value, dtype=bool)
         return tmask
@@ -768,7 +780,8 @@ class TessQuickLook:
         ax = axes.flatten()[2]
         # raw
         label=f"data folded at Prot={self.Prot_ls:.2f} d\n"
-        label+=f"(mask transit={self.use_ephem_mask})"
+        if self.ephem_source:
+            label+=f"(masked transits using {self.ephem_source} ephem)"
         _ = (
             self.raw_lc[~self.tmask]
             .fold(

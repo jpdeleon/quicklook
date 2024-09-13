@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setup(
     name="quicklook",
-    version="1.0.2",
+    version="1.1",
     description="Quicklook lightcurve plot generator",
     long_description=long_description,
     author="Jerome de Leon",

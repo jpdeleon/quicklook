@@ -22,9 +22,8 @@ parser = argparse.ArgumentParser(
 #     nargs=2,
 #     default=None,
 # )
-parser.add_argument("-name", type=str, help="target name", default=None)
+parser.add_argument("--name", type=str, help="target name", default=None)
 parser.add_argument(
-    "-sec",
     "--sector",
     type=int,
     help="TESS sector (default=-1 (last available sector))",
@@ -46,7 +45,6 @@ parser.add_argument(
 #     default=3,
 # )
 parser.add_argument(
-    "-lc",
     "--fluxtype",
     type=str,
     help="type of lightcurve",
@@ -57,7 +55,6 @@ parser.add_argument(
     default="pdcsap",
 )
 parser.add_argument(
-    "-p",
     "--pipeline",
     type=str,
     help="lightcurve produced from which pipeline (default=SPOC)",
@@ -75,7 +72,6 @@ parser.add_argument(
     default="SPOC",
 )
 parser.add_argument(
-    "-e",
     "--exptime",
     type=int,
     help="exposure time (default is whatever is found in last sector)",
@@ -121,14 +117,12 @@ parser.add_argument(
 #     default=(12, 12),
 # )
 parser.add_argument(
-    "-fm",
     "--flatten_method",
     type=str,
     help="wotan flatten method (default=biweight)",
     default="biweight",
 )
 parser.add_argument(
-    "-pm",
     "--pg_method",
     type=str,
     help="periodogran method (default=gls)",
@@ -143,7 +137,6 @@ parser.add_argument(
     default=None,
 )
 parser.add_argument(
-    "-ec",
     "--edge_cutoff",
     type=int,
     help="cut each edges (default=0.1 days)",
@@ -171,7 +164,6 @@ parser.add_argument(
 #     default=False,
 # )
 parser.add_argument(
-    "-plims",
     "--period_limits",
     help="period limits in TLS search; default=(0.5, baseline/2) d",
     nargs=2,
@@ -186,49 +178,46 @@ parser.add_argument(
 #     default=False,
 # )
 parser.add_argument(
-    "-s",
-    "--save",
+    "-save",
     action="store_true",
     help="save figure and tls",
     default=False,
 )
 parser.add_argument(
-    "-o", "--outdir", type=str, help="output directory", default="."
+    "--outdir", type=str, help="output directory", default="."
 )
 parser.add_argument(
     "-v", "--verbose", action="store_true", help="show details", default=False
 )
 parser.add_argument(
-    "--overwrite", action="store_true", help="overwrite files", default=False
+    "-overwrite", action="store_true", help="overwrite files", default=False
 )
-parser.add_argument(
-    "-img",
-    "--use_archival_image",
-    action="store_true",
-    help="plot gaia sources on archival image instead of tpf",
-    default=False,
-)
+# parser.add_argument(
+#     "-use_tpf_image",
+#     action="store_true",
+#     help="plot gaia sources on tpf image instead of archival image (default=False)",
+#     default=False,
+# )
 parser.add_argument(
     "--survey",
-    help="archival image survey name if using img option",
+    help="archival image survey name if using img option (default=dss1)",
     choices=list(dss_description.keys()),
     default="dss1",
 )
-#parser.add_argument(
-#    "-em",
-#    "--ephem_mask",
-#    help="mask ephemeris given period and t0",
-#    nargs=3,
-#    type=float,
-#    default=None,
-#)
 parser.add_argument(
-    "-em",
-    "--use_ephem_mask",
-    help="mask transits using TFOP ephemeris if available (default=False)",
+   "--custom_ephem",
+   help="custom ephemeris in days. Example: --custom_ephem P Perr Tc Tcerr Tdur Tdurerr",
+   nargs=6,
+   type=float,
+   default=None,
+)
+parser.add_argument(
+    "-mask_ephem",
+    help="mask transits of either using TFOP or custom ephemerides if available (default=False)",
     action="store_true",
     default=False,
 )
+
 # prints help if no argument supplied
 args = parser.parse_args(None if sys.argv[1:] else ["-h"])
 
@@ -247,7 +236,8 @@ if __name__ == "__main__":
         exptime=args.exptime,
         flux_type=args.fluxtype,
         pg_method=args.pg_method,
-        use_ephem_mask=args.use_ephem_mask,
+        custom_ephem=args.custom_ephem,
+        mask_ephem=args.mask_ephem,
         # sap_mask=args.aper_mask,
         # aper_radius=args.aper_radius,
         # threshold_sigma=args.threshold,
@@ -265,7 +255,6 @@ if __name__ == "__main__":
         edge_cutoff=args.edge_cutoff,
         # find_cluster=args.find_cluster,
         # nearby_gaia_radius=args.nearby_gaia_radius,
-        # use_archival_image=args.use_archival_image,
         # run_gls=args.gls,
         archival_survey=args.survey,
         savefig=args.save,

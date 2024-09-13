@@ -2,7 +2,7 @@
 `quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook (see [example](https://github.com/jpdeleon/quicklook/tree/main/notebook)) or from the terminal using the `ql` script.
 
 ## Use case
-Given target name, run periodogram on a TESS or Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
+Given target name, run [periodogram]() on a TESS or Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Try it on Google colab
@@ -27,9 +27,8 @@ If you want to run `quicklook` in a notebook, you also need to install jupyter
 ## Command line script
 ```bash
 (my_env) $ ql
-usage: ql [-h] [-name NAME] [-sec SECTOR] [-lc {pdcsap,sap}] [-p {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [-e EXPTIME] [-fm FLATTEN_METHOD] [-pm {gls,ls,bls}] [-wl WINDOW_LENGTH] [-ec EDGE_CUTOFF]
-          [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW] [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [-plims PERIOD_LIMITS PERIOD_LIMITS] [-s] [-o OUTDIR] [-v] [--overwrite] [-img]
-          [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}] [-em EPHEM_MASK EPHEM_MASK EPHEM_MASK]
+usage: ql [-h] [-name NAME] [-sec SECTOR] [-lc {pdcsap,sap}] [-p {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [-e EXPTIME] [-fm FLATTEN_METHOD] [-pm {gls,ls,bls}] [-wl WINDOW_LENGTH] [-ec EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW]
+          [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [-plims PERIOD_LIMITS PERIOD_LIMITS] [-s] [-o OUTDIR] [-v] [--overwrite] [-img] [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}] [-em]
 
 create quick look image of TESS data
 
@@ -76,7 +75,7 @@ options:
 1. Run `quicklook` on TOI 1150.01's most recent TESS lightcurve
 
 ```shell
-(my_env) $ ql -name TOI-1150 -img
+(my_env) $ ql -name TOI-1150
 ```
 ![img](tests/TOI1150_s55_pdcsap_sc.png)
 
