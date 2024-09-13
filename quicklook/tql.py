@@ -3,7 +3,7 @@ import math
 import traceback
 import textwrap
 import warnings
-from pkg_resources import resource_filename
+from importlib.resources import files
 from pathlib import Path
 from time import time as timer
 import matplotlib.pyplot as pl
@@ -46,7 +46,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-DATA_PATH = resource_filename(__name__, "../data")
+DATA_PATH = files(__name__).parent / 'data'
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 
 

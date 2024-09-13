@@ -4,19 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quicklook"
+version = "1.1"  # Replace with a dynamically obtained version if needed
+description = "Quicklook lightcurve plot generator"
 authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
-dynamic = ["version", "description"]
-readme = "README.md"
-requires-python = ">3.6"
+requires-python = ">=3.6"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GPLv3 License",
     "Operating System :: POSIX :: Linux",
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/jpdeleon/quicklook"
+Homepage = "https://github.com/jpdeleon/quicklook"
+
+[tool.setuptools]
+packages = ["quicklook"]
+include_package_data = true
+scripts = ["scripts/ql", "scripts/read_tls"]
+
+[tool.setuptools.long_description]
+file = "README.md"
+content_type = "text/markdown"
 
 [tool.black]
 line-length = 79
