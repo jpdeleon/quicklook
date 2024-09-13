@@ -9,7 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest] 
+        os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11"]
 
     steps:
@@ -26,13 +26,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
           miniconda-version: "latest"
           auto-activate-base: true
-          activate-environment: ql  # Specify the environment to activate
+
+      - name: Remove existing Conda environment if it exists
+        shell: bash -l {0}
+        run: |
+          conda env remove -n ql || echo "Environment does not exist"
 
       - name: Create Conda environment
+        shell: bash -l {0}
         run: conda env create -f environment.yml
 
       - name: Install pip dependencies
-        shell: bash -l {0}  # Use a login shell to activate conda environment properly
+        shell: bash -l {0}
         run: |
           conda activate ql
           pip install -r requirements.txt
