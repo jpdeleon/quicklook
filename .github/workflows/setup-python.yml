@@ -3,37 +3,40 @@ name: install and run test package
 on: [push]
 
 jobs:
-  setup:
-    name: Ex1 (${{ matrix.python-version }}, ${{ matrix.os }})
+  build:
+
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: [ubuntu-latest, macos-latest, windows-latest] 
         python-version: ["3.11"]
+        
     steps:
-      - uses: conda-incubator/setup-miniconda@v3
-        with:
-          auto-update-conda: true
-          python-version: ${{ matrix.python-version }}
-      - name: Conda info
-        shell: bash -el {0}
-        run: conda info
-      - name: Conda list
-        shell: pwsh
-        run: conda list
       - uses: actions/checkout@v3
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          #pip install -r requirements.txt
-          conda env create -f environment.yml
-          conda activate ql
-          pip install -e .
+
+      - name: Set up Miniconda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          auto-activate-base: true
+
+      - name: Create Conda environment
+        run: conda env create -f environment.yml
+
+      - name: Activate Conda environment
+        run: echo "conda activate ql" >> $GITHUB_ENV
+
+      - name: Install pip dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install the package in editable mode
+        run: pip install -e .
+
       - name: Test with pytest
-        run: |
-          pytest
+        run: pytest
