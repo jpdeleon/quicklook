@@ -46,9 +46,8 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-simbad_obj_list_file = Path(
-    resource_filename("quicklook", "../data/simbad_obj_types.csv")
-).resolve()
+DATA_PATH = resource_filename(__name__, "../data")
+simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 
 
 class TessQuickLook:
@@ -792,7 +791,7 @@ class TessQuickLook:
                 normalize_phase=False,
                 wrap_phase=self.Prot_ls / 2,
             )
-            .plot(label=f"{self.pg_method.upper()} model", color="r", lw=3, ax=ax)
+            .plot(label=f"{self.pg_method.upper()} model", color="r", ls='--', lw=2, ax=ax)
         )
         ax.set_xlabel("Rotation Phase [days]")
         # ax.set_xlim(-0.5, 0.5)
