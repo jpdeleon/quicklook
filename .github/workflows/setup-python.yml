@@ -24,6 +24,7 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           python-version: ${{ matrix.python-version }}
+          miniconda-version: "latest"  # Specify the Miniconda version to install
           auto-activate-base: true
 
       - name: Create Conda environment
