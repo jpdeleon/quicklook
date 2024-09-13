@@ -131,7 +131,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
             marker="o",
             markersize=8,
             lw=2,
-            label=f"secthresh={secthresh*1e3:.2f} ppt",
+            label=f"sec_eclipse_thresh={secthresh*1e3:.2f} ppt",
             zorder=2,
         )
     except Exception as e:
@@ -223,17 +223,13 @@ def plot_gls_periodogram(
 
     ax.plot(x, y, c="C0", linewidth=0.8)
     # mark best period and multiples
-    ax.axvline(x=best_period * 2, color="orange", linewidth=2, alpha=0.5)
-    ax.axvline(x=best_period / 2, color="orange", linewidth=2, alpha=0.5)
-    # mark FAP levels
-    for i in range(len(FAP_levels)):
-        ax.plot(
-            x, power_levels[i], linestyle=linestyles[i], linewidth=0.8, c="red"
-        )
-    # mark best period and multiples
-    ax.scatter(
-        best_period, max_power, c="r", s=20, label=f"best={best_period:.3}"
+    ax.axvline(
+        best_period, 0, 1, c="k", lw=2, alpha=0.5, label=f"best={best_period:.3}"
     )
+    # mark best period and multiples
+    if best_period * 2 <= max(x):
+        ax.axvline(x=best_period * 2, color="k", ls='--', linewidth=2, alpha=0.5)
+    ax.axvline(x=best_period / 2, color="k", ls='--', linewidth=2, alpha=0.5, label='best/2 alias')
     for i in range(len(peaks)):
         ax.scatter(
             peaks[i],
@@ -242,8 +238,15 @@ def plot_gls_periodogram(
             s=20,
             label=f"P$_{i+1}$={peaks[i]:.3f}",
         )
+    # mark FAP levels
+    for i in range(len(FAP_levels)):
+        label = f"FAP={max(FAP_levels)}" if i==np.argmax(FAP_levels) else None
+        ax.plot(
+            x, power_levels[i], linestyle=linestyles[i], 
+            linewidth=0.8, c="red", label=label
+        )
     ax.minorticks_on()
-    ax.set_ylabel("Gen. Lomb-Scargle Power (ZK)")
+    ax.set_ylabel("Gen. Lomb-Scargle Power")
     ax.set_xlabel("Rotation period [days]")
     ax.legend(title="Prot peaks [d]")
     return ax
