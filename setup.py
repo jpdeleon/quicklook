@@ -1,21 +1,22 @@
 from setuptools import setup, find_packages
 
+with open("README.md", "r") as fh:
+    long_description = fh.read()
+
 # Read the dependencies from requirements.txt
 with open("requirements.txt") as f:
     install_requires = f.read().splitlines()
 
-# see pyproject.toml for details such as version
+# see pyproject.toml for details such as version and requirements
 setup(
-    name="quicklook",  
+    name="quicklook",
+    version="1.1",
     description="Quicklook lightcurve plot generator",
-    url="https://github.com/jpdeleon/quicklook", 
-    packages=find_packages(), 
-    include_package_data=True,  
-    scripts=["scripts/ql", "scripts/read_tls"], 
+    long_description=long_description,
+    long_description_content_type="text/markdown",  
+    url="https://github.com/jpdeleon/quicklook",
+    packages=find_packages(),
     install_requires=install_requires,
-    project_urls={  # Additional URLs related to your project
-        "Bug Tracker": "https://github.com/jpdeleon/quicklook/issues",
-        "Documentation": "https://github.com/jpdeleon/quicklook#readme",
-        "Source Code": "https://github.com/jpdeleon/quicklook",
-    },
+    include_package_data=True,
+    scripts=["scripts/ql", "scripts/read_tls"],
 )

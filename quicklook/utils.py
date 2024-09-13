@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from importlib.resources import path
+from importlib.resources import files
 from urllib.request import urlopen
 import numpy as np
 import pandas as pd
