@@ -130,14 +130,14 @@ class TessQuickLook:
         self.edge_cutoff = edge_cutoff
         if custom_ephem:
             self.ephem_source = "custom"
-            errmsg = "Custom ephem must be a tuple: (P,Perr,t0,t0err,t14,t14err)"
+            errmsg = "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
             assert len(custom_ephem) == 6, errmsg
             print(f"Using ephemeris mask:\nP={custom_ephem[0]}d\nt0={custom_ephem[2]}BJD\nt14={custom_ephem[4]}d")
             #TODO: using tfop in variable name is misleading
-            if custom_ephem[0]>2_457_000:
-                print("Custom transit epoch given in JD. Converting to BTJD = JD-2,457,000.")
-                custom_ephem[0]-=2_457_000
-            self.tfop_epoch = (custom_ephem[0], custom_ephem[1])
+            if custom_ephem[0]>TESS_TIME_OFFSET:
+                print("Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}.")
+                custom_ephem[0]-=TESS_TIME_OFFSET
+            self.tfop_epoch = (custom_ephem[0], custom_ephem[1]) 
             self.tfop_period = (custom_ephem[2], custom_ephem[3]) 
             if custom_ephem[4]>1:
                 print("Custom transit duration given in hours. Converting to days.")
@@ -464,7 +464,8 @@ class TessQuickLook:
             vals.append((val, err))
         print("")
         if len(vals) > 0:
-            tfop_epoch = np.array(vals[0]) - TESS_TIME_OFFSET
+            tfop_epoch = np.array(vals[0])
+            tfop_epoch[0] -= TESS_TIME_OFFSET
             tfop_period = np.array(vals[1])
             tfop_dur = np.array(vals[2]) / 24
         else:
@@ -603,26 +604,26 @@ class TessQuickLook:
         msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)"
         if self.tfop_period is not None:
             msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
-            msg += f"{self.tfop_period[1]:.4f} d (TFOP)\n"
+            msg += f"{self.tfop_period[1]:.4f} d ({self.ephem_source})\n"
         else:
             msg += "\n"
         msg += f"T0={self.tls_results.T0:.4f} "
         if self.tfop_period is not None:
             msg += f"(TLS), {self.tfop_epoch[0]:.4f}" + r"$\pm$"
-            msg += f"{self.tfop_epoch[1]+TESS_TIME_OFFSET:.4f} "
-            msg += f"BJD-{TESS_TIME_OFFSET} (TFOP)\n"
+            msg += f"{self.tfop_epoch[1]:.4f} "
+            msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
         else:
             msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
         if self.tfop_dur is not None:
             msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
-            msg += f"{self.tfop_dur[1]*24:.2f} hr (TFOP)\n"
+            msg += f"{self.tfop_dur[1]*24:.2f} hr ({self.ephem_source})\n"
         else:
             msg += "\n"
         msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
         if self.tfop_depth is not None:
             msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
-            msg += f"{self.tfop_depth[1]:.1f} ppt (TFOP)\n"
+            msg += f"{self.tfop_depth[1]:.1f} ppt (tfop)\n"
         else:
             msg += "\n"
         if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (

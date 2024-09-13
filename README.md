@@ -27,47 +27,44 @@ If you want to run `quicklook` in a notebook, you also need to install jupyter
 ## Command line script
 ```bash
 (my_env) $ ql
-usage: ql [-h] [-name NAME] [-sec SECTOR] [-lc {pdcsap,sap}] [-p {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [-e EXPTIME] [-fm FLATTEN_METHOD] [-pm {gls,ls,bls}] [-wl WINDOW_LENGTH] [-ec EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW]
-          [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [-plims PERIOD_LIMITS PERIOD_LIMITS] [-s] [-o OUTDIR] [-v] [--overwrite] [-img] [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}] [-em]
+usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}] [--window_length WINDOW_LENGTH]
+          [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW] [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [--period_limits PERIOD_LIMITS PERIOD_LIMITS] [-save] [--outdir OUTDIR] [-verbose] [-overwrite]
+          [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}] [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [-mask_ephem]
 
-create quick look image of TESS data
+Run a quick look analysis of a TESS lightcurve. Note: use single hyphen (-flag) if no value is needed. Note: use double hyphen (--flag value) if value is needed.
 
 options:
   -h, --help            show this help message and exit
-  -name NAME            target name
-  -sec SECTOR, --sector SECTOR
-                        TESS sector (default=-1 (last available sector))
-  -lc {pdcsap,sap}, --fluxtype {pdcsap,sap}
+  --name NAME           target name
+  --sector SECTOR       TESS sector (default=-1 (last available sector))
+  --fluxtype {pdcsap,sap}
                         type of lightcurve
-  -p {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}, --pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}
+  --pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}
                         lightcurve produced from which pipeline (default=SPOC)
-  -e EXPTIME, --exptime EXPTIME
-                        exposure time (default is whatever is found in last sector)
-  -fm FLATTEN_METHOD, --flatten_method FLATTEN_METHOD
+  --exptime EXPTIME     exposure time (default is whatever is used in available sector)
+  --flatten_method FLATTEN_METHOD
                         wotan flatten method (default=biweight)
-  -pm {gls,ls,bls}, --pg_method {gls,ls,bls}
+  --pg_method {gls,ls,bls}
                         periodogran method (default=gls)
-  -wl WINDOW_LENGTH, --window_length WINDOW_LENGTH
+  --window_length WINDOW_LENGTH
                         flatten method window length (default=0.5 days)
-  -ec EDGE_CUTOFF, --edge_cutoff EDGE_CUTOFF
+  --edge_cutoff EDGE_CUTOFF
                         cut each edges (default=0.1 days)
   --sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW
                         (sigma_lo,sigma_hi) for outlier rejection of raw lc before flattening/detrending
   --sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT
                         (sigma_lo,sigma_hi) for outlier rejection of flattened/detrended lc
-  -plims PERIOD_LIMITS PERIOD_LIMITS, --period_limits PERIOD_LIMITS PERIOD_LIMITS
+  --period_limits PERIOD_LIMITS PERIOD_LIMITS
                         period limits in TLS search; default=(0.5, baseline/2) d
-  -s, --save            save figure and tls
-  -o OUTDIR, --outdir OUTDIR
-                        output directory
-  -v, --verbose         show details
-  --overwrite           overwrite files
-  -img, --use_archival_image
-                        plot gaia sources on archival image instead of tpf
+  -save                 save figure and tls
+  --outdir OUTDIR       output directory
+  -verbose              show details
+  -overwrite            overwrite files
   --survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}
-                        archival image survey name if using img option
-  -em, --use_ephem_mask
-                        mask transits using TFOP ephemeris if available (default=False)
+                        archival image survey name if using img option (default=dss1)
+  --custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM
+                        custom ephemeris in days. Example: --custom_ephem P Perr Tc Tcerr Tdur Tdurerr
+  -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
 ```
 
 ## Examples
@@ -75,9 +72,9 @@ options:
 1. Run `quicklook` on TOI 1150.01's most recent TESS lightcurve
 
 ```shell
-(my_env) $ ql -name TOI-1150
+(my_env) $ ql --name TOI-1150
 ```
-![img](tests/TOI1150_s55_pdcsap_sc.png)
+![img](tests/k2-100_s46_pdcsap_sc.png)
 
 The figure above shows 9 panels. Let's break them down.
 * top row
@@ -95,11 +92,11 @@ The figure above shows 9 panels. Let's break them down.
 
 Try changing the parameters:
 ```shell
-(my_env) $ ql -name TIC52368076 -v -s
-(my_env) $ ql -name TOI-125.01 -v -s -p qlp #specific pipeline
-(my_env) $ ql -name TOI-125.01 -v -s -sec 2 #specific TESS sector
-(my_env) $ ql -name TOI-125.01 -v -s -fm cosine #specific function to detrend baseline
-(my_env) $ ql -name TOI-125.01 -v -s -plims 1 5 #limit search between 1-5 days
+(my_env) $ ql --name TIC52368076 -verbose -save | tee output.log
+(my_env) $ ql --name TOI-125.01 --pipeline qlp #specific pipeline
+(my_env) $ ql --name TOI-125.01 --sector 2 #specific TESS sector
+(my_env) $ ql --name TOI-125.01 --flatten_method cosine #specific function to detrend baseline
+(my_env) $ ql --name TOI-125.01 --period_limits 1 5 #limit search between 1-5 days
 ```
 
 ## Advanced usage
@@ -107,7 +104,7 @@ Try changing the parameters:
 If you would like to run `ql` on a list of TIC IDs (saved as `tic_ids.txt`), then you can make a batch script named `run_ql_given_tic.batch`. The output files containing the plots (*.png) and periodogram results (*_tls.h5) will be saved in `tic_dir` directory:
 
 ```shell
-(my_env) $ cat tic_ids.txt | while read tic; do echo ql -name $tic -s -o tic_dir; done > run_ql_given_tic.batch
+(my_env) $ cat tic_ids.txt | while read tic; do echo ql --name TIC$tic -save --outdir tic_dir > TIC$tic.log 2>&1; done > run_ql_given_tic.batch
 ```
 
 To test the Nth line of the batch script,

@@ -1,15 +1,21 @@
 #!/usr/bin/env python
 import sys
 import argparse
-import logging
+# import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
 from quicklook.plot import dss_description
 
-log = logging.getLogger(__name__)
+long_decription="""Run a quick look analysis of a TESS lightcurve.
+Notes:
+* use single hyphen (-flag) if no value is needed.
+* use double hyphen (--flag value) if value is needed.
+
+Example: ql --name TOI-1234 --sector 27 -save -verbose > output.log 2>&1
+"""
 
 parser = argparse.ArgumentParser(
-    description="create quick look image of TESS data"
+    description=long_decription,
 )
 # parser.add_argument("-gaia2id", type=int, help="Gaia DR2 ID", default=None)
 # parser.add_argument("-gaia3id", type=int, help="Gaia DR3 ID", default=None)
@@ -74,7 +80,7 @@ parser.add_argument(
 parser.add_argument(
     "--exptime",
     type=int,
-    help="exposure time (default is whatever is found in last sector)",
+    help="exposure time (default is whatever is used in available sector)",
     default=None,
 )
 # parser.add_argument(
@@ -130,7 +136,6 @@ parser.add_argument(
     choices=["gls", "ls", "bls"],
 )
 parser.add_argument(
-    "-wl",
     "--window_length",
     type=float,
     help="flatten method window length (default=0.5 days)",
@@ -187,7 +192,7 @@ parser.add_argument(
     "--outdir", type=str, help="output directory", default="."
 )
 parser.add_argument(
-    "-v", "--verbose", action="store_true", help="show details", default=False
+    "-verbose", action="store_true", help="show details", default=False
 )
 parser.add_argument(
     "-overwrite", action="store_true", help="overwrite files", default=False
@@ -206,14 +211,14 @@ parser.add_argument(
 )
 parser.add_argument(
    "--custom_ephem",
-   help="custom ephemeris in days. Example: --custom_ephem P Perr Tc Tcerr Tdur Tdurerr",
+   help="custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr",
    nargs=6,
    type=float,
    default=None,
 )
 parser.add_argument(
     "-mask_ephem",
-    help="mask transits of either using TFOP or custom ephemerides if available (default=False)",
+    help="mask transits either using TFOP or custom ephemerides if available (default=False)",
     action="store_true",
     default=False,
 )

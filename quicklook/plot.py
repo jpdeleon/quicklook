@@ -229,7 +229,7 @@ def plot_gls_periodogram(
     # mark best period and multiples
     if best_period * 2 <= max(x):
         ax.axvline(x=best_period * 2, color="k", ls='--', linewidth=2, alpha=0.5)
-    ax.axvline(x=best_period / 2, color="k", ls='--', linewidth=2, alpha=0.5, label='best/2 alias')
+    ax.axvline(x=best_period / 2, color="k", ls='--', linewidth=2, alpha=0.5, label='best alias')
     for i in range(len(peaks)):
         ax.scatter(
             peaks[i],

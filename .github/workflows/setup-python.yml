@@ -27,14 +27,25 @@ jobs:
           miniconda-version: "latest"
           auto-activate-base: true
 
-      - name: Remove existing Conda environment if it exists
-        shell: bash -l {0}
-        run: |
-          conda env remove -n ql || echo "Environment does not exist"
+      - name: Install mamba for faster environment setup
+        run: conda install -n base -c conda-forge mamba
 
-      - name: Create Conda environment
-        shell: bash -l {0}
-        run: conda env create -f environment.yml
+      - name: Cache Conda Environment
+        id: cache-conda
+        uses: actions/cache@v3
+        with:
+          path: /Users/runner/miniconda3/envs/ql
+          key: ${{ runner.os }}-conda-${{ matrix.python-version }}-${{ hashFiles('environment.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-conda-${{ matrix.python-version }}-
+
+      - name: Remove existing Conda environment if cache not hit
+        if: steps.cache-conda.outputs.cache-hit != 'true'
+        run: conda env remove -n ql || echo "Environment does not exist"
+
+      - name: Create Conda environment using mamba
+        if: steps.cache-conda.outputs.cache-hit != 'true'
+        run: mamba env create -f environment.yml
 
       - name: Install pip dependencies
         shell: bash -l {0}
