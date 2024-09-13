@@ -7,7 +7,7 @@ name = "quicklook"
 version = "1.1"  # Replace with a dynamically obtained version if needed
 description = "Quicklook lightcurve plot generator"
 authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
-requires-python = ">=3.6"
+requires-python = ">=3.7"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GPLv3 License",

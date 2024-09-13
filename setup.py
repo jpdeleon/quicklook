@@ -4,10 +4,10 @@ from setuptools import setup, find_packages
 with open("requirements.txt") as f:
     install_requires = f.read().splitlines()
 
+# see pyproject.toml for details such as version
 setup(
     name="quicklook",  
-    description="Quicklook lightcurve plot generator",  
-    long_description_content_type="text/markdown",  
+    description="Quicklook lightcurve plot generator",
     url="https://github.com/jpdeleon/quicklook", 
     packages=find_packages(), 
     include_package_data=True,  

@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
-from pkg_resources import resource_filename
+from importlib.resources import path
 from urllib.request import urlopen
 import numpy as np
 import pandas as pd
 import astropy.units as u
 
-DATA_PATH = resource_filename(__name__, "../data")
+DATA_PATH = files(__name__).parent / 'data'
 TESS_TIME_OFFSET = 2_457_000
 TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD

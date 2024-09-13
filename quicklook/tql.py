@@ -38,7 +38,7 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 
-set_style("science")
+# set_style("science")
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
