@@ -13,7 +13,7 @@ setup(
     version="1.1",
     description="Quicklook lightcurve plot generator",
     long_description=long_description,
-    long_description_content_type="text/markdown",  
+    long_description_content_type="text/markdown",
     url="https://github.com/jpdeleon/quicklook",
     packages=find_packages(),
     install_requires=install_requires,

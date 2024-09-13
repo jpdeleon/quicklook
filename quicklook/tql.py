@@ -46,7 +46,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-DATA_PATH = files(__name__).parent / 'data'
+DATA_PATH = files("quicklook").joinpath("../data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 
 
@@ -130,24 +130,37 @@ class TessQuickLook:
         self.edge_cutoff = edge_cutoff
         if custom_ephem:
             self.ephem_source = "custom"
-            errmsg = "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
+            errmsg = (
+                "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
+            )
             assert len(custom_ephem) == 6, errmsg
-            print(f"Using ephemeris mask:\nP={custom_ephem[0]}d\nt0={custom_ephem[2]}BJD\nt14={custom_ephem[4]}d")
-            #TODO: using tfop in variable name is misleading
-            if custom_ephem[0]>TESS_TIME_OFFSET:
-                print("Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}.")
-                custom_ephem[0]-=TESS_TIME_OFFSET
-            self.tfop_epoch = (custom_ephem[0], custom_ephem[1]) 
-            self.tfop_period = (custom_ephem[2], custom_ephem[3]) 
-            if custom_ephem[4]>1:
-                print("Custom transit duration given in hours. Converting to days.")
-                custom_ephem[4]/=24
-                custom_ephem[5]/=24
+            print(
+                f"Using ephemeris mask:\nP={custom_ephem[0]}d\nt0={custom_ephem[2]}BJD\nt14={custom_ephem[4]}d"
+            )
+            # TODO: using tfop in variable name is misleading
+            if custom_ephem[0] > TESS_TIME_OFFSET:
+                print(
+                    "Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
+                )
+                custom_ephem[0] -= TESS_TIME_OFFSET
+            self.tfop_epoch = (custom_ephem[0], custom_ephem[1])
+            self.tfop_period = (custom_ephem[2], custom_ephem[3])
+            if custom_ephem[4] > 1:
+                print(
+                    "Custom transit duration given in hours. Converting to days."
+                )
+                custom_ephem[4] /= 24
+                custom_ephem[5] /= 24
             self.tfop_dur = (custom_ephem[4], custom_ephem[5])
             self.tfop_depth = None
         else:
             # use tfop ephem if available
-            self.tfop_epoch, self.tfop_period, self.tfop_dur, self.tfop_depth = (
+            (
+                self.tfop_epoch,
+                self.tfop_period,
+                self.tfop_dur,
+                self.tfop_depth,
+            ) = (
                 self.get_toi_ephem()
                 if len(self.tfop_info.get("planet_parameters")) != 0
                 else (None, None, None, None)
@@ -168,9 +181,11 @@ class TessQuickLook:
         err_msg = "No masked transits"
         assert self.tmask.sum() > 0, err_msg
         if mask_ephem:
-            print(f"Masking transits in raw lightcurve using {self.ephem_source} ephem.")
+            print(
+                f"Masking transits in raw lightcurve using {self.ephem_source} ephem."
+            )
             self.raw_lc = self.raw_lc[~self.tmask]
-            #update tmask
+            # update tmask
             self.tmask = self.get_transit_mask()
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
@@ -313,7 +328,7 @@ class TessQuickLook:
         # get all info
         search_result_all_lcs = lk.search_lightcurve(self.query_name)
         errmsg = f"Search using '{self.query_name}' "
-        errmsg += f"did not yield any lightcurve results."
+        errmsg += "did not yield any lightcurve results."
         assert len(search_result_all_lcs) > 0, errmsg
         cols = ["author", "mission", "t_exptime"]
         print("All available lightcurves:")
@@ -414,7 +429,7 @@ class TessQuickLook:
 
         search_result = lk.search_targetpixelfile(self.query_name, **kwargs)
         errmsg = f"Search using '{self.query_name}' {kwargs} "
-        errmsg += f"did not yield any TPF results."
+        errmsg += "did not yield any TPF results."
         assert len(search_result) > 0, errmsg
         idx = sector_orig if sector_orig == -1 else 0
         tpf = search_result[idx].download()
@@ -578,7 +593,8 @@ class TessQuickLook:
                     if name == "teff"
                     else float(star_params.get(name))
                 )
-            except:
+            except Exception as e:
+                print(e)
                 params[name] = np.nan
             try:
                 params[name + "_e"] = (
@@ -586,7 +602,8 @@ class TessQuickLook:
                     if name == "teff"
                     else float(star_params.get(name + "_e"))
                 )
-            except:
+            except Exception as e:
+                print(e)
                 params[name + "_e"] = np.nan
         meta = self.raw_lc.meta
         Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
@@ -780,9 +797,9 @@ class TessQuickLook:
         # +++++++++++++++++++++ax phase-folded at Prot + sinusoidal model
         ax = axes.flatten()[2]
         # raw
-        label=f"data folded at Prot={self.Prot_ls:.2f} d\n"
+        label = f"data folded at Prot={self.Prot_ls:.2f} d\n"
         if self.ephem_source:
-            label+=f"(masked transits using {self.ephem_source} ephem)"
+            label += f"(masked transits using {self.ephem_source} ephem)"
         _ = (
             self.raw_lc[~self.tmask]
             .fold(
@@ -805,7 +822,13 @@ class TessQuickLook:
                 normalize_phase=False,
                 wrap_phase=self.Prot_ls / 2,
             )
-            .plot(label=f"{self.pg_method.upper()} model", color="r", ls='--', lw=2, ax=ax)
+            .plot(
+                label=f"{self.pg_method.upper()} model",
+                color="r",
+                ls="--",
+                lw=2,
+                ax=ax,
+            )
         )
         ax.set_xlabel("Rotation Phase [days]")
         # ax.set_xlim(-0.5, 0.5)

@@ -2,6 +2,7 @@
 python version of skimage.measure.find_contours:
 https://github.com/scikit-image/scikit-image/blob/main/skimage/measure/_find_contours.py
 """
+
 import numpy as np
 from collections import deque
 
@@ -14,7 +15,7 @@ def find_contours(
     fully_connected="low",
     positive_orientation="low",
     *,
-    mask=None
+    mask=None,
 ):
     """Find iso-valued contours in a 2D array for a given level value.
 

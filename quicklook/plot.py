@@ -150,7 +150,7 @@ def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
     pg = lc.to_periodogram(
         method=method,
         # minimum_period=0.5,
-        maximum_period=Prot_max
+        maximum_period=Prot_max,
         # minimum_frequency = 2.0,
         # maximum_frequency = 1/Prot_max
     )
@@ -224,12 +224,27 @@ def plot_gls_periodogram(
     ax.plot(x, y, c="C0", linewidth=0.8)
     # mark best period and multiples
     ax.axvline(
-        best_period, 0, 1, c="k", lw=2, alpha=0.5, label=f"best={best_period:.3}"
+        best_period,
+        0,
+        1,
+        c="k",
+        lw=2,
+        alpha=0.5,
+        label=f"best={best_period:.3}",
     )
     # mark best period and multiples
     if best_period * 2 <= max(x):
-        ax.axvline(x=best_period * 2, color="k", ls='--', linewidth=2, alpha=0.5)
-    ax.axvline(x=best_period / 2, color="k", ls='--', linewidth=2, alpha=0.5, label='best alias')
+        ax.axvline(
+            x=best_period * 2, color="k", ls="--", linewidth=2, alpha=0.5
+        )
+    ax.axvline(
+        x=best_period / 2,
+        color="k",
+        ls="--",
+        linewidth=2,
+        alpha=0.5,
+        label="best alias",
+    )
     for i in range(len(peaks)):
         ax.scatter(
             peaks[i],
@@ -240,10 +255,16 @@ def plot_gls_periodogram(
         )
     # mark FAP levels
     for i in range(len(FAP_levels)):
-        label = f"FAP={max(FAP_levels)}" if i==np.argmax(FAP_levels) else None
+        label = (
+            f"FAP={max(FAP_levels)}" if i == np.argmax(FAP_levels) else None
+        )
         ax.plot(
-            x, power_levels[i], linestyle=linestyles[i], 
-            linewidth=0.8, c="red", label=label
+            x,
+            power_levels[i],
+            linestyle=linestyles[i],
+            linewidth=0.8,
+            c="red",
+            label=label,
         )
     ax.minorticks_on()
     ax.set_ylabel("Gen. Lomb-Scargle Power")
@@ -679,7 +700,8 @@ def plot_gaia_sources_on_survey(
         ylim=(0, my),
     )
     ax.set_title(
-        f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')", y=0.99
+        f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')",
+        y=0.99,
     )
     return ax
 

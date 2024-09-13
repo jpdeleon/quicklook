@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 import astropy.units as u
 
-DATA_PATH = files(__name__).parent / 'data'
+# Ensure 'quicklook' is the top-level package
+DATA_PATH = files("quicklook").joinpath("../data")
 TESS_TIME_OFFSET = 2_457_000
 TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD
@@ -107,6 +108,7 @@ def get_tois(
     if verbose:
         print(msg)
     return d.sort_values("TOI")
+
 
 def get_tfop_info(target_name: str) -> dict:
     base_url = "https://exofop.ipac.caltech.edu/tess"
@@ -279,9 +281,9 @@ def make_square_mask(img, size, xy_center=None):
             print("Aperture mask is placed at the center instead.\n")
             xy_center = [xcen, ycen]
     mask = np.zeros_like(img, dtype=bool)
-    mask[
-        ycen - size : ycen + size + 1, xcen - size : xcen + size + 1
-    ] = True  # noqa
+    mask[ycen - size : ycen + size + 1, xcen - size : xcen + size + 1] = (
+        True  # noqa
+    )
     # if angle:
     #    #rotate mask
     #    mask = rotate(mask, angle, axes=(1, 0),

@@ -137,7 +137,7 @@ class Gls:
         ls=False,
         fast=False,
         verbose=False,
-        **kwargs
+        **kwargs,
     ):
         self.prot = None
         self.amp = None
@@ -396,9 +396,7 @@ class Gls:
             self.label["ylabel"] = "wrms"
         elif norm == "lnL":
             chi2 = self._YY * self.wsum * (1.0 - p)
-            power = -0.5 * chi2 - 0.5 * np.sum(
-                np.log(2 * np.pi * self.e_y**2)
-            )
+            power = -0.5 * chi2 - 0.5 * np.sum(np.log(2 * np.pi * self.e_y**2))
             self.label["ylabel"] = r"$\ln L$"
         elif norm == "dlnL":
             # dlnL = lnL - lnL0 = -0.5 chi^2 + 0.5 chi0^2 = 0.5 (chi0^2 - chi^2) = 0.5 chi0^2 p
