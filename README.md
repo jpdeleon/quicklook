@@ -2,7 +2,7 @@
 `quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook (see [example](https://github.com/jpdeleon/quicklook/tree/main/notebook)) or from the terminal using the `ql` script.
 
 ## Use case
-Given target name, run [periodogram]() on a TESS or Kepler lightcurve (if it exists) to estimate the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
+Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Try it on Google colab
@@ -69,10 +69,10 @@ options:
 
 ## Examples
 
-1. Run `quicklook` on TOI 1150.01's most recent TESS lightcurve
+1. Run `quicklook` on the most recent TESS lightcurve of TOI 5071 (aka K2-100).
 
 ```shell
-(my_env) $ ql --name TOI-1150
+(my_env) $ ql --name TOI-5071
 ```
 ![img](tests/k2-100_s46_pdcsap_sc.png)
 
@@ -82,12 +82,12 @@ The figure above shows 9 panels. Let's break them down.
   - middle (panel 2): [Lomb-Scargle periodogram](https://docs.astropy.org/en/stable/timeseries/lombscargle.html) used to estimate the star's rotation period; this is useful to find active and variable stars
   - right (panel 3): raw lightcurve phase-folded at the computed peak of Lomb-Scargle periodogram (corresponding to the stellar rotation period) from panel 1;
 * middle row
-  - left (panel 4): flattened lightcurve and detected transits (determined from the TLS periodogram on panel 5)
+  - left (panel 4): raw lightcurve divided by the trend line (aka flattened lightcurve) in panel 1 and the detected transits (red markers; determined from the TLS periodogram in panel 5)
   - middle (panel 5): periodogram using the [transit least squares](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..39H/abstract) (TLS) algorithm
-  - right (panel 6): TESS aperture (blue polygon) and annotated Gaia sources (orange and red markers) overlaid on archival [DSS](https://archive.stsci.edu/cgi-bin/dss_form) image centered on the target; this is useful to see if there are potential sources of the signal other than the target
+  - right (panel 6): TESS aperture (blue polygon) centered on the target and the positions of nearby sources from the Gaia survey (orange and red markers) overlaid on the archival [DSS](https://archive.stsci.edu/cgi-bin/dss_form) image; this is useful to see if there are other stars that can be the source of the signal aside from the target
 * bottom row
-  - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even transits (blue markers) and best-fit transit model (black line) are also shown
-  - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (dashed line) is shown for reference
+  - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even (blue markers) transits and best-fit transit model (black line) are also shown
+  - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (horizontal dashed line) and transit duration (vertical dashed line) are shown for reference
   - right (panel 9): summary info about the star and potential companion (e.g. planet candidate)
 
 Try changing the parameters:
