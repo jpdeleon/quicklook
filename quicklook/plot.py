@@ -142,7 +142,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     return ax
 
 
-def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
+def plot_periodogram(lc, method="lombscargle", verbose=True, ax=None) -> tuple:
     if ax is None:
         _, ax = pl.subplots()
     baseline = int(lc.time.value[-1] - lc.time.value[0])
@@ -171,7 +171,8 @@ def plot_periodogram(lc, method="lombscargle", ax=None) -> tuple:
     ax.legend(title="Rotation period [d]")
     xmin, _ = ax.get_xlim()
     ax.set_xlim(xmin, Prot_max)
-    print(pg.show_properties())
+    if verbose:
+        print(pg.show_properties())
     return pg
 
 
@@ -182,6 +183,7 @@ def plot_gls_periodogram(
     relative_height=10,
     FAP_levels=[0.1, 0.01, 0.001],
     ax=None,
+    verbose=True,
 ) -> tuple:
     """
     Based on:
@@ -400,7 +402,8 @@ def plot_gaia_sources_on_tpf(
         fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(0).value
 
     if gaia_sources is None:
-        print("Querying Gaia sources around the target.")
+        if verbose:
+            print("Querying Gaia sources around the target.")
         target_coord = SkyCoord(
             ra=tpf.get_header()["RA_OBJ"],
             dec=tpf.get_header()["DEC_OBJ"],
@@ -601,7 +604,8 @@ def plot_gaia_sources_on_survey(
         fov_rad = (0.4 * diag * pix_scale).to(u.arcmin).round(2)
     target_coord = SkyCoord(ra=tpf.ra * u.deg, dec=tpf.dec * u.deg)
     if gaia_sources is None:
-        print("Querying Gaia sources around the target.")
+        if verbose:
+            print("Querying Gaia sources around the target.")
         gaia_sources = Catalogs.query_region(
             target_coord, radius=fov_rad, catalog="Gaia", version=2
         ).to_pandas()
@@ -618,7 +622,7 @@ def plot_gaia_sources_on_survey(
 
     if verbose:
         print(
-            f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image"
+            f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image..."
         )
     # -----------create figure---------------#
     if (ax is None) or (hdu is None):

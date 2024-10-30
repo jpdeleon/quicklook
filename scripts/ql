@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 import sys
 import argparse
+
 # import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
 from quicklook.plot import dss_description
 
-long_decription="""Run a quick look analysis of a TESS lightcurve.
+long_decription = """Run a quick look analysis of a TESS lightcurve.
 Notes:
 * use single hyphen (-flag) if no value is needed.
 * use double hyphen (--flag value) if value is needed.
@@ -188,9 +189,7 @@ parser.add_argument(
     help="save figure and tls",
     default=False,
 )
-parser.add_argument(
-    "--outdir", type=str, help="output directory", default="."
-)
+parser.add_argument("--outdir", type=str, help="output directory", default=".")
 parser.add_argument(
     "-verbose", action="store_true", help="show details", default=False
 )
@@ -210,11 +209,11 @@ parser.add_argument(
     default="dss1",
 )
 parser.add_argument(
-   "--custom_ephem",
-   help="custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr",
-   nargs=6,
-   type=float,
-   default=None,
+    "--custom_ephem",
+    help="custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr",
+    nargs=6,
+    type=float,
+    default=None,
 )
 parser.add_argument(
     "-mask_ephem",
@@ -265,7 +264,7 @@ if __name__ == "__main__":
         savefig=args.save,
         savetls=args.save,
         outdir=args.outdir,
-        # verbose=args.verbose,
+        verbose=args.verbose,
         overwrite=args.overwrite,
         # check_if_variable=args.check_if_variable,
         # estimate_spec_type=args.spec_type,
