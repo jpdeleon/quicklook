@@ -11,12 +11,11 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 
 
 ## Installation
-Create a conda environment called, say `my_env`, and install there an editable version of `quicklook`
+Create a conda environment called, say `my_env`, and install there the latest version of `quicklook`
 ```bash
 $ conda create -n my_env python=3.10
 $ conda activate my_env
-(my_env) $ python -m python -m pip install -r https://raw.githubusercontent.com/jpdeleon/quicklook/main/requirements.txt
-(my_env) $ python -m pip install -e git+https://github.com/jpdeleon/quicklook.git#egg=quicklook
+(my_env) $ pip install -U quicklook-package
 ```
 
 If you want to run `quicklook` in a notebook, you also need to install jupyter
@@ -107,10 +106,10 @@ Try changing the parameters:
 
 ## Advanced usage
 
-If you would like to run `ql` on a list of TIC IDs (saved as `tic_ids.txt`), then you can make a batch script named `run_ql_given_tic.batch`. The output files containing the plots (*.png) and periodogram results (*_tls.h5) will be saved in `tic_dir` directory:
+If you would like to run `ql` on a list of TIC IDs (saved as `tic_ids.txt`), then you can make a batch script named `run_ql_given_tic.batch`. The output files containing the logs (*.log), plots (*.png), and periodogram results (*_tls.h5) will be saved in `tic_dir` directory:
 
 ```shell
-(my_env) $ cat tic_ids.txt | while read tic; do echo ql --name TIC$tic -save --outdir tic_dir > TIC$tic.log 2>&1; done > run_ql_given_tic.batch
+(my_env) $ cat tic_ids.txt | while read tic; do echo ql --name TIC$tic -save --outdir tic_dir | tee TIC$tic.log; done > run_ql_given_tic.batch
 ```
 
 To test the Nth line of the batch script,
