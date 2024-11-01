@@ -80,6 +80,7 @@ jobs:
       # Publish step for PyPI
       - name: Publish to PyPI
         #if: github.event_name == 'release'
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         shell: bash -l {0}
         env:
           TWINE_USERNAME: "__TOKEN__"

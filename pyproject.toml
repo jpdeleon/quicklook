@@ -8,6 +8,19 @@ authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
 dynamic = ["version", "description"]
 readme = "README.md"
 requires-python = ">=3.8"
+dependencies = [
+    "pre-commit==3.4.0",
+    "matplotlib",
+    "lightkurve==2.5",
+    "numpy==1.23",
+    "transitleastsquares==1.32",
+    "wotan==1.10",
+    "aesthetic==0.6",
+    "flammkuchen==1.0.3",
+    "reproject==0.12.0",
+    "astroplan==0.9",
+    "loguru"
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
