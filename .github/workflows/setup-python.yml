@@ -82,8 +82,8 @@ jobs:
         #if: github.event_name == 'release'
         shell: bash -l {0}
         env:
-          TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
-          TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
+          TWINE_USERNAME: "__TOKEN__"
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           conda activate ql
           python setup.py sdist bdist_wheel
