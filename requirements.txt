@@ -1,9 +1,9 @@
 pre-commit==3.4.0
 #matplotlib==3.8.0 #does not run in python<3.11
 matplotlib
-lightkurve==2.4.1
+lightkurve==2.5
 numpy==1.23
-transitleastsquares==1.0.31
+transitleastsquares==1.32
 wotan==1.10
 aesthetic==0.6
 flammkuchen==1.0.3

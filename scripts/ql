@@ -18,21 +18,10 @@ Example: ql --name TOI-1234 --sector 27 -save -verbose > output.log 2>&1
 parser = argparse.ArgumentParser(
     description=long_decription,
 )
-# parser.add_argument("-gaia2id", type=int, help="Gaia DR2 ID", default=None)
-# parser.add_argument("-gaia3id", type=int, help="Gaia DR3 ID", default=None)
-# parser.add_argument("-toi", type=int, help="TOI ID", default=None)
-# parser.add_argument("-tic", type=int, help="TIC ID", default=None)
-# parser.add_argument(
-#     "-coords",
-#     type=str,
-#     help="e.g. '08:09:10 -05:04:23' or '22.5 -12.56'",
-#     nargs=2,
-#     default=None,
-# )
 parser.add_argument("--name", type=str, help="target name", default=None)
 parser.add_argument(
     "--sector",
-    type=int,
+    # type=int,
     help="TESS sector (default=-1 (last available sector))",
     default=-1,
 )
@@ -162,13 +151,6 @@ parser.add_argument(
     type=float,
     default=None,
 )
-# parser.add_argument(
-#     "-qm",
-#     "--quality_mask",
-#     action="store_true",
-#     help="remove chunks of bad cadences identified in data release notes",
-#     default=False,
-# )
 parser.add_argument(
     "--period_limits",
     help="period limits in TLS search; default=(0.5, baseline/2) d",
@@ -177,12 +159,32 @@ parser.add_argument(
     default=None,
 )
 # parser.add_argument(
+#     "-qm",
+#     "--quality_mask",
+#     action="store_true",
+#     help="remove chunks of bad cadences identified in data release notes",
+#     default=False,
+# )
+# parser.add_argument(
 #     "-u",
 #     "--use_priors",
 #     action="store_true",
 #     help="use star priors for detrending and periodogram",
 #     default=False,
 # )
+parser.add_argument(
+    "--survey",
+    help="archival image survey name if using img option (default=dss1)",
+    choices=list(dss_description.keys()),
+    default="dss1",
+)
+parser.add_argument(
+    "--custom_ephem",
+    help="custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr",
+    nargs=6,
+    type=float,
+    default=None,
+)
 parser.add_argument(
     "-save",
     action="store_true",
@@ -202,19 +204,6 @@ parser.add_argument(
 #     help="plot gaia sources on tpf image instead of archival image (default=False)",
 #     default=False,
 # )
-parser.add_argument(
-    "--survey",
-    help="archival image survey name if using img option (default=dss1)",
-    choices=list(dss_description.keys()),
-    default="dss1",
-)
-parser.add_argument(
-    "--custom_ephem",
-    help="custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr",
-    nargs=6,
-    type=float,
-    default=None,
-)
 parser.add_argument(
     "-mask_ephem",
     help="mask transits either using TFOP or custom ephemerides if available (default=False)",
