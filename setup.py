@@ -9,7 +9,7 @@ with open("requirements.txt") as f:
 
 # see pyproject.toml for details such as version and requirements
 setup(
-    name="quicklook",
+    name="quicklook-package",
     version="1.1.1",
     description="Quicklook lightcurve plot generator",
     long_description=long_description,
