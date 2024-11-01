@@ -8,15 +8,18 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Summarize TLS results.")
 parser.add_argument("indir", type=str)
+parser.add_argument("-param", choices=['TOI','power_gls','Prot_gls','amp_gls','SDE_tls','Porb_tls'], default='SDE_tls', type=str)
 args = parser.parse_args()
 
 indir = args.indir
 files = glob(indir + "/*.h5")
+param = args.param
 assert len(files) > 0, "no *.h5 files found!"
 
 # print(files)
 ss = []
 errors = []
+print("Reading *.tls files...")
 for file in tqdm(files):
     try:
         data = fk.load(file)
@@ -28,6 +31,7 @@ for file in tqdm(files):
             "SDE_tls": data.get("SDE"),
             "Porb_tls": data.get("period"),
             "Prot_gls": data.get("Prot_gls")[0],
+            "amp_gls": data.get("amp_gls")[0],
             # "Porb_tfop": data.get("period_tfop")[0],
             "depth": (1 - data.get("depth")) * 1e3,
             # "depth_tfop": data.get("depth_tfop")[0],
@@ -38,12 +42,12 @@ for file in tqdm(files):
         ss.append(s)
     except Exception as e:
         errors.append(data.get("ticid"))
-
+print(f"Sorting by {param}...")
 # sort by sde
 df = (
     pd.DataFrame(ss)
     .sort_values(
-        by=["SDE_tls", "Prot_gls", "power_gls"], ascending=[False, True, False]
+        by=param, ascending=False
     )
     .reset_index(drop=True)
     .drop_duplicates()

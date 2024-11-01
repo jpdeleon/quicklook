@@ -84,7 +84,7 @@ def get_tois(
             "GJ",
             "LHS",
             "XO",
-            "Pi Men" "WASP",
+            "WASP",
             "SWASP",
             "HAT",
             "HATS",
