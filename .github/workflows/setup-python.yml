@@ -70,6 +70,13 @@ jobs:
           conda activate ql
           pytest
 
+      # Install twine for PyPI publishing
+      - name: Install twine
+        shell: bash -l {0}
+        run: |
+          conda activate ql
+          pip install twine
+
       # Publish step for PyPI
       - name: Publish to PyPI
         #if: github.event_name == 'release'
