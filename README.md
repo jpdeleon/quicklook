@@ -27,11 +27,17 @@ If you want to run `quicklook` in a notebook, you also need to install jupyter
 ## Command line script
 ```bash
 (my_env) $ ql
-usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}] [--window_length WINDOW_LENGTH]
-          [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW] [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [--period_limits PERIOD_LIMITS PERIOD_LIMITS] [-save] [--outdir OUTDIR] [-verbose] [-overwrite]
-          [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}] [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [-mask_ephem]
+usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}]
+          [--window_length WINDOW_LENGTH] [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW] [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT]
+          [--period_limits PERIOD_LIMITS PERIOD_LIMITS] [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}]
+          [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [--outdir OUTDIR] [-save] [-verbose] [-overwrite] [-mask_ephem]
 
-Run a quick look analysis of a TESS lightcurve. Note: use single hyphen (-flag) if no value is needed. Note: use double hyphen (--flag value) if value is needed.
+Run a quick look analysis of a TESS lightcurve.
+Notes:
+* use single hyphen (-flag) if no value is needed.
+* use double hyphen (--flag value) if value is needed.
+
+Example: ql --name TOI-1234 --sector 27 -save -verbose
 
 options:
   -h, --help            show this help message and exit
@@ -56,14 +62,14 @@ options:
                         (sigma_lo,sigma_hi) for outlier rejection of flattened/detrended lc
   --period_limits PERIOD_LIMITS PERIOD_LIMITS
                         period limits in TLS search; default=(0.5, baseline/2) d
-  -save                 save figure and tls
-  --outdir OUTDIR       output directory
-  -verbose              show details
-  -overwrite            overwrite files
   --survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}
                         archival image survey name if using img option (default=dss1)
   --custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM
-                        custom ephemeris in days. Example: --custom_ephem P Perr Tc Tcerr Tdur Tdurerr
+                        custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr
+  --outdir OUTDIR       output directory
+  -save                 save figure and tls
+  -verbose              show details
+  -overwrite            overwrite files
   -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
 ```
 

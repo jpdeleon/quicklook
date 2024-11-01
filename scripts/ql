@@ -12,11 +12,11 @@ Notes:
 * use single hyphen (-flag) if no value is needed.
 * use double hyphen (--flag value) if value is needed.
 
-Example: ql --name TOI-1234 --sector 27 -save -verbose > output.log 2>&1
+Example: ql --name TOI-1234 --sector 27 -save -verbose
 """
 
 parser = argparse.ArgumentParser(
-    description=long_decription,
+    description=long_decription, formatter_class=argparse.RawTextHelpFormatter
 )
 parser.add_argument("--name", type=str, help="target name", default=None)
 parser.add_argument(
@@ -185,13 +185,13 @@ parser.add_argument(
     type=float,
     default=None,
 )
+parser.add_argument("--outdir", type=str, help="output directory", default=".")
 parser.add_argument(
     "-save",
     action="store_true",
     help="save figure and tls",
     default=False,
 )
-parser.add_argument("--outdir", type=str, help="output directory", default=".")
 parser.add_argument(
     "-verbose", action="store_true", help="show details", default=False
 )

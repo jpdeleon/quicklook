@@ -72,7 +72,7 @@ jobs:
 
       # Publish step for PyPI
       - name: Publish to PyPI
-        if: github.event_name == 'release'
+        #if: github.event_name == 'release'
         shell: bash -l {0}
         env:
           TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
