@@ -9,4 +9,5 @@ aesthetic==0.6
 flammkuchen==1.0.3
 reproject==0.12.0
 astroplan==0.9
+loguru
 # astroquery==0.4.6
