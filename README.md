@@ -1,27 +1,27 @@
 # QuickLook
-`quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook (see [example](https://github.com/jpdeleon/quicklook/tree/main/notebook)) or from the terminal using the `ql` script.
+`quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook or from the terminal using the `ql` script.
 
 ## Use case
 Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
-## Try it on Google colab
-
-<a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
-
-
 ## Installation
-Create a conda environment called, say `my_env`, and install there the latest version of `quicklook`
+Create a conda environment called, say `my_env`, and install there the latest version of `quicklook-package`
 ```bash
 $ conda create -n my_env python=3.10
 $ conda activate my_env
 (my_env) $ pip install -U quicklook-package
 ```
 
-If you want to run `quicklook` in a notebook, you also need to install jupyter
+If you want to run `quicklook` locally in a notebook, you also need to install jupyter
 ```
-(my_env) $ python -m pip install jupyterlab
+(my_env) $ pip install jupyter notebook
 ```
+See [example notebook](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb).
+
+## Try it on Google colab
+
+<a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
 ## Command line script
 ```bash
@@ -36,7 +36,7 @@ Notes:
 * use single hyphen (-flag) if no value is needed.
 * use double hyphen (--flag value) if value is needed.
 
-Example: ql --name TOI-1234 --sector 27 -save -verbose
+Example: ql --name TOI-5071 --sector 46 -save -verbose
 
 options:
   -h, --help            show this help message and exit
@@ -74,12 +74,12 @@ options:
 
 ## Examples
 
-1. Run `quicklook` on the most recent TESS lightcurve of TOI 5071 (aka K2-100).
+1. Run `quicklook` on the most recent TESS lightcurve of TOI-5071 (aka K2-100).
 
 ```shell
 (my_env) $ ql --name TOI-5071
 ```
-![img](tests/k2-100_s46_pdcsap_sc.png)
+![img](tests/TOI5071_s46_pdcsap_sc.png)
 
 The figure above shows 9 panels. Let's break them down.
 * top row
@@ -97,7 +97,7 @@ The figure above shows 9 panels. Let's break them down.
 
 Try changing the parameters:
 ```shell
-(my_env) $ ql --name TIC52368076 -verbose -save | tee output.log
+(my_env) $ ql --name TIC-52368076 -verbose -save | tee output.log
 (my_env) $ ql --name TOI-125.01 --pipeline qlp #specific pipeline
 (my_env) $ ql --name TOI-125.01 --sector 2 #specific TESS sector
 (my_env) $ ql --name TOI-125.01 --flatten_method cosine #specific function to detrend baseline

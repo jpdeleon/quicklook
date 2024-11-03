@@ -80,41 +80,11 @@ class TessQuickLook:
     ):
         # start timer
         self.timer_start = timer()
-        self.verbose = verbose
         self.target_name = target_name
-        logger.info(f"Generating TQL for {self.target_name}...")
+        logger.info(f"Generating quicklook for {self.target_name}...")
+        self.verbose = verbose
         self.tfop_info = get_tfop_info(target_name)
-        self.star_names = np.array(
-            self.tfop_info.get("basic_info")["star_names"].split(", ")
-        )
-        if self.verbose:
-            print(f"Catalog names:")
-            for n in self.star_names:
-                print(f"\t{n}")
-        self.gaia_name = self.star_names[
-            np.array([i[:4].lower() == "gaia" for i in self.star_names])
-        ][0]
-        self.gaiaid = int(self.gaia_name.split()[-1])
-        ra, dec = (
-            self.tfop_info.get("coordinates")["ra"],
-            self.tfop_info.get("coordinates")["dec"],
-        )
-        self.target_coord = SkyCoord(ra=ra, dec=dec, unit="degree")
-
-        if target_name.lower()[:3] == "toi":
-            toiid = int(float(target_name.split("-")[-1]))
-        else:
-            idx = [i[:3].lower() == "toi" for i in self.star_names]
-            if sum(idx) > 0:
-                toiid = int(self.star_names[idx][0].split("-")[-1])
-            else:
-                toiid = None
-        self.toiid = toiid
-        self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
-        if self.ticid is not None:
-            self.query_name = f"TIC{self.ticid}"
-        else:
-            self.query_name = self.target_name.replace("-", " ")
+        self.parse_tfop_info()
         self.simbad_obj_type = self.get_simbad_obj_type()
         self.flux_type = flux_type
         self.exptime = exptime
@@ -135,49 +105,8 @@ class TessQuickLook:
         )
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
-        if custom_ephem:
-            self.ephem_source = "custom"
-            err_msg = (
-                "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
-            )
-            if len(custom_ephem) != 6:
-                logger.error(f"Error: {err_msg}")
-                sys.exit()
-            if self.verbose:
-                print(
-                    f"Using ephemeris mask:\nP={custom_ephem[0]}d\nt0={custom_ephem[2]}BJD\nt14={custom_ephem[4]}d"
-                )
-            # TODO: using tfop in variable name is misleading
-            if custom_ephem[0] > TESS_TIME_OFFSET:
-                if self.verbose:
-                    print(
-                        "Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
-                    )
-                custom_ephem[0] -= TESS_TIME_OFFSET
-            self.tfop_epoch = (custom_ephem[0], custom_ephem[1])
-            self.tfop_period = (custom_ephem[2], custom_ephem[3])
-            if custom_ephem[4] > 1:
-                if self.verbose:
-                    print(
-                        "Custom transit duration given in hours. Converting to days."
-                    )
-                custom_ephem[4] /= 24
-                custom_ephem[5] /= 24
-            self.tfop_dur = (custom_ephem[4], custom_ephem[5])
-            self.tfop_depth = None
-        else:
-            # use tfop ephem if available
-            (
-                self.tfop_epoch,
-                self.tfop_period,
-                self.tfop_dur,
-                self.tfop_depth,
-            ) = (
-                self.get_toi_ephem()
-                if len(self.tfop_info.get("planet_parameters")) != 0
-                else (None, None, None, None)
-            )
-            self.ephem_source = "tfop" if self.tfop_epoch[0] else None
+        self.custom_ephem = custom_ephem
+        self.parse_custom_ephem()
 
         if window_length is None:
             self.window_length = (
@@ -191,13 +120,13 @@ class TessQuickLook:
 
         self.tmask = self.get_transit_mask()
         err_msg = "No masked transits"
-        if self.tmask.sum() == 0:
+        if self.tfop_epoch is not None and self.tmask.sum() == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
         if mask_ephem:
             if self.verbose:
                 logger.info(
-                    f"Masking transits in raw lightcurve using {self.ephem_source} ephem."
+                    f"Masking transits in raw lightcurve using {self.ephem_source} ephem..."
                 )
             self.raw_lc = self.raw_lc[~self.tmask]
             # update tmask
@@ -257,6 +186,90 @@ class TessQuickLook:
         # Join the args with commas
         args = ", ".join(args)
         return f"{type(self).__name__}({args})"
+
+    def parse_tfop_info(self):
+        """
+        Parse the TFOP info to get the star names, Gaia name, Gaia ID, and target coordinates.
+        """
+        self.star_names = np.array(
+            self.tfop_info.get("basic_info")["star_names"].split(", ")
+        )
+        if self.verbose:
+            print(f"Catalog names:")
+            for n in self.star_names:
+                print(f"\t{n}")
+        self.gaia_name = self.star_names[
+            np.array([i[:4].lower() == "gaia" for i in self.star_names])
+        ][0]
+        self.gaiaid = int(self.gaia_name.split()[-1])
+        ra, dec = (
+            self.tfop_info.get("coordinates")["ra"],
+            self.tfop_info.get("coordinates")["dec"],
+        )
+        self.target_coord = SkyCoord(ra=ra, dec=dec, unit="degree")
+
+        if self.target_name.lower()[:3] == "toi":
+            self.toiid = int(float(self.target_name.split("-")[-1]))
+        else:
+            idx = [i[:3].lower() == "toi" for i in self.star_names]
+            if sum(idx) > 0:
+                toiid = int(self.star_names[idx][0].split("-")[-1])
+            else:
+                toiid = None
+            self.toiid = toiid
+        self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
+        if self.ticid is not None:
+            self.query_name = f"TIC{self.ticid}"
+        else:
+            self.query_name = self.target_name.replace("-", " ")
+
+    def parse_custom_ephem(self):
+        """
+        Parse the custom ephem to get the ephemeris source and parameters.
+        """
+        if self.custom_ephem:
+            self.ephem_source = "custom"
+            err_msg = (
+                "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
+            )
+            if len(self.custom_ephem) != 6:
+                logger.error(f"Error: {err_msg}")
+                sys.exit()
+            if self.verbose:
+                logger.info(
+                    f"Using ephemeris mask:\nP={self.custom_ephem[0]}d\nt0={self.custom_ephem[2]}BJD\nt14={self.custom_ephem[4]}d"
+                )
+            # TODO: using tfop in variable name is misleading
+            if self.custom_ephem[0] > TESS_TIME_OFFSET:
+                if self.verbose:
+                    logger.info(
+                        "Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
+                    )
+                self.custom_ephem[0] -= TESS_TIME_OFFSET
+            self.tfop_epoch = (self.custom_ephem[0], self.custom_ephem[1])
+            self.tfop_period = (self.custom_ephem[2], self.custom_ephem[3])
+            if self.custom_ephem[4] > 1:
+                if self.verbose:
+                    logger.info(
+                        "Custom transit duration given in hours. Converting to days."
+                    )
+                self.custom_ephem[4] /= 24
+                self.custom_ephem[5] /= 24
+            self.tfop_dur = (self.custom_ephem[4], self.custom_ephem[5])
+            self.tfop_depth = None
+        else:
+            # use tfop ephem if available
+            (
+                self.tfop_epoch,
+                self.tfop_period,
+                self.tfop_dur,
+                self.tfop_depth,
+            ) = (
+                self.get_toi_ephem()
+                if len(self.tfop_info.get("planet_parameters")) != 0
+                else (None, None, None, None)
+            )
+            self.ephem_source = "tfop" if self.tfop_epoch is not None else None
 
     def check_file_exists(self):
         name = self.target_name.replace(" ", "")
@@ -361,7 +374,7 @@ class TessQuickLook:
             sector_orig = None
         else:
             sector_orig = kwargs.pop("sector")
-            sector = None if sector_orig in ["all", -1] else sector_orig
+            sector = None if sector_orig in ["all", -1] else int(sector_orig)
             kwargs["sector"] = sector
 
         if sector_orig == "all":
@@ -423,6 +436,9 @@ class TessQuickLook:
             if self.verbose:
                 print(f"Filtered lightcurves based on query ({kwargs}):")
                 print(search_result.table.to_pandas()[cols])
+            msg = f"Downloading all {kwargs.get('author')} lcs..."
+            if self.verbose:
+                logger.info(msg)
             filtered_sectors = self.get_unique_sectors(search_result)
             if len(filtered_sectors) <= 1:
                 logger.error(
@@ -430,17 +446,20 @@ class TessQuickLook:
                 )
                 sys.exit()
             lc = search_result.download_all().stitch()
-            msg = f"Downloaded all {kwargs.get('author')} lc in sectors {', '.join([str(s) for s in self.all_sectors])}."
+            self.sector = self.all_sectors
+            exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            msg = f"Downloaded all {kwargs.get('author')} (exp={exptime} s) lcs in sectors {', '.join([str(s) for s in self.all_sectors])}."
             if self.verbose:
                 logger.info(msg)
-            exptime = int(lc.meta["EXPOSURE"] / 10) * 10
-            self.sector = self.all_sectors
         else:
             # Download the light curve for the specified sector
+            msg = f"Downloading {kwargs.get('author').upper()} lc..."
+            if self.verbose:
+                logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
-            exptime = search_result.exptime[idx].value
-            msg = f"Downloaded {kwargs.get('author').upper()} (exp={exptime} s) lc in sector {lc.sector}."
+            exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            msg = f"Downloaded {lc.meta['AUTHOR'].upper()} (exp={exptime} s) lc in sector {lc.sector}."
             if self.verbose:
                 logger.info(msg)
             self.sector = lc.sector
@@ -452,6 +471,7 @@ class TessQuickLook:
         # Set exposure time and cadence
         if self.exptime is None:
             self.exptime = exptime
+        # assert self.exptime == search_result.exptime[idx].value
         self.cadence = "short" if self.exptime < 1800 else "long"
 
         # Apply sigma clipping if specified
@@ -491,7 +511,7 @@ class TessQuickLook:
             sector_orig = None
         else:
             sector_orig = kwargs.pop("sector")
-            sector = None if sector_orig in ["all", -1] else sector_orig
+            sector = None if sector_orig in ["all", -1] else int(sector_orig)
             kwargs["sector"] = sector
 
         if kwargs.get("author") is None:
@@ -520,7 +540,7 @@ class TessQuickLook:
                 tpf_authors[i] for i in range(len(tpf_authors)) if i != "QLP"
             ][0]
         if self.verbose:
-            logger.info(f"Using {kwargs.get('author').upper()} TPF.")
+            logger.info(f"Using {kwargs.get('author').upper()} TPF...")
 
         # Search using the specified author and sector
         search_result = lk.search_targetpixelfile(self.query_name, **kwargs)
@@ -529,13 +549,16 @@ class TessQuickLook:
         if len(search_result) == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
+        msg = f"Downloading TPF..."
+        if self.verbose:
+            logger.info(msg)
         idx = sector_orig if sector_orig == -1 else 0
         tpf = search_result[idx].download()
         # FIXME: What is the correct tpf aperture for other pipeline?
         # author = tpf.meta['PROCVER'].split('-')[0]
         author = search_result.author[idx].upper()
         exptime = search_result.exptime[idx].value
-        msg = f"Downloaded {author.upper()} (exp={exptime} s) TPF "
+        msg = f"Downloaded {author} (exp={exptime} s) TPF "
         msg += f"in sector {tpf.meta['SECTOR']}."
         if self.verbose:
             logger.info(msg)
@@ -673,7 +696,7 @@ class TessQuickLook:
         )
         if self.verbose:
             logger.info(
-                "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram."
+                "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram..."
             )
         return Gls(
             data, Pbeg=self.Porb_min, Pend=self.Porb_max, verbose=self.verbose
@@ -790,7 +813,7 @@ class TessQuickLook:
             try:
                 # Convert to float or int as needed
                 params[name] = (
-                    int(star_params.get(name))
+                    int(float(star_params.get(name)))
                     if name == "teff"
                     else float(star_params.get(name))
                 )
@@ -1004,11 +1027,9 @@ class TessQuickLook:
         self.trend_lc.plot(ax=ax, color="r", lw=2, label="trend")
 
         if self.verbose:
-            logger.info("Plotting Lomb-Scargle periodogram...")
+            logger.info("Running Lomb-Scargle periodogram...")
         ax = axes.flatten()[1]
         if self.pg_method == "gls":
-            if self.verbose:
-                logger.info("Initializing GLS...")
             self.gls = self.init_gls()
             ax = plot_gls_periodogram(
                 self.gls,
@@ -1023,7 +1044,7 @@ class TessQuickLook:
             self.Prot_ls = self.gls.best["P"]
             if math.isnan(self.gls.power.max()):
                 logger.error(
-                    "GLS power max is NaN, switching to Lomb-Scargle..."
+                    "GLS power is NaN, switching to astropy's Lomb-Scargle..."
                 )
                 ax.clear()
                 self.pg_method = "lombscargle"
@@ -1035,8 +1056,6 @@ class TessQuickLook:
                 )
                 self.Prot_ls = pg.period_at_max_power.value
         else:
-            if self.verbose:
-                logger.info(f"Using periodogram method: {self.pg_method}...")
             self.gls = None
             pg = plot_periodogram(
                 self.raw_lc[~self.tmask],
@@ -1045,7 +1064,6 @@ class TessQuickLook:
                 ax=ax,
             )
             self.Prot_ls = pg.period_at_max_power.value
-
         if self.verbose:
             logger.info("Appending TLS results...")
         self.append_tls_results()
@@ -1125,8 +1143,6 @@ class TessQuickLook:
             self.tpf = self.get_tpf_tesscut()
             self.sap_mask = "square"
         else:
-            if self.verbose:
-                logger.info("Getting TPF...")
             self.tpf = self.get_tpf(
                 sector=self.sector,
                 author=self.pipeline,
@@ -1204,13 +1220,13 @@ class TessQuickLook:
         title = ""
         if self.toiid is not None:
             title = f"TOI {self.toiid} | "
-        title += f"TIC {self.ticid} "
+        title += f"TIC {self.ticid} | sector {self.sector} | "
         lctype = (
             f"{self.pipeline.upper()}/{self.flux_type}"
             if self.pipeline == "spoc"
             else self.pipeline.upper()
         )
-        title += f"| {lctype} lightcurve"
+        title += f"{lctype.upper()} lightcurve"
         fig.suptitle(title, y=1.0, fontsize=20)
 
         if (self.outdir is not None) & (not Path(self.outdir).exists()):
