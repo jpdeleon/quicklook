@@ -98,6 +98,7 @@ class TessQuickLook:
         )
         self.overwrite = overwrite
         self.outdir = outdir
+        self.mask_ephem = mask_ephem
         _ = self.check_file_exists()
         self.flatten_method = flatten_method
         self.gp_kernel = (
@@ -123,7 +124,7 @@ class TessQuickLook:
         if self.tfop_epoch is not None and self.tmask.sum() == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
-        if mask_ephem:
+        if self.mask_ephem:
             if self.verbose:
                 logger.info(
                     f"Masking transits in raw lightcurve using {self.ephem_source} ephem..."
@@ -280,6 +281,8 @@ class TessQuickLook:
             self.outdir,
             f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
         )
+        if self.mask_ephem:
+            fp = fp.with_stem(fp.stem + "_mask_ephem")
         png_file = fp.with_suffix(".png")
         if png_file.exists() and not self.overwrite:
             raise FileExistsError(
