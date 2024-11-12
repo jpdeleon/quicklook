@@ -1027,7 +1027,8 @@ class TessQuickLook:
 
         if self.verbose:
             logger.info("Plotting trend...")
-        self.trend_lc.plot(ax=ax, color="r", lw=2, label="trend")
+        label = f"baseline trend\nmethod={self.flatten_method}(window_size={self.window_length:.2f})"
+        self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
 
         if self.verbose:
             logger.info("Running Lomb-Scargle periodogram...")
