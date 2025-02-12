@@ -450,7 +450,12 @@ class TessQuickLook:
                 sys.exit()
             lc = search_result.download_all().stitch()
             self.sector = self.all_sectors
-            exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            # import pdb; pdb.set_trace()
+            if self.pipeline != "qlp":
+                exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            else:
+                # estimate exp time
+                exptime = round(np.diff(lc.time.jd).mean() * 24 * 60 * 60, -2)
             msg = f"Downloaded all {kwargs.get('author')} (exp={exptime} s) lcs in sectors {', '.join([str(s) for s in self.all_sectors])}."
             if self.verbose:
                 logger.info(msg)
@@ -461,7 +466,12 @@ class TessQuickLook:
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
-            exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            # import pdb; pdb.set_trace()
+            if self.pipeline != "qlp":
+                exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+            else:
+                # estimate exp time
+                exptime = round(np.diff(lc.time.jd).mean() * 24 * 60 * 60, -2)
             msg = f"Downloaded {lc.meta['AUTHOR'].upper()} (exp={exptime} s) lc in sector {lc.sector}."
             if self.verbose:
                 logger.info(msg)
