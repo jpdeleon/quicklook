@@ -451,7 +451,7 @@ class TessQuickLook:
             lc = search_result.download_all().stitch()
             self.sector = self.all_sectors
             # import pdb; pdb.set_trace()
-            if self.pipeline not in ["qlp", "cdips"]:
+            if self.pipeline in ["spoc"]:
                 exptime = int(lc.meta["EXPOSURE"] / 10) * 10
             else:
                 # estimate exp time
@@ -467,7 +467,7 @@ class TessQuickLook:
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download()
             # import pdb; pdb.set_trace()
-            if self.pipeline not in ["qlp", "cdips"]:
+            if self.pipeline in ["spoc"]:
                 exptime = int(lc.meta["EXPOSURE"] / 10) * 10
             else:
                 # estimate exp time
