@@ -1,3 +1,15 @@
+"""
+1. See: 
+* https://ui.adsabs.harvard.edu/abs/2021ascl.soft01011R/abstract
+* https://deep-lightcurve.readthedocs.io/en/latest/notebooks/Quickstart.html
+* https://ui.adsabs.harvard.edu/abs/2022MNRAS.516.4432M/abstract
+2. Add momentum dumps as in TESSLatte: 
+https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c51/LATTE/LATTEutils.py#L3501C13-L3501C63
+3. Add RUWE in plots
+4. ingest functions from target.py:
+http://localhost:9995/lab/workspaces/auto-q/tree/chronos/chronos/target.py
+
+"""
 import sys
 import math
 import traceback
@@ -71,7 +83,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
-        plot: bool = True,
+        show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
         savetls: bool = False,
@@ -83,6 +95,7 @@ class TessQuickLook:
         self.target_name = target_name
         logger.info(f"Generating quicklook for {self.target_name}...")
         self.verbose = verbose
+        self.show_plot = show_plot
         self.tfop_info = get_tfop_info(target_name)
         self.parse_tfop_info()
         self.simbad_obj_type = self.get_simbad_obj_type()
@@ -99,7 +112,7 @@ class TessQuickLook:
         self.overwrite = overwrite
         self.outdir = outdir
         self.mask_ephem = mask_ephem
-        _ = self.check_file_exists()
+        _ = self.check_output_file_exists()
         self.flatten_method = flatten_method
         self.gp_kernel = (
             gp_kernel  # squared_exp, matern, periodic, periodic_auto
@@ -147,7 +160,6 @@ class TessQuickLook:
             normalize_phase=False,
             wrap_phase=self.tls_results.period / 2,
         )
-        self.plot = plot
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
@@ -244,7 +256,7 @@ class TessQuickLook:
             if self.custom_ephem[0] > TESS_TIME_OFFSET:
                 if self.verbose:
                     logger.info(
-                        "Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
+                        f"Custom transit epoch given in JD. Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
                     )
                 self.custom_ephem[0] -= TESS_TIME_OFFSET
             self.tfop_epoch = (self.custom_ephem[0], self.custom_ephem[1])
@@ -272,7 +284,7 @@ class TessQuickLook:
             )
             self.ephem_source = "tfop" if self.tfop_epoch is not None else None
 
-    def check_file_exists(self):
+    def check_output_file_exists(self):
         name = self.target_name.replace(" ", "")
         if name.lower()[:3] == "toi":
             name = f"TOI{str(self.toiid).zfill(4)}"
@@ -935,7 +947,7 @@ class TessQuickLook:
         msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
-        msg += f"Rotation speed={per/t:.2f} km/s\n"
+        msg += f"Vsini={per/t:.2f} km/s\n"
         msg += f"Gaia DR2 ID={self.gaiaid}\n"
         # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
@@ -1251,7 +1263,7 @@ class TessQuickLook:
             self.outdir,
             f"{name}_s{str(self.sector).zfill(2)}_{self.pipeline}_{self.cadence[0]}c",
         )
-        fp = self.check_file_exists()
+        fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
         if self.savefig:
             save_figure(fig, png_file, dpi=100, writepdf=False)
