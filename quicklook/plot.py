@@ -137,7 +137,12 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     except Exception as e:
         print(e)
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(half_phase - t14 * 2, half_phase + t14 * 2)
+    if t14 > 1 / 24:
+        xlims = (half_phase - t14 * 2, half_phase + t14 * 2)
+    else:
+        # xlims = (0,1)
+        xlims = (half_phase - t14 * 5, half_phase + t14 * 5)
+    ax.set_xlim(*xlims)
     ax.legend()
     return ax
 

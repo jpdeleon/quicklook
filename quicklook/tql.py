@@ -1,9 +1,9 @@
 """
-1. See: 
+1. See:
 * https://ui.adsabs.harvard.edu/abs/2021ascl.soft01011R/abstract
 * https://deep-lightcurve.readthedocs.io/en/latest/notebooks/Quickstart.html
 * https://ui.adsabs.harvard.edu/abs/2022MNRAS.516.4432M/abstract
-2. Add momentum dumps as in TESSLatte: 
+2. Add momentum dumps as in TESSLatte:
 https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c51/LATTE/LATTEutils.py#L3501C13-L3501C63
 3. Add RUWE in plots
 4. ingest functions from target.py:
@@ -83,7 +83,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
-        tls_kwargs: dict = None,
+        tls_kwargs: dict = {},
         show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
@@ -710,7 +710,7 @@ class TessQuickLook:
         ).power(
             period_min=self.Porb_min,  # Roche limit default
             period_max=self.Porb_max,
-            **self.tls_kwargs
+            **self.tls_kwargs,
         )
 
     def init_gls(self):
