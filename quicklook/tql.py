@@ -1279,7 +1279,7 @@ class TessQuickLook:
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start
         logger.info(f"#----------Runtime: {elapsed_time:.2f} s----------#\n")
-        if not self.plot:
+        if not self.show_plot:
             pl.clf()
         return fig
 
