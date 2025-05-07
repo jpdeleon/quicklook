@@ -556,6 +556,7 @@ def plot_gaia_sources_on_survey(
     kmax=1.0,
     sap_mask="pipeline",
     survey="dss1",
+    aper_ls="solid",
     ax=None,
     color_aper="C0",  # pink
     figsize=None,
@@ -653,6 +654,7 @@ def plot_gaia_sources_on_survey(
         extent=extent,
         origin="lower",
         linewidths=[3],
+        linestyles=aper_ls,
         colors=color_aper,
         transform=ax.get_transform(WCS(maskhdr)),
     )
