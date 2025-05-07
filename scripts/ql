@@ -210,9 +210,17 @@ parser.add_argument(
     action="store_true",
     default=False,
 )
+parser.add_argument(
+    "--tls_kwargs",
+    nargs='*', 
+    help="TLS kwargs (https://transitleastsquares.readthedocs.io/en/latest/Python%20interface.html#define-parameters-and-run-search): key=value"
+)
 
 # prints help if no argument supplied
 args = parser.parse_args(None if sys.argv[1:] else ["-h"])
+
+if args.tls_kwargs:
+    tls_kwargs = dict(pair.split('=') for pair in args.tls_kwargs)
 
 if __name__ == "__main__":
     ql = TessQuickLook(
@@ -250,6 +258,7 @@ if __name__ == "__main__":
         # nearby_gaia_radius=args.nearby_gaia_radius,
         # run_gls=args.gls,
         archival_survey=args.survey,
+        tls_kwargs=tls_kwargs,
         savefig=args.save,
         savetls=args.save,
         outdir=args.outdir,

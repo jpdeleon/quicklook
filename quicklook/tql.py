@@ -83,6 +83,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
+        tls_kwargs: dict = None,
         show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
@@ -109,6 +110,7 @@ class TessQuickLook:
             sector=sector,
             exptime=self.exptime,  # cadence=cadence
         )
+        self.tls_kwargs = tls_kwargs
         self.overwrite = overwrite
         self.outdir = outdir
         self.mask_ephem = mask_ephem
@@ -708,6 +710,7 @@ class TessQuickLook:
         ).power(
             period_min=self.Porb_min,  # Roche limit default
             period_max=self.Porb_max,
+            **self.tls_kwargs
         )
 
     def init_gls(self):
