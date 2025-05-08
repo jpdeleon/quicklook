@@ -342,7 +342,7 @@ class TessQuickLook:
 
         if r:
             # Extract the object type category
-            category = r.to_pandas().squeeze()["OTYPE"]
+            category = r.to_pandas().squeeze()["otype"]
 
             if len(category) >= 4:
                 return category
