@@ -39,6 +39,7 @@ from quicklook.utils import (
 )
 from quicklook.gls import Gls
 from quicklook.plot import (
+    use_style,
     get_dss_data,
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
@@ -49,7 +50,6 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 
-pl.style.use("science")
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
@@ -59,6 +59,7 @@ __all__ = ["TessQuickLook"]
 
 DATA_PATH = files("quicklook").joinpath("../data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
+use_style("science")
 
 
 class TessQuickLook:
