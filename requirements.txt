@@ -2,12 +2,13 @@ pre-commit==3.4.0
 #matplotlib==3.8.0 #does not run in python<3.11
 matplotlib
 lightkurve==2.5
-numpy==1.23
+#numpy==1.23
+numpy>=1.26
 transitleastsquares==1.32
 wotan==1.10
-aesthetic==0.6
 flammkuchen==1.0.3
 reproject==0.12.0
 astroplan==0.9
 loguru
 # astroquery==0.4.6
+pytest

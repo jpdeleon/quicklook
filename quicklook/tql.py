@@ -30,8 +30,6 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astroquery.simbad import Simbad
 import lightkurve as lk
-from aesthetic.plot import set_style
-from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
 from quicklook.utils import (
     get_tfop_info,
@@ -51,7 +49,7 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 
-# set_style("science")
+pl.style.use("science")
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
@@ -1269,7 +1267,8 @@ class TessQuickLook:
         fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
         if self.savefig:
-            save_figure(fig, png_file, dpi=100, writepdf=False)
+            fig.savefig(png_file, dpi=100, bbox_inches="tight")
+            logger.info(f"Saved: {png_file}.")
 
         if self.savetls:
             h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
