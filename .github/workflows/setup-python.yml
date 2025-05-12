@@ -70,6 +70,16 @@ jobs:
           conda activate ql
           pytest
 
+      - name: Run all Jupyter Notebooks
+        shell: bash -l {0}
+        run: |
+          conda activate ql
+          pip install nbconvert
+          for notebook in $(find . -name "*.ipynb" ! -path "./.ipynb_checkpoints/*"); do
+            jupyter nbconvert --to notebook --execute "$notebook" --output /dev/null
+          done
+
+
       # Install twine for PyPI publishing
       - name: Install twine
         shell: bash -l {0}
