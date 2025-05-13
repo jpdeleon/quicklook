@@ -11,3 +11,10 @@ reproject==0.12.0
 astroplan==0.9
 loguru
 # astroquery==0.4.6
+pytest
+# Compatibility packages
+importlib_resources>=5.0.0
+# Packages for notebook execution
+ipykernel
+jupyter
+nbconvert

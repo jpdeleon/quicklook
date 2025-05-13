@@ -64,11 +64,20 @@ jobs:
           conda activate ql
           pip install -e .
 
-      - name: Test with pytest
+      - name: Run all tests
         shell: bash -l {0}
         run: |
           conda activate ql
-          pytest
+          # Install required packages for notebook execution
+          pip install jupyter nbconvert
+          # Set environment variable to indicate kernel is installed
+          export KERNEL_INSTALLED=1
+          # Run regular tests first
+          echo "Running regular tests..."
+          pytest -v -m "not notebook"
+          # Run notebook tests separately
+          echo "Running notebook tests..."
+          pytest -v -m "notebook"
 
       # Install twine for PyPI publishing
       - name: Install twine

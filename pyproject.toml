@@ -19,7 +19,8 @@ dependencies = [
     "flammkuchen==1.0.3",
     "reproject==0.12.0",
     "astroplan==0.9",
-    "loguru"
+    "loguru",
+    "importlib_resources>=5.0.0"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

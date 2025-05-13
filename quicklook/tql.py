@@ -16,10 +16,10 @@ import math
 import traceback
 import textwrap
 import warnings
-from importlib.resources import files
 from pathlib import Path
 from time import time as timer
 from loguru import logger
+from quicklook.compat import get_data_path
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
@@ -60,7 +60,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-DATA_PATH = files("quicklook").joinpath("../data")
+DATA_PATH = get_data_path("quicklook").joinpath("../data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 
 
@@ -1277,7 +1277,7 @@ class TessQuickLook:
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start
         logger.info(f"#----------Runtime: {elapsed_time:.2f} s----------#\n")
-        if not self.plot:
+        if not self.show_plot:
             pl.clf()
         return fig
 
