@@ -1,15 +1,16 @@
 """
-1. See: 
+1. See:
 * https://ui.adsabs.harvard.edu/abs/2021ascl.soft01011R/abstract
 * https://deep-lightcurve.readthedocs.io/en/latest/notebooks/Quickstart.html
 * https://ui.adsabs.harvard.edu/abs/2022MNRAS.516.4432M/abstract
-2. Add momentum dumps as in TESSLatte: 
+2. Add momentum dumps as in TESSLatte:
 https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c51/LATTE/LATTEutils.py#L3501C13-L3501C63
 3. Add RUWE in plots
 4. ingest functions from target.py:
 http://localhost:9995/lab/workspaces/auto-q/tree/chronos/chronos/target.py
 
 """
+
 import sys
 import math
 import traceback
@@ -208,7 +209,7 @@ class TessQuickLook:
             self.tfop_info.get("basic_info")["star_names"].split(", ")
         )
         if self.verbose:
-            print(f"Catalog names:")
+            print("Catalog names:")
             for n in self.star_names:
                 print(f"\t{n}")
         self.gaia_name = self.star_names[
@@ -340,7 +341,7 @@ class TessQuickLook:
 
         if r:
             # Extract the object type category
-            category = r.to_pandas().squeeze()["OTYPE"]
+            category = r.to_pandas().squeeze()["otype"]
 
             if len(category) >= 4:
                 return category
@@ -574,7 +575,7 @@ class TessQuickLook:
         if len(search_result) == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
-        msg = f"Downloading TPF..."
+        msg = "Downloading TPF..."
         if self.verbose:
             logger.info(msg)
         idx = sector_orig if sector_orig == -1 else 0
