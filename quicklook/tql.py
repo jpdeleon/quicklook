@@ -31,8 +31,6 @@ from astropy.wcs import WCS
 import astropy.units as u
 from astroquery.simbad import Simbad
 import lightkurve as lk
-from aesthetic.plot import set_style
-from aesthetic.plot import savefig as save_figure
 import flammkuchen as fk
 from quicklook.utils import (
     get_tfop_info,
@@ -42,6 +40,7 @@ from quicklook.utils import (
 )
 from quicklook.gls import Gls
 from quicklook.plot import (
+    use_style,
     get_dss_data,
     plot_gaia_sources_on_survey,
     plot_gaia_sources_on_tpf,
@@ -52,7 +51,6 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 
-# set_style("science")
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
@@ -62,6 +60,7 @@ __all__ = ["TessQuickLook"]
 
 DATA_PATH = get_data_path("quicklook").joinpath("../data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
+use_style("science")
 
 
 class TessQuickLook:
@@ -84,6 +83,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
+        tls_kwargs: dict = {},
         show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
@@ -110,6 +110,7 @@ class TessQuickLook:
             sector=sector,
             exptime=self.exptime,  # cadence=cadence
         )
+        self.tls_kwargs = tls_kwargs
         self.overwrite = overwrite
         self.outdir = outdir
         self.mask_ephem = mask_ephem
@@ -709,6 +710,7 @@ class TessQuickLook:
         ).power(
             period_min=self.Porb_min,  # Roche limit default
             period_max=self.Porb_max,
+            **self.tls_kwargs,
         )
 
     def init_gls(self):
@@ -1267,7 +1269,8 @@ class TessQuickLook:
         fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
         if self.savefig:
-            save_figure(fig, png_file, dpi=100, writepdf=False)
+            fig.savefig(png_file, dpi=100, bbox_inches="tight")
+            logger.info(f"Saved: {png_file}.")
 
         if self.savetls:
             h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")

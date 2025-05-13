@@ -1,3 +1,4 @@
+import importlib.resources as pkg_resources
 import matplotlib.pyplot as pl
 import numpy as np
 from matplotlib.patches import Circle
@@ -44,6 +45,11 @@ dss_description = {
     "phase2_gsc2": "HST Phase 2 Target Positioning (GSC 2)",
     "phase2_gsc1": "HST Phase 2 Target Positioning (GSC 1)",
 }
+
+
+def use_style(name="science"):
+    with pkg_resources.path(__package__, f"{name}.mplstyle") as style_path:
+        pl.style.use(str(style_path))
 
 
 def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
@@ -137,7 +143,12 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     except Exception as e:
         print(e)
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(half_phase - t14 * 2, half_phase + t14 * 2)
+    if t14 > 1 / 24:
+        xlims = (half_phase - t14 * 2, half_phase + t14 * 2)
+    else:
+        # xlims = (0,1)
+        xlims = (half_phase - t14 * 5, half_phase + t14 * 5)
+    ax.set_xlim(*xlims)
     ax.legend()
     return ax
 
@@ -556,6 +567,7 @@ def plot_gaia_sources_on_survey(
     kmax=1.0,
     sap_mask="pipeline",
     survey="dss1",
+    aper_ls="solid",
     ax=None,
     color_aper="C0",  # pink
     figsize=None,
@@ -653,6 +665,7 @@ def plot_gaia_sources_on_survey(
         extent=extent,
         origin="lower",
         linewidths=[3],
+        linestyles=aper_ls,
         colors=color_aper,
         transform=ax.get_transform(WCS(maskhdr)),
     )
