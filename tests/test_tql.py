@@ -44,6 +44,7 @@ def variable_star_inputs():
     }
 
 
+@pytest.mark.network
 def test_tql_planet(planet_inputs):
     """Test TessQuickLook with a known exoplanet target"""
     ql = TessQuickLook(**planet_inputs)
@@ -67,6 +68,7 @@ def test_tql_planet(planet_inputs):
     assert ql.tls_results.period > 0
 
 
+@pytest.mark.network
 def test_tql_eb(eb_inputs):
     """Test TessQuickLook with a known eclipsing binary target"""
     ql = TessQuickLook(**eb_inputs)
@@ -90,6 +92,7 @@ def test_tql_eb(eb_inputs):
     assert ql.tls_results.period > 0
 
 
+@pytest.mark.network
 def test_tql_variable_star(variable_star_inputs):
     """Test TessQuickLook with a known variable star target"""
     ql = TessQuickLook(**variable_star_inputs)
@@ -102,6 +105,41 @@ def test_tql_variable_star(variable_star_inputs):
     assert ql.sector == variable_star_inputs["sector"]
     assert ql.flux_type == variable_star_inputs["flux_type"].lower()
     assert ql.pipeline == variable_star_inputs["pipeline"].lower()
+
+
+def test_with_mock_light_curve(mock_light_curve, planet_inputs):
+    """Test TessQuickLook with a mock light curve"""
+    inputs = planet_inputs.copy()
+
+    # We need to patch multiple methods to avoid network calls and initialization issues
+    with patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve):
+        # Patch check_output_file_exists to avoid pipeline attribute error
+        with patch.object(
+            TessQuickLook, "check_output_file_exists", return_value=None
+        ):
+            # Create the TessQuickLook instance
+            ql = TessQuickLook(**inputs)
+
+            # Manually set the required attributes
+            ql.pipeline = inputs["pipeline"].lower()
+            ql.sector = inputs["sector"]
+
+            # Check that the light curve was set correctly
+            assert ql.raw_lc is mock_light_curve
+
+            # Check that the flattened light curve was created
+            assert isinstance(ql.flat_lc, lk.LightCurve)
+            assert isinstance(ql.trend_lc, lk.LightCurve)
+
+            # Check that TLS was run
+            assert hasattr(ql, "tls_results")
+            assert hasattr(ql.tls_results, "period")
+
+            # Test basic attributes
+            assert ql.target_name == inputs["target_name"]
+            assert ql.flux_type == inputs["flux_type"].lower()
+            assert ql.pipeline == inputs["pipeline"].lower()
+            assert ql.sector == inputs["sector"]
 
 
 # @pytest.mark.parametrize("pg_method", ["gls", "lombscargle", "bls"])

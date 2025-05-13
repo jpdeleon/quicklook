@@ -10,15 +10,16 @@ https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c5
 http://localhost:9995/lab/workspaces/auto-q/tree/chronos/chronos/target.py
 
 """
+
 import sys
 import math
 import traceback
 import textwrap
 import warnings
-from importlib.resources import files
 from pathlib import Path
 from time import time as timer
 from loguru import logger
+from quicklook.compat import get_data_path
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
@@ -57,7 +58,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-DATA_PATH = files("quicklook").joinpath("../data")
+DATA_PATH = get_data_path("quicklook").joinpath("../data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
 
@@ -209,7 +210,7 @@ class TessQuickLook:
             self.tfop_info.get("basic_info")["star_names"].split(", ")
         )
         if self.verbose:
-            print(f"Catalog names:")
+            print("Catalog names:")
             for n in self.star_names:
                 print(f"\t{n}")
         self.gaia_name = self.star_names[
@@ -575,7 +576,7 @@ class TessQuickLook:
         if len(search_result) == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
-        msg = f"Downloading TPF..."
+        msg = "Downloading TPF..."
         if self.verbose:
             logger.info(msg)
         idx = sector_orig if sector_orig == -1 else 0

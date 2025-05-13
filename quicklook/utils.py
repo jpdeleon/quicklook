@@ -1,13 +1,17 @@
 import json
+import os
+import sys
 from pathlib import Path
-from importlib.resources import files
 from urllib.request import urlopen
 import numpy as np
 import pandas as pd
 import astropy.units as u
 
+# Import the compatibility module
+from quicklook.compat import get_data_path
+
 # Ensure 'quicklook' is the top-level package
-DATA_PATH = files("quicklook").joinpath("../data")
+DATA_PATH = get_data_path("quicklook").joinpath("../data")
 TESS_TIME_OFFSET = 2_457_000
 TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD
