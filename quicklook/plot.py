@@ -1,3 +1,4 @@
+import importlib.resources as pkg_resources
 import matplotlib.pyplot as pl
 import numpy as np
 from matplotlib.patches import Circle
@@ -22,6 +23,7 @@ from quicklook.utils import (
 from quicklook.measure import find_contours
 
 __all__ = [
+    "use_style",
     "plot_odd_even_transit",
     "plot_secondary_eclipse",
     "plot_periodogram",
@@ -44,6 +46,11 @@ dss_description = {
     "phase2_gsc2": "HST Phase 2 Target Positioning (GSC 2)",
     "phase2_gsc1": "HST Phase 2 Target Positioning (GSC 1)",
 }
+
+
+def use_style(name="science"):
+    with pkg_resources.path(__package__, f"{name}.mplstyle") as style_path:
+        pl.style.use(str(style_path))
 
 
 def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
