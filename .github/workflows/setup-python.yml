@@ -13,14 +13,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #macoos-13 is  x86_64 (Intel-based), macos-14 is ARM64
         os: [ubuntu-latest, macos-13, macos-14]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
@@ -29,26 +28,25 @@ jobs:
         uses: conda-incubator/setup-miniconda@v2
         with:
           python-version: ${{ matrix.python-version }}
-          miniconda-version: "latest"
           auto-activate-base: true
 
-      - name: Install mamba for faster environment setup
+      - name: Install mamba
         run: conda install -n base -c conda-forge mamba
 
-      - name: Cache Conda Environment
+      - name: Cache Conda environment
         id: cache-conda
         uses: actions/cache@v3
         with:
-          path: /Users/runner/miniconda3/envs/ql
+          path: ${{ env.CONDA }}/envs/ql
           key: ${{ runner.os }}-conda-${{ matrix.python-version }}-${{ hashFiles('environment.yml') }}
           restore-keys: |
             ${{ runner.os }}-conda-${{ matrix.python-version }}-
 
-      - name: Remove existing Conda environment if cache not hit
+      - name: Remove existing Conda env if needed
         if: steps.cache-conda.outputs.cache-hit != 'true'
-        run: conda env remove -n ql || echo "Environment does not exist"
+        run: conda env remove -n ql || echo "No existing env to remove"
 
-      - name: Create Conda environment using mamba
+      - name: Create environment
         if: steps.cache-conda.outputs.cache-hit != 'true'
         run: mamba env create -f environment.yml
 
@@ -64,36 +62,24 @@ jobs:
           conda activate ql
           pip install -e .
 
-      - name: Run all tests
+      - name: Run tests
         shell: bash -l {0}
         run: |
           conda activate ql
-          # Install required packages for notebook execution
           pip install jupyter nbconvert
-          # Set environment variable to indicate kernel is installed
-          export KERNEL_INSTALLED=1
-          # Run regular tests first
           echo "Running regular tests..."
           pytest -v -m "not notebook"
-          # Run notebook tests separately
           echo "Running notebook tests..."
           pytest -v -m "notebook"
 
-      # Install twine for PyPI publishing
-      - name: Install twine
-        shell: bash -l {0}
-        run: |
-          conda activate ql
-          pip install twine
-
-      # Publish step for PyPI
-      - name: Publish to PyPI
+      - name: Build and Upload to PyPI
         if: github.event_name == 'release' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         shell: bash -l {0}
         env:
-          TWINE_USERNAME: "__TOKEN__"
+          TWINE_USERNAME: "__token__"
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           conda activate ql
-          python setup.py sdist bdist_wheel
+          pip install build twine
+          python -m build
           twine upload dist/*
