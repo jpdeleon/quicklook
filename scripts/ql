@@ -97,13 +97,14 @@ parser.add_argument(
 # parser.add_argument(
 #     "-perc", "--percentile", type=float, help="mask percentile", default=90
 # )
-# parser.add_argument(
-#     "-qb",
-#     "--quality_bitmask",
-#     type=str,
-#     choices=["none", "default", "hard", "hardest"],
-#     default="default",
-# )
+parser.add_argument(
+    "--quality_bitmask",
+    help="remove specific data points identified in TESS data release notes",
+    # see https://github.com/lightkurve/lightkurve/blob/main/src/lightkurve/utils.py#L220
+    type=str,
+    choices=["none", "default", "hard", "hardest"],
+    default="default",
+)
 # parser.add_argument(
 #     "-size",
 #     "--cutout_size",
@@ -158,13 +159,6 @@ parser.add_argument(
     type=float,
     default=None,
 )
-# parser.add_argument(
-#     "-qm",
-#     "--quality_mask",
-#     action="store_true",
-#     help="remove chunks of bad cadences identified in data release notes",
-#     default=False,
-# )
 # parser.add_argument(
 #     "-u",
 #     "--use_priors",
@@ -235,7 +229,7 @@ if __name__ == "__main__":
         # aper_radius=args.aper_radius,
         # threshold_sigma=args.threshold,
         # percentile=args.percentile,
-        # quality_bitmask=args.quality_bitmask,
+        quality_bitmask=args.quality_bitmask,
         # apply_data_quality_mask=args.quality_mask,
         flatten_method=args.flatten_method,
         window_length=args.window_length,

@@ -88,6 +88,7 @@ class TessQuickLook:
         savefig: bool = False,
         savetls: bool = False,
         overwrite: bool = False,
+        quality_bitmask: str = "default",
         outdir: str = ".",
     ):
         # start timer
@@ -104,6 +105,7 @@ class TessQuickLook:
         self.pg_method = pg_method
         self.sigma_clip_raw = sigma_clip_raw
         self.sigma_clip_flat = sigma_clip_flat
+        self.quality_bitmask = quality_bitmask
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
@@ -460,7 +462,9 @@ class TessQuickLook:
                     f"Only {len(filtered_sectors)} sector is available."
                 )
                 sys.exit()
-            lc = search_result.download_all().stitch()
+            lc = search_result.download_all(
+                quality_bitmask=self.quality_bitmask
+            ).stitch()
             self.sector = self.all_sectors
             # import pdb; pdb.set_trace()
             if self.pipeline in ["spoc"]:
@@ -477,7 +481,9 @@ class TessQuickLook:
             if self.verbose:
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
-            lc = search_result[idx].download()
+            lc = search_result[idx].download(
+                quality_bitmask=self.quality_bitmask
+            )
             # import pdb; pdb.set_trace()
             if self.pipeline in ["spoc"]:
                 exptime = int(lc.meta["EXPOSURE"] / 10) * 10
@@ -578,7 +584,7 @@ class TessQuickLook:
         if self.verbose:
             logger.info(msg)
         idx = sector_orig if sector_orig == -1 else 0
-        tpf = search_result[idx].download()
+        tpf = search_result[idx].download(quality_bitmask=self.quality_bitmask)
         # FIXME: What is the correct tpf aperture for other pipeline?
         # author = tpf.meta['PROCVER'].split('-')[0]
         author = search_result.author[idx].upper()
@@ -601,7 +607,7 @@ class TessQuickLook:
             logger.error("Provide sector.")
             sys.exit()
         tpf = lk.search_tesscut(self.query_name, sector=self.sector).download(
-            cutout_size=(15, 15)
+            cutout_size=(15, 15), quality_bitmask=self.quality_bitmask
         )
         if tpf is None:
             logger.error("No results from Tesscut search.")
@@ -999,8 +1005,8 @@ class TessQuickLook:
         self.tls_results["depth_tfop"] = self.tfop_depth
 
         # Append the Gaia ID, TIC ID, and TOI ID
-        self.tls_results["gaiaid"] = self.gaiaid
-        self.tls_results["ticid"] = self.ticid
+        self.tls_results["gaiaid"] = int(self.gaiaid)
+        self.tls_results["ticid"] = int(self.ticid)
         self.tls_results["toiid"] = self.toiid
         self.tls_results["sector"] = self.sector
 
@@ -1112,6 +1118,7 @@ class TessQuickLook:
                 c=self.raw_lc[~self.tmask].time.value,
                 cmap=pl.get_cmap("Blues_r"),
                 label=label,
+                zorder=0,
                 show_colorbar=False,
             )
         )
@@ -1127,6 +1134,7 @@ class TessQuickLook:
                 color="r",
                 ls="--",
                 lw=2,
+                zorder=1,
                 ax=ax,
             )
         )
@@ -1258,7 +1266,10 @@ class TessQuickLook:
         if (self.outdir is not None) & (not Path(self.outdir).exists()):
             Path(self.outdir).mkdir()
             logger.info(f"Created output directory: {self.outdir}.")
-        name = self.target_name.replace(" ", "")
+        if self.target_name.lower()[:4] == "gaia":
+            name = self.target_name.replace(" ", "_")
+        else:
+            name = self.target_name.replace(" ", "")
         fp = Path(
             self.outdir,
             f"{name}_s{str(self.sector).zfill(2)}_{self.pipeline}_{self.cadence[0]}c",

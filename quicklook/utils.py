@@ -116,7 +116,11 @@ def get_tois(
 
 def get_tfop_info(target_name: str) -> dict:
     base_url = "https://exofop.ipac.caltech.edu/tess"
-    url = f"{base_url}/target.php?id={target_name.replace(' ','')}&json"
+    if target_name.lower()[:4] == "gaia":
+        query_name = target_name.replace(" ", "_")
+    else:
+        query_name = target_name.replace(" ", "")
+    url = f"{base_url}/target.php?id={query_name}&json"
     response = urlopen(url)
     assert response.code == 200, "Failed to get data from ExoFOP-TESS"
     try:
