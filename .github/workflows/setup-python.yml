@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #macoos-13 is  x86_64 (Intel-based), macos-14 is ARM64
+        # macos-13 is x86_64 (Intel-based), macos-14 is ARM64
         os: [ubuntu-latest, macos-13, macos-14]
         python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
 
@@ -68,32 +68,35 @@ jobs:
         shell: bash -l {0}
         run: |
           conda activate ql
-          # Install required packages for notebook execution
           pip install jupyter nbconvert
-          # Set environment variable to indicate kernel is installed
           export KERNEL_INSTALLED=1
-          # Run regular tests first
           echo "Running regular tests..."
           pytest -v -m "not notebook"
-          # Run notebook tests separately
           echo "Running notebook tests..."
           pytest -v -m "notebook"
 
-      # Install twine for PyPI publishing
       - name: Install twine
         shell: bash -l {0}
         run: |
           conda activate ql
           pip install twine
 
-      # Publish step for PyPI
-      - name: Publish to PyPI
+      - name: Set up Miniconda for PyPI publishing
+        if: github.event_name == 'release' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          environment-name: ql
+          activate-environment: ql
+          python-version: 3.10
+          auto-activate-base: false
+
+      - name: Build and Upload to PyPI
         if: github.event_name == 'release' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
         shell: bash -l {0}
-        env:
-          TWINE_USERNAME: "__TOKEN__"
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          conda activate ql
-          python setup.py sdist bdist_wheel
+          pip install build twine
+          python -m build
           twine upload dist/*
+        env:
+          TWINE_USERNAME: "__token__"
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
