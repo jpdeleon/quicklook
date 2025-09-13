@@ -2,6 +2,9 @@
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
+
 [project]
 name = "quicklook-package"
 authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
