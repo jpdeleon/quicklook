@@ -1,12 +1,14 @@
 [build-system]
 requires = [
     "setuptools>=61.0",
-    "setuptools_scm"
+    "setuptools_scm" #needed for macos>13
 ]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 fallback_version = "0.0.0"
+version_scheme = "guess-next-dev"
+local_scheme = "no-local-version"
 
 [project]
 name = "quicklook-package"
