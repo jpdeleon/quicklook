@@ -1195,6 +1195,8 @@ class TessQuickLook:
                 width=fov_rad.value,
                 height=fov_rad.value,
             )
+            if hdu is None:
+                raise ValueError("DSS archival image not found")
             ax.remove()
             ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
             _ = plot_gaia_sources_on_survey(
