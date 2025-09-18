@@ -1,12 +1,13 @@
 # QuickLook
-`quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook or from the terminal using the `ql` script.
+`quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook, from the terminal using the `ql` script, or via an optional **web GUI**.
 
 ## Use case
 Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Installation
-Create a conda environment called, say `my_env`, and install there the latest version of `quicklook-package`
+Create a conda environment called, say `my_env`, and install there the latest version of `quicklook-package`:
+
 ```bash
 $ conda create -n my_env python=3.10
 $ conda activate my_env
@@ -22,6 +23,28 @@ See [example notebook](https://github.com/jpdeleon/quicklook/blob/main/notebook/
 ## Try it on Google colab
 
 <a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+
+## Optional: Install with Web GUI
+QuickLook also provides a simple web interface (Flask-based) under the app/ directory.
+This is not installed by default to keep dependencies minimal.
+
+To install with GUI support:
+```bash
+(my_env) $ pip install -U "quicklook-package[gui]"
+```
+
+## Running the Web GUI
+
+After installing with [gui], you can launch the Flask app locally:
+
+```bash
+(my_env) $ python -m app.app
+```
+
+This will start a local server at http://127.0.0.1:5000.
+Open it in your browser, enter the target information (name, sector, pipeline, flux type), and QuickLook will generate the analysis figure.
+
+Results are saved under app/static/outputs/ and re-used if they already exist.
 
 ## Command line script
 ```bash

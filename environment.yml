@@ -7,6 +7,6 @@ dependencies:
   - matplotlib
   - pytest
   - pip:
-      - aesthetic==0.6  # Add pip dependencies here if necessary
+      #- aesthetic==0.6  # Add pip dependencies here if necessary
       - loguru
       - importlib_resources>=5.0.0

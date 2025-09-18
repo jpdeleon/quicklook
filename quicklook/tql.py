@@ -1029,7 +1029,9 @@ class TessQuickLook:
         if self.simbad_obj_type is not None:
             self.tls_results["simbad_obj"] = self.simbad_obj_type
 
-    def plot_tql(self, **kwargs: dict) -> pl.Figure:
+    def plot_tql(
+        self, return_fig_and_paths=False, **kwargs: dict
+    ) -> pl.Figure:
         """
         Plot a TQL report.
 
@@ -1292,7 +1294,10 @@ class TessQuickLook:
         logger.info(f"#----------Runtime: {elapsed_time:.2f} s----------#\n")
         if not self.show_plot:
             pl.clf()
-        return fig
+        if return_fig_and_paths:
+            return fig, str(png_file), str(h5_file)
+        else:
+            return fig
 
 
 if __name__ == "__main__":
