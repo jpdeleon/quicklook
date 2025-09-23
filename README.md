@@ -2,7 +2,7 @@
 `quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook, from the terminal using the `ql` script, or via an optional **web GUI**.
 
 ## Use case
-Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
+Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period of the star and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
 Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
 
 ## Installation
@@ -38,7 +38,7 @@ To install with GUI support:
 After installing with [gui], you can launch the Flask app locally:
 
 ```bash
-(my_env) $ python -m app.app
+(my_env) $ ql-gui
 ```
 
 This will start a local server at http://127.0.0.1:5000.
