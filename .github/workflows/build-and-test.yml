@@ -1,13 +1,9 @@
-name: Install and Test Package
+name: CI
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
-  release:
-    types: [published]
+    branches: [main]
+    # tags: ['v*'] # skip tags
 
 jobs:
   build:
@@ -78,29 +74,3 @@ jobs:
           pytest -v -m "not notebook"
           echo "Running notebook tests..."
           pytest -v -m "notebook"
-
-      - name: Install twine
-        shell: bash -l {0}
-        run: |
-          conda activate ql
-          pip install twine
-
-      - name: Set up Miniconda for PyPI publishing
-        if: github.event_name == 'release' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
-        uses: conda-incubator/setup-miniconda@v2
-        with:
-          environment-name: ql
-          activate-environment: ql
-          python-version: 3.10
-          auto-activate-base: false
-
-      - name: Build and Upload to PyPI
-        if: github.event_name == 'release' && matrix.os == 'ubuntu-latest' && matrix.python-version == '3.10'
-        shell: bash -l {0}
-        run: |
-          pip install build twine
-          python -m build
-          twine upload dist/*
-        env:
-          TWINE_USERNAME: "__token__"
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
