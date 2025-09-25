@@ -1,0 +1,7 @@
+ql -name "WTS-2b" -v -s -img -sec 75 -p spoc
+ql -name "WTS-2b" -v -s -img -sec 74 -p spoc
+ql -name "WTS-2b" -v -s -img -sec 55 -p spoc
+ql -name "WTS-2b" -v -s -img -sec 54 -p spoc
+ql -name "WTS-2b" -v -s -img -sec 41 -p spoc
+ql -name "WTS-2b" -v -s -img -sec 40 -p spoc
+#ql -name "WTS-2b" -v -s -img -sec 14

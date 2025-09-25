@@ -1,11 +1,13 @@
 import pytest
 import numpy as np
+import os
 import sys
 from unittest.mock import patch, MagicMock
 from matplotlib.figure import Figure
 from quicklook.tql import TessQuickLook
 import lightkurve as lk
 import astropy.units as u
+from astroquery.exceptions import RemoteServiceError
 
 
 @pytest.fixture
@@ -47,64 +49,95 @@ def variable_star_inputs():
 @pytest.mark.network
 def test_tql_planet(planet_inputs):
     """Test TessQuickLook with a known exoplanet target"""
-    ql = TessQuickLook(**planet_inputs)
-    assert isinstance(ql, TessQuickLook)
-    fig = ql.plot_tql()
-    assert isinstance(fig, Figure)
+    try:
+        ql = TessQuickLook(**planet_inputs)
+        assert isinstance(ql, TessQuickLook)
+        fig = ql.plot_tql()
+        assert isinstance(fig, Figure)
 
-    # Check that key attributes were set correctly
-    assert ql.target_name == planet_inputs["target_name"]
-    assert ql.sector == planet_inputs["sector"]
-    assert ql.flux_type == planet_inputs["flux_type"].lower()
-    assert ql.pipeline == planet_inputs["pipeline"].lower()
+        # Check that key attributes were set correctly
+        assert ql.target_name == planet_inputs["target_name"]
+        assert ql.sector == planet_inputs["sector"]
+        assert ql.flux_type == planet_inputs["flux_type"].lower()
+        assert ql.pipeline == planet_inputs["pipeline"].lower()
 
-    # Check that light curves were created
-    assert isinstance(ql.raw_lc, lk.LightCurve)
-    assert isinstance(ql.flat_lc, lk.LightCurve)
-    assert isinstance(ql.trend_lc, lk.LightCurve)
+        # Check that light curves were created
+        assert isinstance(ql.raw_lc, lk.LightCurve)
+        assert isinstance(ql.flat_lc, lk.LightCurve)
+        assert isinstance(ql.trend_lc, lk.LightCurve)
 
-    # Check that TLS was run
-    assert hasattr(ql, "tls_results")
-    assert ql.tls_results.period > 0
+        # Check that TLS was run
+        assert hasattr(ql, "tls_results")
+        assert ql.tls_results.period > 0
+    except RemoteServiceError as e:
+        # CI-specific soft failure
+        if os.getenv("CI", "false") == "true":
+            pytest.xfail(f"Network failure (not a bug): {e}")
+        else:
+            raise  # fail locally
 
 
 @pytest.mark.network
 def test_tql_eb(eb_inputs):
     """Test TessQuickLook with a known eclipsing binary target"""
-    ql = TessQuickLook(**eb_inputs)
-    assert isinstance(ql, TessQuickLook)
-    fig = ql.plot_tql()
-    assert isinstance(fig, Figure)
+    try:
+        ql = TessQuickLook(**eb_inputs)
+        assert isinstance(ql, TessQuickLook)
+        fig = ql.plot_tql()
+        assert isinstance(fig, Figure)
 
-    # Check that key attributes were set correctly
-    assert ql.target_name == eb_inputs["target_name"]
-    assert ql.sector == eb_inputs["sector"]
-    assert ql.flux_type == eb_inputs["flux_type"].lower()
-    assert ql.pipeline == eb_inputs["pipeline"].lower()
+        # Check that key attributes were set correctly
+        assert ql.target_name == eb_inputs["target_name"]
+        assert ql.sector == eb_inputs["sector"]
+        assert ql.flux_type == eb_inputs["flux_type"].lower()
+        assert ql.pipeline == eb_inputs["pipeline"].lower()
 
-    # Check that light curves were created
-    assert isinstance(ql.raw_lc, lk.LightCurve)
-    assert isinstance(ql.flat_lc, lk.LightCurve)
-    assert isinstance(ql.trend_lc, lk.LightCurve)
+        # Check that light curves were created
+        assert isinstance(ql.raw_lc, lk.LightCurve)
+        assert isinstance(ql.flat_lc, lk.LightCurve)
+        assert isinstance(ql.trend_lc, lk.LightCurve)
 
-    # Check that TLS was run
-    assert hasattr(ql, "tls_results")
-    assert ql.tls_results.period > 0
+        # Check that TLS was run
+        assert hasattr(ql, "tls_results")
+        assert ql.tls_results.period > 0
+    except RemoteServiceError as e:
+        # CI-specific soft failure
+        if os.getenv("CI", "false") == "true":
+            pytest.xfail(f"Network failure (not a bug): {e}")
+        else:
+            raise  # fail locally
 
 
 @pytest.mark.network
 def test_tql_variable_star(variable_star_inputs):
     """Test TessQuickLook with a known variable star target"""
-    ql = TessQuickLook(**variable_star_inputs)
-    assert isinstance(ql, TessQuickLook)
-    fig = ql.plot_tql()
-    assert isinstance(fig, Figure)
+    try:
+        ql = TessQuickLook(**variable_star_inputs)
+        assert isinstance(ql, TessQuickLook)
+        fig = ql.plot_tql()
+        assert isinstance(fig, Figure)
 
-    # Check that key attributes were set correctly
-    assert ql.target_name == variable_star_inputs["target_name"]
-    assert ql.sector == variable_star_inputs["sector"]
-    assert ql.flux_type == variable_star_inputs["flux_type"].lower()
-    assert ql.pipeline == variable_star_inputs["pipeline"].lower()
+        # Check that key attributes were set correctly
+        assert ql.target_name == variable_star_inputs["target_name"]
+        assert ql.sector == variable_star_inputs["sector"]
+        assert ql.flux_type == variable_star_inputs["flux_type"].lower()
+        assert ql.pipeline == variable_star_inputs["pipeline"].lower()
+    except RemoteServiceError as e:
+        # CI-specific soft failure
+        if os.getenv("CI", "false") == "true":
+            pytest.xfail(f"Network failure (not a bug): {e}")
+        else:
+            raise  # fail locally
+
+
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Skip performance tests in CI")
+@pytest.mark.benchmark
+def test_tql_runtime(benchmark, planet_inputs):
+    def run_ql():
+        ql = TessQuickLook(**planet_inputs)
+        _ = ql.plot_tql()
+
+    benchmark(run_ql)
 
 
 def test_with_mock_light_curve(mock_light_curve, planet_inputs):
@@ -114,9 +147,7 @@ def test_with_mock_light_curve(mock_light_curve, planet_inputs):
     # We need to patch multiple methods to avoid network calls and initialization issues
     with patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve):
         # Patch check_output_file_exists to avoid pipeline attribute error
-        with patch.object(
-            TessQuickLook, "check_output_file_exists", return_value=None
-        ):
+        with patch.object(TessQuickLook, "check_output_file_exists", return_value=None):
             # Create the TessQuickLook instance
             ql = TessQuickLook(**inputs)
 

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-13]
+        #python-version: ["3.8", "3.9", "3.10", "3.11"]
+        #tox-env: ["py38", "py39", "py310", "py311"]  # without dot
+        python-version: ["3.10"]
+        tox-env: ["py10"] # update also `envlist` in tox.ini
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache tox virtualenvs
+        uses: actions/cache@v3
+        with:
+          path: .tox
+          key: ${{ runner.os }}-tox-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-tox-
+
+      - name: Cache Lightkurve data
+        uses: actions/cache@v3
+        with:
+          path: ~/.lightkurve/cache/mastDownload
+          key: ${{ runner.os }}-lightkurve-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-lightkurve-
+
+      - name: Remove corrupted FITS (if any)
+        run: |
+          find ~/.lightkurve/cache/mastDownload -type f -name "*.fits" -size -1M -delete || true
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,notebooks]"
+
+      - name: Run regular tests
+        run: tox -e ${{ matrix.tox-env }}
+
+      #- name: Run notebook tests
+      #  run: tox -e notebook
+      #- name: Run linting
+      #  run: tox -e lint
+      #- name: Check code formatting
+      #  run: tox -e format
+      #- name: Run type checks
+      #  run: tox -e type
