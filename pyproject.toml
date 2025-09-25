@@ -14,7 +14,7 @@ local_scheme = "no-local-version"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["quicklook*"]
-exclude = ["app*", "static*", "notebook*", "tests*"]
+exclude = ["quicklook/app*", "static*", "notebook*", "tests*"]
 
 [tool.setuptools.package-data]
 "quicklook" = ["data/*.csv"]
@@ -40,23 +40,25 @@ dependencies = [
     "reproject==0.12.0",
     "astroplan==0.9",
     "loguru",
-    "importlib_resources>=5.0.0"
+    "importlib_resources>=5.0.0",
+    "flask"
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest",           # run tests
     "pytest-benchmark", # measure performance
-    "pytest-xdist",
+    "pytest-xdist",     # parallelize tests
     "black",            # enforce formatting
     "mypy",             # static type checking
     "pre-commit",       # hook management
-    "tox",              # multi-env testing
+    "tox>=4.0",         # multi-env testing
     "ruff",             # fast linting
     #"flake8>=6.0"       # legacy linting
 ]
 
-# --- converter ---
+web = ["flask", "pytest-flask"]
+
 notebooks = [
     "ipykernel",
     "jupyter",
@@ -66,13 +68,11 @@ notebooks = [
 [project.urls]
 Homepage = "https://github.com/jpdeleon/quicklook"
 
-# --- formatter ---
 [tool.black]
 line-length = 100
 include = '\.pyi?$'
 exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist)/'
 
-# --- linter ---
 [tool.ruff]
 line-length = 100
 select = ["B", "C", "E", "F", "W", "B9"]
@@ -85,8 +85,13 @@ ignore = [
   "F403",
   "F401",
   "C901",
-  "B904",  #exceptions
-  "B006", #Do not use mutable data structures for argument defaults
-  "B028", #No explicit `stacklevel` keyword argument found; in gls.py
-  "C408",  #Unnecessary `dict()` call; in gls.py
+  "B904",  # exceptions
+  "B006",  # Do not use mutable data structures for argument defaults
+  "B028",  # No explicit `stacklevel` keyword argument found; in gls.py
+  "C408",  # Unnecessary `dict()` call; in gls.py
 ]
+
+[project.scripts]
+ql = "quicklook.cli.ql:main"
+read_tls = "quicklook.cli.read_tls:main"
+ql-web = "quicklook.app.app:main"

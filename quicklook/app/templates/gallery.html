@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TESS QuickLook Gallery</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 20px auto; }
+    h1 { text-align: center; }
+    form { margin-bottom: 20px; text-align: center; }
+    input[type="text"] { padding: 6px; width: 200px; }
+    button { padding: 6px 12px; }
+    .gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; }
+    .gallery img { width: 200px; height: auto; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; transition: transform 0.2s; }
+    .gallery img:hover { transform: scale(1.05); }
+    .back-button { display: block; margin: 10px auto; padding: 10px 20px; background-color: #007BFF; color: white; border-radius: 6px; text-decoration: none; text-align: center; }
+    .back-button:hover { background-color: #0056b3; }
+
+    /* Modal styles */
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto;
+             background-color: rgba(0,0,0,0.8); }
+    .modal-content { margin: 5% auto; display: block; max-width: 90%; max-height: 90%; }
+    .modal-caption { text-align: center; color: white; margin: 10px 0; }
+    .close { position: absolute; top: 20px; right: 35px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; }
+    .download-btn { display: block; margin: 10px auto; padding: 8px 12px; background: #28a745; color: white; border-radius: 6px; text-decoration: none; width: fit-content; }
+    .download-btn:hover { background: #218838; }
+  </style>
+</head>
+<body>
+  <h1>TESS QuickLook Output Gallery</h1>
+
+  <!-- Back button -->
+  <a href="{{ url_for('index') }}" class="back-button">← Back to QuickLook</a>
+
+  <!-- Search form -->
+  <form method="post">
+    <input type="text" name="search" placeholder="Search by name" value="{{ search_name or '' }}">
+    <button type="submit">Search</button>
+  </form>
+
+  <div class="gallery">
+    {% for img in images %}
+      <img src="{{ img }}" alt="{{ img }}" onclick="openModal(this)">
+    {% endfor %}
+    {% if images|length == 0 %}
+      <p style="text-align:center;">No matching images found.</p>
+    {% endif %}
+  </div>
+
+  <!-- Modal -->
+  <div id="imageModal" class="modal">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <img class="modal-content" id="modalImage">
+    <div class="modal-caption" id="modalCaption"></div>
+    <a id="downloadBtn" class="download-btn" download>Download Image</a>
+  </div>
+
+  <script>
+    const modal = document.getElementById("imageModal");
+    const modalImg = document.getElementById("modalImage");
+    const captionText = document.getElementById("modalCaption");
+    const downloadBtn = document.getElementById("downloadBtn");
+
+    function openModal(imgElement) {
+      modal.style.display = "block";
+      modalImg.src = imgElement.src;
+      captionText.innerText = imgElement.alt.split('/').pop(); // just filename
+      downloadBtn.href = imgElement.src;
+      downloadBtn.download = imgElement.alt.split('/').pop();
+    }
+
+    function closeModal() {
+      modal.style.display = "none";
+    }
+
+    // Close modal if click outside image
+    modal.addEventListener('click', (e) => {
+      if(e.target === modal) closeModal();
+    });
+
+    // Optional: zoom/pan with wheel and drag
+    let scale = 1;
+    let posX = 0, posY = 0;
+    let isDragging = false, startX, startY;
+
+    modalImg.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      scale += e.deltaY * -0.001;
+      scale = Math.min(Math.max(.5, scale), 5);
+      modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
+    });
+
+    modalImg.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX - posX;
+      startY = e.clientY - posY;
+      modalImg.style.cursor = 'grabbing';
+    });
+
+    modalImg.addEventListener('mouseup', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
+    modalImg.addEventListener('mouseleave', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
+    modalImg.addEventListener('mousemove', (e) => {
+      if(!isDragging) return;
+      posX = e.clientX - startX;
+      posY = e.clientY - startY;
+      modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
+    });
+
+    // Initial cursor style
+    modalImg.style.cursor = 'grab';
+  </script>
+</body>
+</html>

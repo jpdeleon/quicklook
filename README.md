@@ -30,7 +30,7 @@ This is not installed by default to keep dependencies minimal.
 
 To install with GUI support:
 ```bash
-(my_env) $ pip install -U "quicklook-package[gui]"
+(my_env) $ pip install -U "quicklook-package[web]"
 ```
 
 ## Running the Web GUI

@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TESS QuickLook</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1000px;
+      margin: 20px auto;
+      padding: 0 20px;
+      line-height: 1.6;
+    }
+    h1, h2 { text-align: center; }
+    form {
+      margin-bottom: 30px;
+      padding: 15px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      background: #f9f9f9;
+    }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      padding: 6px;
+      margin-top: 4px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+    }
+    button {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      background-color: #007BFF;
+      color: white;
+      cursor: pointer;
+    }
+    button:hover { background-color: #0056b3; }
+    img {
+      display: block;
+      margin: 20px auto;
+      max-width: 100%;
+      height: auto;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
+    .download-link { text-align: center; margin-top: 15px; }
+    .download-link a { text-decoration: none; color: #007BFF; font-weight: bold; }
+    .download-link a:hover { text-decoration: underline; }
+    pre {
+      background:#f0f0f0;
+      padding:10px;
+      border:1px solid #ccc;
+      max-height:400px;
+      overflow:auto;
+      white-space: pre-wrap;
+    }
+    #loader {
+      display: none;
+      border: 8px solid #f3f3f3;
+      border-top: 8px solid #007BFF;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    .gallery-button {
+      display: block;
+      margin: 20px auto;
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      border-radius: 6px;
+      background-color: #28a745;
+      color: white;
+      cursor: pointer;
+      text-align: center;
+      text-decoration: none;
+    }
+    .gallery-button:hover { background-color: #218838; }
+  </style>
+</head>
+<body>
+<h1>TESS QuickLook Pipeline</h1>
+
+<form method="post" id="qlForm">
+  <label for="name">Target Name:</label>
+  <input type="text" name="name" id="name" value="{{ request.form.name or '' }}" required>
+
+  <label for="sector">Sector:</label>
+  <input type="number" name="sector" id="sector" value="{{ request.form.sector or -1 }}">
+
+  <label for="pipeline">Pipeline:</label>
+  <select name="pipeline" id="pipeline">
+    {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
+    <option value="{{p}}" {% if request.form.pipeline == p %}selected{% endif %}>{{p}}</option>
+    {% endfor %}
+  </select>
+
+  <label for="fluxtype">Flux Type:</label>
+  <select name="fluxtype" id="fluxtype">
+    {% for f in ['pdcsap','sap'] %}
+    <option value="{{f}}" {% if request.form.fluxtype == f %}selected{% endif %}>{{f}}</option>
+    {% endfor %}
+  </select>
+
+  <label for="exptime">Exposure Time (optional):</label>
+  <input type="number" name="exptime" id="exptime" value="{{ request.form.exptime or '' }}">
+
+  <label for="quality_bitmask">Quality Bitmask:</label>
+  <select name="quality_bitmask" id="quality_bitmask">
+    {% for q in ['none','default','hard','hardest'] %}
+    <option value="{{q}}" {% if request.form.quality_bitmask == q %}selected{% endif %}>{{q}}</option>
+    {% endfor %}
+  </select>
+
+  <label for="flatten_method">Flatten Method:</label>
+  <input type="text" name="flatten_method" id="flatten_method" value="{{ request.form.flatten_method or 'biweight' }}">
+
+  <label for="pg_method">Periodogram Method:</label>
+  <select name="pg_method" id="pg_method">
+    {% for pg in ['gls','ls','bls'] %}
+    <option value="{{pg}}" {% if request.form.pg_method == pg %}selected{% endif %}>{{pg}}</option>
+    {% endfor %}
+  </select>
+
+  <label for="edge_cutoff">Edge Cutoff (days):</label>
+  <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="{{ request.form.edge_cutoff or 0.1 }}">
+
+  <label>
+    <input type="checkbox" name="save" {% if 'save' in request.form %}checked{% endif %}> Save Figure & TLS
+  </label>
+  <label>
+    <input type="checkbox" name="verbose" {% if 'verbose' in request.form %}checked{% endif %}> Verbose
+  </label>
+  <label>
+    <input type="checkbox" name="overwrite" {% if 'overwrite' in request.form %}checked{% endif %}> Overwrite
+  </label>
+
+  <button type="submit">Run QuickLook</button>
+</form>
+
+<!-- Loader -->
+<div id="loader"></div>
+
+<!-- Live Log -->
+<h2>Live Output Log:</h2>
+<pre id="log"></pre>
+
+<!-- Result -->
+{% if image_file %}
+  <h2>Result:</h2>
+  <img src="{{ image_file }}" alt="QuickLook result">
+{% endif %}
+
+{% if h5_file %}
+  <div class="download-link">
+    <a href="{{ h5_file }}" download>Download TLS results (.h5)</a>
+  </div>
+{% endif %}
+
+<!-- Gallery Button -->
+<a href="{{ url_for('gallery') }}" class="gallery-button">View All Outputs</a>
+
+<script>
+const form = document.getElementById('qlForm');
+const loader = document.getElementById('loader');
+
+form.addEventListener('submit', () => {
+  loader.style.display = 'block';
+  form.querySelector('button[type="submit"]').disabled = true;
+});
+
+// Live log and spinner update
+async function updateLog(target) {
+  const logElem = document.getElementById("log");
+  if (!target) return;
+
+  try {
+    const response = await fetch("/log/" + target);
+    const statusRes = await fetch("/status-json/" + target);
+    const status = await statusRes.json();
+
+    if (response.ok) {
+      logElem.textContent = await response.text();
+      logElem.scrollTop = logElem.scrollHeight;
+    }
+
+    if (status.status === "running") {
+      loader.style.display = 'block';
+      setTimeout(() => updateLog(target), 1000);
+    } else {
+      loader.style.display = 'none';
+    }
+  } catch(err) {
+    console.error(err);
+    setTimeout(() => updateLog(target), 2000);
+  }
+}
+
+{% if target %}
+updateLog("{{ target }}");
+{% endif %}
+</script>
+</body>
+</html>
