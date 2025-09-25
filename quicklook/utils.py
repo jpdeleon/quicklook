@@ -101,9 +101,7 @@ def get_tois(
         ]
         keys = []
         for key in planet_keys:
-            idx = ~np.array(
-                d["Comments"].str.contains(key).tolist(), dtype=bool
-            )
+            idx = ~np.array(d["Comments"].str.contains(key).tolist(), dtype=bool)
             d = d[idx]
             if idx.sum() > 0:
                 keys.append(key)
@@ -149,9 +147,7 @@ def get_tic_id(target_name: str) -> int:
     return int(get_tfop_info(target_name)["basic_info"]["tic_id"])
 
 
-def get_toi_ephem(
-    target_name: str, idx=1, params=["epoch", "per", "dur"]
-) -> list:
+def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> list:
     print(f"Querying ephemeris for {target_name}:")
     r = get_tfop_info(target_name)
     planet_params = r["planet_parameters"][idx]
@@ -177,23 +173,11 @@ def parse_aperture_mask(
     """Parse and make aperture mask"""
     if verbose:
         if sap_mask == "round":
-            print(
-                "aperture photometry mask: {} (r={} pix)\n".format(
-                    sap_mask, aper_radius
-                )
-            )
+            print("aperture photometry mask: {} (r={} pix)\n".format(sap_mask, aper_radius))
         elif sap_mask == "square":
-            print(
-                "aperture photometry mask: {0} ({1}x{1} pix)\n".format(
-                    sap_mask, aper_radius
-                )
-            )
+            print("aperture photometry mask: {0} ({1}x{1} pix)\n".format(sap_mask, aper_radius))
         elif sap_mask == "percentile":
-            print(
-                "aperture photometry mask: {} ({}%)\n".format(
-                    sap_mask, percentile
-                )
-            )
+            print("aperture photometry mask: {} ({}%)\n".format(sap_mask, percentile))
         else:
             print("aperture photometry mask: {}\n".format(sap_mask))
 
@@ -251,9 +235,7 @@ def make_round_mask(img, radius, xy_center=None):
             xy_center = [xcen, ycen]
 
     Y, X = np.ogrid[: img.shape[0], : img.shape[1]]
-    dist_from_center = np.sqrt(
-        (X - xy_center[0]) ** 2 + (Y - xy_center[1]) ** 2
-    )
+    dist_from_center = np.sqrt((X - xy_center[0]) ** 2 + (Y - xy_center[1]) ** 2)
 
     mask = dist_from_center <= radius
     return np.ma.masked_array(img, mask=mask).mask
@@ -289,9 +271,7 @@ def make_square_mask(img, size, xy_center=None):
             print("Aperture mask is placed at the center instead.\n")
             xy_center = [xcen, ycen]
     mask = np.zeros_like(img, dtype=bool)
-    mask[ycen - size : ycen + size + 1, xcen - size : xcen + size + 1] = (
-        True  # noqa
-    )
+    mask[ycen - size : ycen + size + 1, xcen - size : xcen + size + 1] = True  # noqa
     # if angle:
     #    #rotate mask
     #    mask = rotate(mask, angle, axes=(1, 0),
@@ -353,13 +333,9 @@ def is_point_inside_mask(border, target):
 
         # calculate sum of angles
         if clockwise:
-            degree = degree + np.rad2deg(
-                np.arccos((B * B + C * C - A * A) / (2.0 * B * C))
-            )
+            degree = degree + np.rad2deg(np.arccos((B * B + C * C - A * A) / (2.0 * B * C)))
         else:
-            degree = degree - np.rad2deg(
-                np.arccos((B * B + C * C - A * A) / (2.0 * B * C))
-            )
+            degree = degree - np.rad2deg(np.arccos((B * B + C * C - A * A) / (2.0 * B * C)))
 
     if abs(round(degree) - 360) <= 3:
         return True

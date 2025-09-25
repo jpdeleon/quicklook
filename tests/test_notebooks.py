@@ -10,9 +10,7 @@ import warnings
 def find_notebooks():
     """Find all notebooks in the repository."""
     notebooks = []
-    for root, dirs, files in os.walk(
-        os.path.dirname(os.path.dirname(__file__))
-    ):
+    for root, dirs, files in os.walk(os.path.dirname(os.path.dirname(__file__))):
         # Skip hidden directories
         dirs[:] = [d for d in dirs if not d.startswith(".")]
         for file in files:
@@ -37,9 +35,7 @@ def test_notebook_execution(notebook_path):
     # Set up environment with PYTHONPATH including the project root
     test_env = os.environ.copy()
     if "PYTHONPATH" in test_env:
-        test_env["PYTHONPATH"] = (
-            f"{project_root}{os.pathsep}{test_env['PYTHONPATH']}"
-        )
+        test_env["PYTHONPATH"] = f"{project_root}{os.pathsep}{test_env['PYTHONPATH']}"
     else:
         test_env["PYTHONPATH"] = project_root
 
@@ -86,10 +82,7 @@ def test_notebook_execution(notebook_path):
                 "astroquery",
             ]
 
-            if any(
-                k in stdout_lower or k in stderr_lower
-                for k in network_error_keywords
-            ):
+            if any(k in stdout_lower or k in stderr_lower for k in network_error_keywords):
                 if os.environ.get("CI", "false") == "true":
                     pytest.xfail(f"Notebook network issue: {notebook_path}")
                 else:

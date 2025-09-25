@@ -130,6 +130,16 @@ def test_tql_variable_star(variable_star_inputs):
             raise  # fail locally
 
 
+@pytest.mark.skipif(os.getenv("CI") == "true", reason="Skip performance tests in CI")
+@pytest.mark.benchmark
+def test_tql_runtime(benchmark, planet_inputs):
+    def run_ql():
+        ql = TessQuickLook(**planet_inputs)
+        _ = ql.plot_tql()
+
+    benchmark(run_ql)
+
+
 def test_with_mock_light_curve(mock_light_curve, planet_inputs):
     """Test TessQuickLook with a mock light curve"""
     inputs = planet_inputs.copy()
@@ -137,9 +147,7 @@ def test_with_mock_light_curve(mock_light_curve, planet_inputs):
     # We need to patch multiple methods to avoid network calls and initialization issues
     with patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve):
         # Patch check_output_file_exists to avoid pipeline attribute error
-        with patch.object(
-            TessQuickLook, "check_output_file_exists", return_value=None
-        ):
+        with patch.object(TessQuickLook, "check_output_file_exists", return_value=None):
             # Create the TessQuickLook instance
             ql = TessQuickLook(**inputs)
 

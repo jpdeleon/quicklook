@@ -120,12 +120,8 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         ls="--",
     )
     t14 = tls_results.duration
-    ax.axvline(
-        half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
-    )
-    ax.axvline(
-        half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--"
-    )
+    ax.axvline(half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     try:
         secthresh = compute_secthresh(fold_lc2, t14)
     except Exception as e:
@@ -213,17 +209,12 @@ def plot_gls_periodogram(
     peaks = find_peaks(y, height=max_power / relative_height)
     # print(peaks)
     peak_pos = peaks[0]
+    peak_pos = peak_pos[(x[peak_pos] < best_period - offset) | (x[peak_pos] > best_period + offset)]
     peak_pos = peak_pos[
-        (x[peak_pos] < best_period - offset)
-        | (x[peak_pos] > best_period + offset)
+        (x[peak_pos] < best_period / 2 - offset) | (x[peak_pos] > best_period / 2 + offset)
     ]
     peak_pos = peak_pos[
-        (x[peak_pos] < best_period / 2 - offset)
-        | (x[peak_pos] > best_period / 2 + offset)
-    ]
-    peak_pos = peak_pos[
-        (x[peak_pos] < 2 * best_period - offset)
-        | (x[peak_pos] > 2 * best_period + offset)
+        (x[peak_pos] < 2 * best_period - offset) | (x[peak_pos] > 2 * best_period + offset)
     ]
     while len(peak_pos) > N_peaks:
         peak_pos = np.delete(peak_pos, peak_pos.argmin())
@@ -243,9 +234,7 @@ def plot_gls_periodogram(
     )
     # mark best period and multiples
     if best_period * 2 <= max(x):
-        ax.axvline(
-            x=best_period * 2, color="k", ls="--", linewidth=2, alpha=0.5
-        )
+        ax.axvline(x=best_period * 2, color="k", ls="--", linewidth=2, alpha=0.5)
     ax.axvline(
         x=best_period / 2,
         color="k",
@@ -264,9 +253,7 @@ def plot_gls_periodogram(
         )
     # mark FAP levels
     for i in range(len(FAP_levels)):
-        label = (
-            f"FAP={max(FAP_levels)}" if i == np.argmax(FAP_levels) else None
-        )
+        label = f"FAP={max(FAP_levels)}" if i == np.argmax(FAP_levels) else None
         ax.plot(
             x,
             power_levels[i],
@@ -295,9 +282,7 @@ def plot_tpf(tpf, aperture_mask="pipeline", ax=None) -> pl.axis:
     return ax
 
 
-def plot_dss_image(
-    hdu, cmap="gray", contrast=0.5, coord_format="dd:mm:ss", ax=None
-):
+def plot_dss_image(hdu, cmap="gray", contrast=0.5, coord_format="dd:mm:ss", ax=None):
     """
     Plot output of get_dss_data:
     hdu = get_dss_data(ra, dec)
@@ -343,9 +328,7 @@ def plot_aperture_outline(
     extent = np.array([-1, nx, -1, ny])
 
     if ax is None:
-        fig, ax = pl.subplots(
-            subplot_kw={"projection": imgwcs}, figsize=figsize
-        )
+        fig, ax = pl.subplots(subplot_kw={"projection": imgwcs}, figsize=figsize)
         ax.set_xlabel("RA")
         ax.set_ylabel("Dec")
     _ = ax.contour(
@@ -357,9 +340,7 @@ def plot_aperture_outline(
         colors=color_aper,
     )
     zmin, zmax = interval.get_limits(img)
-    ax.matshow(
-        img, origin="lower", cmap=cmap, vmin=zmin, vmax=zmax, extent=extent
-    )
+    ax.matshow(img, origin="lower", cmap=cmap, vmin=zmin, vmax=zmax, extent=extent)
     # verts = cs.allsegs[0][0]
     return ax
 
@@ -400,9 +381,7 @@ def plot_gaia_sources_on_tpf(
     # make aperture mask
     mask = parse_aperture_mask(tpf, sap_mask=sap_mask, **mask_kwargs)
 
-    ax = plot_aperture_outline(
-        img, mask=mask, imgwcs=tpf.wcs, figsize=figsize, cmap=cmap, ax=ax
-    )
+    ax = plot_aperture_outline(img, mask=mask, imgwcs=tpf.wcs, figsize=figsize, cmap=cmap, ax=ax)
     if fov_rad is None:
         nx, ny = tpf.shape[1:]
         diag = np.sqrt(nx**2 + ny**2)
@@ -429,17 +408,13 @@ def plot_gaia_sources_on_tpf(
     # sources_inside_aperture = []
     if depth is not None:
         # compute delta mag limit given transit depth
-        dmag_limit = (
-            np.log10(kmax / depth - 1) if dmag_limit is None else dmag_limit
-        )
+        dmag_limit = np.log10(kmax / depth - 1) if dmag_limit is None else dmag_limit
 
         # get min_gmag inside mask
         ra, dec = gaia_sources[["ra", "dec"]].values.T
         pix_coords = tpf.wcs.all_world2pix(np.c_[ra, dec], 0)
         contour_points = find_contours(mask, level=0.1)[0]
-        isinside = [
-            is_point_inside_mask(contour_points, pix) for pix in pix_coords
-        ]
+        isinside = [is_point_inside_mask(contour_points, pix) for pix in pix_coords]
         # sources_inside_aperture.append(isinside)
         min_gmag = gaia_sources.loc[isinside, "phot_g_mean_mag"].min()
         if (target_gmag - min_gmag) != 0:
@@ -449,11 +424,7 @@ def plot_gaia_sources_on_tpf(
             )
     else:
         min_gmag = gaia_sources.phot_g_mean_mag.min()  # brightest
-        dmag_limit = (
-            gaia_sources.phot_g_mean_mag.max()
-            if dmag_limit is None
-            else dmag_limit
-        )
+        dmag_limit = gaia_sources.phot_g_mean_mag.max() if dmag_limit is None else dmag_limit
     base_ms = 128.0  # base marker size
     starid = 1
     # if very crowded, plot only top N
@@ -547,9 +518,7 @@ def plot_gaia_sources_on_tpf(
     if hasattr(ax, "coords"):
         ax.coords[0].set_major_formatter("dd:mm")
         ax.coords[1].set_major_formatter("dd:mm")
-    pl.setp(
-        ax, xlim=(0, nx), ylim=(0, ny), xlabel=f"({xdeg:.2f} x {ydeg:.2f})"
-    )
+    pl.setp(ax, xlim=(0, nx), ylim=(0, ny), xlabel=f"({xdeg:.2f} x {ydeg:.2f})")
     return ax
 
 
@@ -628,9 +597,7 @@ def plot_gaia_sources_on_survey(
     extent = np.array([-1, nx, -1, ny])
 
     if verbose:
-        print(
-            f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image..."
-        )
+        print(f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image...")
     # -----------create figure---------------#
     if (ax is None) or (hdu is None):
         # get img hdu for subplot projection
@@ -871,9 +838,7 @@ def plot_archival_images(
             )
             img, hdr = ps.get_fits(filter=filter, verbose=False)
         except Exception:
-            raise ModuleNotFoundError(
-                "pip install git+https://github.com/jpdeleon/panstarrs3.git"
-            )
+            raise ModuleNotFoundError("pip install git+https://github.com/jpdeleon/panstarrs3.git")
 
     # poss1
     if fp1 is not None and fp2 is not None:
@@ -882,26 +847,22 @@ def plot_archival_images(
     else:
         if survey1 == "ps1":
             hdu1 = fits.open(ps.get_url()[0])[0]
-            hdu1.header["DATE-OBS"] = Time(
-                hdu1.header["MJD-OBS"], format="mjd"
-            ).strftime("%Y-%m-%d")
+            hdu1.header["DATE-OBS"] = Time(hdu1.header["MJD-OBS"], format="mjd").strftime(
+                "%Y-%m-%d"
+            )
             hdu1.header["FILTER"] = hdu1.header["FPA.FILTER"].split(".")[0]
             hdu1.header["SURVEY"] = "Panstarrs1"
         else:
-            hdu1 = get_dss_data(
-                ra, dec, height=height, width=width, survey=survey1
-            )
+            hdu1 = get_dss_data(ra, dec, height=height, width=width, survey=survey1)
         if survey2 == "ps1":
             hdu2 = fits.open(ps.get_url()[0])[0]
-            hdu2.header["DATE-OBS"] = Time(
-                hdu2.header["MJD-OBS"], format="mjd"
-            ).strftime("%Y-%m-%d")
+            hdu2.header["DATE-OBS"] = Time(hdu2.header["MJD-OBS"], format="mjd").strftime(
+                "%Y-%m-%d"
+            )
             hdu2.header["FILTER"] = hdu2.header["FPA.FILTER"].split(".")[0]
             hdu2.header["SURVEY"] = "Panstarrs1"
         else:
-            hdu2 = get_dss_data(
-                ra, dec, height=height, width=width, survey=survey2
-            )
+            hdu2 = get_dss_data(ra, dec, height=height, width=width, survey=survey2)
     try:
         from reproject import reproject_interp
     except Exception:
@@ -916,9 +877,7 @@ def plot_archival_images(
     # data1 = hdu1.data
     header1 = hdu1.header
     ax1 = fig.add_subplot("121", projection=WCS(header1))
-    _ = plot_dss_image(
-        hdu1, cmap=cmap, contrast=contrast, coord_format=coord_format, ax=ax1
-    )
+    _ = plot_dss_image(hdu1, cmap=cmap, contrast=contrast, coord_format=coord_format, ax=ax1)
     if reticle:
         c = Circle(
             (ra, dec),
@@ -929,11 +888,7 @@ def plot_archival_images(
             transform=ax1.get_transform("fk5"),
         )
         ax1.add_patch(c)
-    filt1 = (
-        hdu1.header["FILTER"]
-        if hdu1.header["FILTER"] is not None
-        else survey1.split("_")[1]
-    )
+    filt1 = hdu1.header["FILTER"] if hdu1.header["FILTER"] is not None else survey1.split("_")[1]
     title = f"{header1['SURVEY']} ({filt1})\n"
     title += f"{header1['DATE-OBS'][:10]}"
     ax1.set_title(title)
@@ -959,11 +914,7 @@ def plot_archival_images(
         )
         ax2.add_patch(c)
         # ax2.scatter(ra, dec, 'r+')
-    filt2 = (
-        hdu2.header["FILTER"]
-        if hdu2.header["FILTER"] is not None
-        else survey2.split("_")[1]
-    )
+    filt2 = hdu2.header["FILTER"] if hdu2.header["FILTER"] is not None else survey2.split("_")[1]
     ax2.coords["dec"].set_axislabel_position("r")
     ax2.coords["dec"].set_ticklabel_position("r")
     ax2.coords["dec"].set_axislabel("DEC")

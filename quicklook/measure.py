@@ -55,23 +55,16 @@ def find_contours(
         consisting of n ``(row, column)`` coordinates along the contour.
     """
     if fully_connected not in ("high", "low"):
-        raise ValueError(
-            'Parameters "fully_connected" must be either ' '"high" or "low".'
-        )
+        raise ValueError('Parameters "fully_connected" must be either ' '"high" or "low".')
     if positive_orientation not in ("high", "low"):
-        raise ValueError(
-            'Parameters "positive_orientation" must be either '
-            '"high" or "low".'
-        )
+        raise ValueError('Parameters "positive_orientation" must be either ' '"high" or "low".')
     if image.shape[0] < 2 or image.shape[1] < 2:
         raise ValueError("Input array must be at least 2x2.")
     if image.ndim != 2:
         raise ValueError("Only 2D arrays are supported.")
     if mask is not None:
         if mask.shape != image.shape:
-            raise ValueError(
-                'Parameters "array" and "mask"' " must have same shape."
-            )
+            raise ValueError('Parameters "array" and "mask"' " must have same shape.")
         if not np.can_cast(mask.dtype, bool, casting="safe"):
             raise TypeError('Parameter "mask" must be a binary array.')
         mask = mask.astype(np.uint8, copy=False)
@@ -187,9 +180,7 @@ def _get_contour_segments(array, level, vertex_connect_high, mask):
             r1, c1 = r0 + 1, c0 + 1
 
             # Skip this square if any of the four input values are masked out.
-            if use_mask and not (
-                mask[r0, c0] and mask[r0, c1] and mask[r1, c0] and mask[r1, c1]
-            ):
+            if use_mask and not (mask[r0, c0] and mask[r0, c1] and mask[r1, c0] and mask[r1, c1]):
                 continue
 
             ul = array[r0, c0]

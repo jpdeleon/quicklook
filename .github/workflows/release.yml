@@ -2,7 +2,7 @@ name: Publish to PyPI
 
 on:
   release:
-    types: [published] # run only when published after creating a tag (e.g. v.1.4)
+    types: [published]
 
 jobs:
   publish:
@@ -18,11 +18,16 @@ jobs:
           python-version: "3.10"
 
       - name: Install build tools
-        run: |
-          pip install build twine
+        run: pip install --upgrade build twine
+
+      - name: Clean old builds
+        run: rm -rf dist/*
 
       - name: Build package
-        run: python -m build
+        run: python -m build --sdist --wheel
+
+      - name: Verify distributions
+        run: twine check dist/*
 
       - name: Publish to PyPI
         run: twine upload dist/*

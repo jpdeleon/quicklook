@@ -219,15 +219,11 @@ class Gls:
         self.N = len(self.y)
 
         # Re-check array length compatibility.
-        if (len(self.th) != self.N) or (
-            (self.e_y is not None) and (len(self.e_y) != self.N)
-        ):
+        if (len(self.th) != self.N) or ((self.e_y is not None) and (len(self.e_y) != self.N)):
             raise (
                 ValueError(
                     "Incompatible dimensions of input data arrays (time and flux [and error]). Current shapes are: "
-                    + ", ".join(
-                        str(np.shape(x)) for x in (self.t, self.y, self.e_y)
-                    )
+                    + ", ".join(str(np.shape(x)) for x in (self.t, self.y, self.e_y))
                 )
             )
 
@@ -252,11 +248,7 @@ class Gls:
             if self.fbeg is None:
                 self.fbeg = self.fstep if self.Pend is None else 1 / self.Pend
             if self.fend is None:
-                self.fend = (
-                    self.fnyq * self.hifac
-                    if self.Pbeg is None
-                    else 1 / self.Pbeg
-                )
+                self.fend = self.fnyq * self.hifac if self.Pbeg is None else 1 / self.Pbeg
 
             if self.fend <= self.fbeg:
                 raise (
@@ -287,9 +279,7 @@ class Gls:
 
         self._Y = dot(w, self.y)  # Eq. (7)
         wy = self.y - self._Y  # Subtract weighted mean
-        self._YY = dot(
-            w, wy**2
-        )  # Eq. (10), weighted variance with offset only
+        self._YY = dot(w, wy**2)  # Eq. (10), weighted variance with offset only
         wy *= w  # attach errors
 
         C, S, YC, YS, CC, CS = np.zeros((6, self.nf))
@@ -303,9 +293,7 @@ class Gls:
             if self.fast:
                 if k % 1000 == 0:
                     # init/refresh recurrences to stop error propagation
-                    eix = exp(
-                        1j * omega * self.th
-                    )  # exp(ix) = cos(x) + i*sin(x)
+                    eix = exp(1j * omega * self.th)  # exp(ix) = cos(x) + i*sin(x)
                 cosx = eix.real
                 sinx = eix.imag
             else:
@@ -354,8 +342,7 @@ class Gls:
         if norm not in self.norms:
             raise (
                 ValueError(
-                    "Unknown norm: %s. " % norm
-                    + "Use either of %s." % ", ".join(self.norms)
+                    "Unknown norm: %s. " % norm + "Use either of %s." % ", ".join(self.norms)
                 )
             )
 
@@ -380,9 +367,7 @@ class Gls:
         self.label["ylabel"] = "Power (" + norm + ")"
 
         if norm == "Scargle":
-            popvar = input(
-                "pyTiming::gls - Input a priori known population variance:"
-            )
+            popvar = input("pyTiming::gls - Input a priori known population variance:")
             power = p / float(popvar)
         elif norm == "HorneBaliunas":
             power = (self.N - 1) / 2.0 * p
@@ -477,10 +462,7 @@ class Gls:
 
         try:
             p = self.best
-            return (
-                p["amp"] * sin(2 * np.pi * p["f"] * (t - p["T0"]))
-                + p["offset"]
-            )
+            return p["amp"] * sin(2 * np.pi * p["f"] * (t - p["T0"])) + p["offset"]
         except Exception as e:
             print("Failed to calcuate best-fit sine curve.")
             raise (e)
@@ -503,8 +485,7 @@ class Gls:
         )
         if self.e_y is not None:
             lines += (
-                "  Mean weighted internal error:  %f"
-                % (sqrt(self.N / sum(1.0 / self.e_y**2))),
+                "  Mean weighted internal error:  %f" % (sqrt(self.N / sum(1.0 / self.e_y**2))),
             )
         lines += (
             "Best sine frequency:  {f:f} +/- {e_f:f}",
@@ -562,9 +543,7 @@ class Gls:
 
         fig = mpl.figure(figsize=figsize)
         fig.canvas.set_window_title("GLS periodogram")
-        fig.subplots_adjust(
-            hspace=0.05, wspace=0.04, right=0.97, bottom=0.09, top=0.84
-        )
+        fig.subplots_adjust(hspace=0.05, wspace=0.04, right=0.97, bottom=0.09, top=0.84)
         fs = 10  # fontsize
 
         nrow = gls + data + residuals
@@ -638,13 +617,9 @@ class Gls:
 
         def plot_ecol(plt, x, y):
             # script for scatter plot with errorbars and time color-coded
-            datstyle = dict(
-                color=col, marker=".", edgecolor="k", linewidth=0.5, zorder=2
-            )
+            datstyle = dict(color=col, marker=".", edgecolor="k", linewidth=0.5, zorder=2)
             if self.e_y is not None:
-                errstyle = dict(
-                    yerr=self.e_y, marker="", ls="", elinewidth=0.5
-                )
+                errstyle = dict(yerr=self.e_y, marker="", ls="", elinewidth=0.5)
                 if matplotlib.__version__ < "2.":
                     errstyle["capsize"] = 0.0
                     datstyle["s"] = 8**2  # requires square size !?
@@ -702,9 +677,7 @@ class Gls:
             plt3.plot([self.t.min(), self.t.max()], [0, 0], "k-")
 
             # Phase folded residuals
-            plt4 = fig.add_subplot(
-                nrow, 2, 2 * (gls + data) + 2, sharex=plt2, sharey=plt3
-            )
+            plt4 = fig.add_subplot(nrow, 2, 2 * (gls + data) + 2, sharex=plt2, sharey=plt3)
             plt4.set_xlabel("Phase")
             mpl.setp(plt4.get_yticklabels(), visible=False)
             plot_ecol(plt4, phase(self.t), yres)
@@ -745,9 +718,7 @@ class Gls:
                 # gls plot needs additional space for x2axis
                 fig.subplots_adjust(top=1 - 8 * ydpi)
                 if matplotlib.__version__ < "2.":
-                    ax2.set_position(
-                        plt.get_position().translated(0, 4 * ydpi)
-                    )
+                    ax2.set_position(plt.get_position().translated(0, 4 * ydpi))
                 plt.set_position(plt.get_position().translated(0, 4 * ydpi))
 
         # fig.canvas.mpl_connect("resize_event", lambda _: (fig.tight_layout()))
@@ -989,12 +960,8 @@ if __name__ == "__main__":
         type=float,
         help="Stopping frequency for periodogram.",
     )
-    argadd(
-        "-Pbeg", "--Pbeg", type=float, help="Starting period for periodogram."
-    )
-    argadd(
-        "-Pend", "--Pend", type=float, help="Stopping period for periodogram."
-    )
+    argadd("-Pbeg", "--Pbeg", type=float, help="Starting period for periodogram.")
+    argadd("-Pend", "--Pend", type=float, help="Stopping period for periodogram.")
     argadd(
         "-ofac",
         "--ofac",

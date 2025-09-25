@@ -2,7 +2,6 @@
 requires = [
     "setuptools>=61.0",
     "setuptools_scm"
-    #"setuptools_scm>=7.0.0,<9.0.0" #needed for macos>13
 ]
 build-backend = "setuptools.build_meta"
 
@@ -11,49 +10,78 @@ fallback_version = "0.0.0"
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["quicklook*"]
+exclude = ["app*", "data*", "static*", "notebook*", "tests*"]
+
 [project]
 name = "quicklook-package"
+dynamic = ["version"]
 authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
-dynamic = ["version", "description"]
 readme = "README.md"
 requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: Scientific/Engineering :: Astronomy",
+]
 dependencies = [
-    "pre-commit==3.4.0",
     "matplotlib",
     "lightkurve==2.5",
     "numpy==1.23",
     "transitleastsquares==1.32",
     "wotan==1.10",
-    "aesthetic==0.6",
     "flammkuchen==1.0.3",
     "reproject==0.12.0",
     "astroplan==0.9",
     "loguru",
     "importlib_resources>=5.0.0"
 ]
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-    "Operating System :: POSIX :: Linux",
-    "Topic :: Scientific/Engineering :: Astronomy",
+
+[project.optional-dependencies]
+dev = [
+    "pytest",           # run tests
+    "pytest-benchmark", # measure performance
+    "black",            # enforce formatting
+    "mypy",             # static type checking
+    "pre-commit",       # hook management
+    "tox",              # multi-env testing
+    "ruff",             # fast linting
+    #"flake8>=6.0"       # legacy linting
+]
+
+# --- converter ---
+notebooks = [
+    "ipykernel",
+    "jupyter",
+    "nbconvert"
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/jpdeleon/quicklook"
+Homepage = "https://github.com/jpdeleon/quicklook"
 
+# --- linter ---
 [tool.black]
-line-length = 79
+line-length = 100
 include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
-)/
-'''
+exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist)/'
+
+# --- formatter ---
+[tool.ruff]
+line-length = 100
+select = ["B", "C", "E", "F", "W", "B9"]
+
+[tool.ruff.lint]
+ignore = [
+  "E203",
+  "E266",
+  "E501",
+  "F403",
+  "F401",
+  "C901",
+  "B904",  #exceptions
+  "B006", #Do not use mutable data structures for argument defaults
+  "B028", #No explicit `stacklevel` keyword argument found; in gls.py
+  "C408",  #Unnecessary `dict()` call; in gls.py
+]
