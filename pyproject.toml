@@ -11,6 +11,9 @@ fallback_version = "0.0.0"
 version_scheme = "guess-next-dev"
 local_scheme = "no-local-version"
 
+[tool.setuptools]
+include_package_data = True
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["quicklook*"]
