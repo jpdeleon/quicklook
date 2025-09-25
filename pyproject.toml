@@ -61,13 +61,13 @@ notebooks = [
 [project.urls]
 Homepage = "https://github.com/jpdeleon/quicklook"
 
-# --- linter ---
+# --- formatter ---
 [tool.black]
 line-length = 100
 include = '\.pyi?$'
 exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist)/'
 
-# --- formatter ---
+# --- linter ---
 [tool.ruff]
 line-length = 100
 select = ["B", "C", "E", "F", "W", "B9"]

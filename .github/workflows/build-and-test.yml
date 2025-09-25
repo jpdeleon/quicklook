@@ -28,7 +28,7 @@ jobs:
 
       - name: Run tests and checks with tox
         run: |
-          tox -e py${{ matrix.python-version // replace('.','') }}
+          tox -e py${{ replace(matrix.python-version, '.', '') }}
           tox -e notebook
           tox -e lint
           tox -e format
