@@ -58,7 +58,7 @@ warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
 __all__ = ["TessQuickLook"]
 
-DATA_PATH = get_data_path("quicklook").joinpath("../data")
+DATA_PATH = get_data_path("quicklook").joinpath("data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
 
