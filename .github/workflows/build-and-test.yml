@@ -43,6 +43,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-tox-
 
+      - name: Cache Lightkurve data
+        uses: actions/cache@v3
+        with:
+          path: ~/.lightkurve/cache/mastDownload
+          key: ${{ runner.os }}-lightkurve-${{ hashFiles('pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-lightkurve-
+
+      - name: Remove corrupted FITS (if any)
+        run: |
+          find ~/.lightkurve/cache/mastDownload -type f -name "*.fits" -size -1M -delete || true
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
