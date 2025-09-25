@@ -6,6 +6,11 @@
 pip install -e ".[dev,notebooks]"
 ```
 
+- **Initialize pre-commit**:
+```bash
+pre-commit install
+```
+
 - **Run tests**:
 
 ```bash
@@ -18,10 +23,11 @@ tox
 pytest -v -m notebook
 ```
 
-- **Run linting and formatting**:
+- **Run linting, typing, and formatting**:
 
 ```bash
 tox -e lint
+tox -e type
 tox -e black
 ```
 
