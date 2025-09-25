@@ -1,7 +1,8 @@
 [build-system]
 requires = [
     "setuptools>=61.0",
-    "setuptools_scm"
+    "setuptools_scm",
+    "wheel"
 ]
 build-backend = "setuptools.build_meta"
 
@@ -13,7 +14,10 @@ local_scheme = "no-local-version"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["quicklook*"]
-exclude = ["app*", "data*", "static*", "notebook*", "tests*"]
+exclude = ["app*", "static*", "notebook*", "tests*"]
+
+[tool.setuptools.package-data]
+"quicklook" = ["data/*.csv"]
 
 [project]
 name = "quicklook-package"

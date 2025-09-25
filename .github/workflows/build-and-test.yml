@@ -48,7 +48,7 @@ jobs:
           pip install -e ".[dev,notebooks]"
 
       - name: Run regular tests
-        run: tox -e py310
+        run: tox -e ${{ matrix.tox-env }}
 
       - name: Run notebook tests
         run: tox -e notebook

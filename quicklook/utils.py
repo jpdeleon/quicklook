@@ -11,7 +11,7 @@ import astropy.units as u
 from quicklook.compat import get_data_path
 
 # Ensure 'quicklook' is the top-level package
-DATA_PATH = get_data_path("quicklook").joinpath("../data")
+DATA_PATH = get_data_path("quicklook").joinpath("data")
 TESS_TIME_OFFSET = 2_457_000
 TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD

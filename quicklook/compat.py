@@ -2,60 +2,41 @@
 Compatibility module for different Python versions.
 """
 
-import os
 import sys
-import importlib
-import pathlib
 from pathlib import Path
 
 
-def get_data_path(package_name):
+def get_data_path(package_name: str) -> Path:
     """
-    Get the path to the data directory for a package.
-
-    This is a compatibility function that works across different Python versions.
-    It provides similar functionality to importlib.resources.files introduced in Python 3.9.
-
-    Parameters
-    ----------
-    package_name : str
-        The name of the package
-
-    Returns
-    -------
-    pathlib.Path
-        Path object pointing to the package directory
+    Get the path to the data directory for a package, compatible across Python versions.
     """
-    # Try to use importlib.resources.files (Python 3.9+)
+    # Python ≥3.9
     if sys.version_info >= (3, 9):
         try:
-            from importlib.resources import files
+            from importlib.resources import files, as_file
 
-            return files(package_name)
-        except (ImportError, ModuleNotFoundError):
+            data_path = files(package_name).joinpath("data")
+            # as_file ensures we get a real filesystem path
+            return Path(as_file(data_path).__enter__())
+        except Exception:
             pass
 
-    # Try to use importlib_resources backport
+    # Backport for older Python
     try:
-        from importlib_resources import files
+        from importlib_resources import files, as_file
 
-        return files(package_name)
-    except (ImportError, ModuleNotFoundError):
+        data_path = files(package_name).joinpath("data")
+        return Path(as_file(data_path).__enter__())
+    except Exception:
         pass
 
-    # Fallback for older Python versions
-    try:
-        # Get the package spec
-        spec = importlib.util.find_spec(package_name)
-        if spec is not None and spec.origin is not None:
-            # If it's a directory (package), return the directory path
-            if os.path.isdir(spec.origin):
-                return Path(spec.origin)
-            # If it's a file (module), return the parent directory
-            return Path(spec.origin).parent
-    except (ImportError, AttributeError):
-        pass
+    # Fallback using __file__
+    import importlib.util
+    import os
 
-    # Last resort fallback
-    package_path = os.path.dirname(sys.modules[package_name].__file__)
-    return Path(package_path)
+    spec = importlib.util.find_spec(package_name)
+    if spec and spec.origin:
+        return Path(spec.origin).parent.joinpath("data")
+
+    # Last resort
+    return Path(sys.modules[package_name].__file__).parent.joinpath("data")
