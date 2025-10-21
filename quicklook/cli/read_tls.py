@@ -9,7 +9,7 @@ import argparse
 
 def main():
     parser = argparse.ArgumentParser(description="Summarize TLS results.")
-    parser.add_argument("indir", type=str, help="Input directory containing *.h5 files")
+    parser.add_argument("input_dir", type=str, help="Input directory containing *.h5 files")
     parser.add_argument(
         "-param",
         choices=["TOI", "power_gls", "Prot_gls", "amp_gls", "SDE_tls", "Porb_tls"],
@@ -19,10 +19,10 @@ def main():
     )
     args = parser.parse_args()
 
-    indir = args.indir
+    input_dir = args.input_dir
     param = args.param
 
-    files = glob(indir + "/*.h5")
+    files = glob(input_dir + "/*.h5")
     assert len(files) > 0, "No *.h5 files found!"
 
     ss = []
@@ -58,7 +58,7 @@ def main():
         .drop_duplicates()
     )
 
-    fp = indir + "_tls.csv"
+    fp = input_dir + "_tls.csv"
     df.to_csv(fp, index=False)
     print(f"Saved: {fp}")
     if errors:

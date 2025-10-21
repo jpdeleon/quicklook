@@ -91,7 +91,7 @@ def rename_and_copy(src_dir, csv_path, dst_dir, column_name=None):
         print(f"Copied: {src_path} -> {dst_path}")
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Copy and prefix-rank files based on CSV order using pandas."
     )
@@ -117,3 +117,7 @@ if __name__ == "__main__":
     if args.output_dir is None:
         output_dir = f"{args.input_dir}/temp"
     rename_and_copy(args.input_dir, csv_path, output_dir, column_name=args.column)
+
+
+if __name__ == "__main__":
+    main()
