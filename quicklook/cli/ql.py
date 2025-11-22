@@ -132,7 +132,7 @@ def main():
     parser.add_argument(
         "--pg_method",
         type=str,
-        help="periodogran method (default=gls)",
+        help="periodogram method (default=gls)",
         default="gls",
         choices=["gls", "ls", "bls"],
     )

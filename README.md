@@ -49,17 +49,18 @@ Results are saved under app/static/outputs/ and re-used if they already exist.
 ## Command line script
 ```bash
 (my_env) $ ql
-usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}]
-          [--window_length WINDOW_LENGTH] [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW] [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT]
-          [--period_limits PERIOD_LIMITS PERIOD_LIMITS] [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}]
-          [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [--outdir OUTDIR] [-save] [-verbose] [-overwrite] [-mask_ephem]
+usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--quality_bitmask {none,default,hard,hardest}]
+          [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}] [--window_length WINDOW_LENGTH] [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW]
+          [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [--period_limits PERIOD_LIMITS PERIOD_LIMITS]
+          [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}]
+          [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [--outdir OUTDIR] [-save] [-verbose] [-overwrite] [-mask_ephem] [--suffix SUFFIX]
 
 Run a quick look analysis of a TESS lightcurve.
 Notes:
 * use single hyphen (-flag) if no value is needed.
 * use double hyphen (--flag value) if value is needed.
 
-Example: ql --name TOI-5071 --sector 46 -save -verbose
+Example: ql --name WASP-21 -save -verbose
 
 options:
   -h, --help            show this help message and exit
@@ -70,12 +71,14 @@ options:
   --pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}
                         lightcurve produced from which pipeline (default=SPOC)
   --exptime EXPTIME     exposure time (default is whatever is used in available sector)
+  --quality_bitmask {none,default,hard,hardest}
+                        remove specific data points identified in TESS data release notes
   --flatten_method FLATTEN_METHOD
                         wotan flatten method (default=biweight)
   --pg_method {gls,ls,bls}
-                        periodogran method (default=gls)
+                        periodogram method (default=gls)
   --window_length WINDOW_LENGTH
-                        flatten method window length (default=0.5 days)
+                        flatten method window length (default=0.5 days); window length is optimized when set to 0
   --edge_cutoff EDGE_CUTOFF
                         cut each edges (default=0.1 days)
   --sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW
@@ -93,6 +96,7 @@ options:
   -verbose              show details
   -overwrite            overwrite files
   -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
+  --suffix SUFFIX       add suffix to filename if -save flag is used
 ```
 
 ## Examples
@@ -100,9 +104,9 @@ options:
 1. Run `quicklook` on the most recent TESS lightcurve of TOI-5071 (aka K2-100).
 
 ```shell
-(my_env) $ ql --name TOI-5071
+(my_env) $ ql --name WASP-21
 ```
-![img](tests/TOI5071_s46_pdcsap_sc.png)
+![img](tests/WASP-21_s83_pdcsap_sc.png)
 
 The figure above shows 9 panels. Let's break them down.
 * top row
