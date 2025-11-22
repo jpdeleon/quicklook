@@ -583,7 +583,9 @@ def plot_gaia_sources_on_survey(
         if verbose:
             print("Querying Gaia sources around the target.")
         gaia_sources = Catalogs.query_region(
-            target_coord, radius=fov_rad, catalog="Gaia", version=2
+            target_coord,
+            radius=fov_rad,
+            catalog="gaiadr3",  # version=3
         ).to_pandas()
     assert len(gaia_sources) > 1, "gaia_sources contains single entry"
     # make aperture mask
@@ -686,12 +688,14 @@ def plot_gaia_sources_on_survey(
 
 def plot_tls(
     tls_results: dict,
-    period_min: float = None,
+    period_min: float = 0.1,
     period_max: float = None,
     ax=None,
 ) -> pl.axis:
     if ax is None:
         _, ax = pl.subplots()
+    if period_max is None:
+        period_max = tls_results.get("Porb_max", 13)
 
     label = f"best={tls_results.period:.3f}"
     ax.axvline(tls_results.period, alpha=0.4, lw=3, label=label)
@@ -707,7 +711,7 @@ def plot_tls(
     ax.set_ylabel("Transit Least Squares SDE")
     ax.set_xlabel("Orbital Period [days]")
     ax.plot(tls_results.periods, tls_results.power, color="black", lw=0.5)
-    ax.set_xlim(tls_results["Porb_min"], tls_results["Porb_max"])
+    ax.set_xlim(period_min, period_max)
     # do not show negative SDE
     y1, y2 = ax.get_ylim()
     y1 = 0 if y1 < 0 else y1

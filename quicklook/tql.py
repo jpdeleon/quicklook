@@ -30,6 +30,7 @@ from astropy.stats import sigma_clip
 from astropy.wcs import WCS
 import astropy.units as u
 from astroquery.simbad import Simbad
+from astroquery.mast import Catalogs
 import lightkurve as lk
 import flammkuchen as fk
 from quicklook.utils import (
@@ -50,6 +51,7 @@ from quicklook.plot import (
     plot_periodogram,
     plot_gls_periodogram,
 )
+from quicklook.inject import InjectionParams, run_grid, select_best_window
 
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
@@ -88,6 +90,7 @@ class TessQuickLook:
         savefig: bool = False,
         savetls: bool = False,
         overwrite: bool = False,
+        suffix: str = None,
         quality_bitmask: str = "default",
         outdir: str = ".",
     ):
@@ -113,6 +116,7 @@ class TessQuickLook:
         )
         self.overwrite = overwrite
         self.outdir = outdir
+        self.suffix = suffix
         self.mask_ephem = mask_ephem
         _ = self.check_output_file_exists()
         self.flatten_method = flatten_method
@@ -280,6 +284,8 @@ class TessQuickLook:
 
     def check_output_file_exists(self):
         name = self.target_name.replace(" ", "")
+        if self.target_name.lower()[:4] == "gaia":
+            name = self.target_name.replace(" ", "_")
         if name.lower()[:3] == "toi":
             name = f"TOI{str(self.toiid).zfill(4)}"
         lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
@@ -289,6 +295,8 @@ class TessQuickLook:
         )
         if self.mask_ephem:
             fp = fp.with_stem(fp.stem + "_mask_ephem")
+        if self.suffix is not None:
+            fp = fp.with_stem(fp.stem + f"_{self.suffix}")
         png_file = fp.with_suffix(".png")
         if png_file.exists() and not self.overwrite:
             raise FileExistsError(f"{png_file} already exists! Set overwrite=True.")
@@ -445,7 +453,7 @@ class TessQuickLook:
                 sys.exit()
             lc = search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
             self.sector = self.all_sectors
-            # import pdb; pdb.set_trace()
+
             if self.pipeline in ["spoc"]:
                 exptime = int(lc.meta["EXPOSURE"] / 10) * 10
             else:
@@ -462,7 +470,7 @@ class TessQuickLook:
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
             lc = search_result[idx].download(quality_bitmask=self.quality_bitmask)
-            # import pdb; pdb.set_trace()
+
             if self.pipeline in ["spoc"]:
                 exptime = int(lc.meta["EXPOSURE"] / 10) * 10
             else:
@@ -711,6 +719,42 @@ class TessQuickLook:
         """
         if self.verbose:
             logger.info(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
+        if float(self.window_length) == 0.0:
+            np.random.default_rng(1)
+
+            logger.info(
+                "Optimizing window length between 0.1 and 0.6 d. This may take several minutes."
+            )
+            window_lengths = np.linspace(0.1, 0.6, 10)
+
+            time = self.raw_lc.time.value
+            flux = self.raw_lc.flux.value
+
+            baseline = time[-1] - time[0]
+            half_baseline = baseline / 2
+            Nmodels = 5
+            t0s = np.random.uniform(low=0, high=half_baseline, size=Nmodels)
+            periods = np.random.uniform(low=0.1, high=half_baseline, size=Nmodels)
+            durations = np.random.uniform(low=0.05, high=0.5, size=Nmodels)
+            depths = np.random.uniform(low=0.005, high=0.05, size=Nmodels)
+
+            injections = []
+            for t0, p, dur, depth in zip(t0s, periods, durations, depths):
+                injections.append(
+                    InjectionParams(t0=time[0] + t0, period=p, duration=dur, depth=depth)
+                )
+
+            # Run grid
+            df = run_grid(time, flux, window_lengths, injections, method=self.flatten_method)
+
+            # Select optimal window
+            self.window_length, valid = select_best_window(df)
+            logger.info(
+                f"Best window length: {self.window_length:.1f} d using {self.flatten_method}."
+            )
+            self.window_length_opt = self.window_length
+        else:
+            self.window_length_opt = None
         wflat_lc, wtrend_lc = flatten(
             # Array of time values
             self.raw_lc.time.value,
@@ -733,6 +777,7 @@ class TessQuickLook:
             # Tuning parameter for the robust estimators
             cval=5.0,
         )
+
         if self.sigma_clip_flat is not None:
             # Apply sigma clipping to the flattened light curve
             msg = "Applying sigma clip on flattened lc with "
@@ -897,13 +942,19 @@ class TessQuickLook:
         msg += f"Gaia DR2 ID={self.gaiaid}\n"
         # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
-        msg += f"RA,Dec={float(coords[0]), float(coords[1])}\n"
-        msg += f"Distance={params['dist']:.1f}" + r"$\pm$" + f"{params['dist_e']:.1f} pc"
+        msg += f"RA,Dec={float(coords[0]), float(coords[1])}"
         mags = self.tfop_info["magnitudes"][0]
         msg += f", {mags['band']}mag={float(mags['value']):.1f}\n"
+        msg += f"Distance={params['dist']:.1f}" + r"$\pm$" + f"{params['dist_e']:.1f} pc\n"
         # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
         # D = gp.astrometric_excess_noise_sig
         # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
+        if self.nearby_star_sep is not None:
+            if self.nearby_star_sep < 1 * u.arcmin:
+                val = self.nearby_star_sep.to(u.arcsec)
+            else:
+                val = self.nearby_star_sep
+            msg += f"Nearby star sep={val:.2f}\n"
         if self.simbad_obj_type is not None:
             msg += f"Simbad Object: {self.simbad_obj_type}"
         # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
@@ -992,7 +1043,11 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting trend...")
         label = f"baseline trend\nmethod={self.flatten_method}"
-        label += f"(window_size={self.window_length:.2f})"
+        if self.window_length_opt is None:
+            label += "(window_size="
+        else:
+            label += "(optim. window_size="
+        label += f"{self.window_length:.2f})"
         self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
 
         if self.verbose:
@@ -1117,12 +1172,21 @@ class TessQuickLook:
                 author=self.pipeline,
             )
             self.sap_mask = "pipeline"
+
+        ny, nx = self.tpf.flux.shape[1:]
+        diag = np.sqrt(nx**2 + ny**2)
+        fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
+        tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
+        self.gaia_sources = tab.to_pandas()
+        if len(self.gaia_sources) > 1:
+            sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
+            self.nearby_star_sep = sep.iloc[1] * u.arcmin
+        else:
+            self.nearby_star_sep = None
+
         try:
             if self.verbose:
                 logger.info("Querying DSS data...")
-            ny, nx = self.tpf.flux.shape[1:]
-            diag = np.sqrt(nx**2 + ny**2)
-            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
             hdu = get_dss_data(
                 ra=self.target_coord.ra.deg,
                 dec=self.target_coord.dec.deg,
@@ -1138,13 +1202,13 @@ class TessQuickLook:
                 tpf=self.tpf,
                 target_gaiaid=self.gaiaid,
                 hdu=hdu,
-                gaia_sources=None,
+                fov_rad=fov_rad,
+                gaia_sources=self.gaia_sources,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
                 sap_mask=self.sap_mask,
                 aper_radius=2,
                 survey=self.archival_survey,
-                fov_rad=fov_rad,
                 verbose=self.verbose,
                 ax=ax,
             )
@@ -1154,7 +1218,8 @@ class TessQuickLook:
             _ = plot_gaia_sources_on_tpf(
                 tpf=self.tpf,
                 target_gaiaid=self.gaiaid,
-                gaia_sources=None,
+                fov_rad=fov_rad,
+                gaia_sources=self.gaia_sources,
                 kmax=1,
                 depth=1 - self.tls_results.depth,
                 sap_mask=self.sap_mask,
@@ -1197,24 +1262,17 @@ class TessQuickLook:
         if (self.outdir is not None) & (not Path(self.outdir).exists()):
             Path(self.outdir).mkdir()
             logger.info(f"Created output directory: {self.outdir}.")
-        if self.target_name.lower()[:4] == "gaia":
-            name = self.target_name.replace(" ", "_")
-        else:
-            name = self.target_name.replace(" ", "")
-        fp = Path(
-            self.outdir,
-            f"{name}_s{str(self.sector).zfill(2)}_{self.pipeline}_{self.cadence[0]}c",
-        )
+
         fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
         if self.savefig:
             fig.savefig(png_file, dpi=150, bbox_inches="tight")
-            logger.info("Saved: ", png_file)
+            logger.info(f"Saved: {png_file}")
 
+        h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
-            h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
             fk.save(h5_file, self.tls_results)
-            logger.info("Saved: ", h5_file)
+            logger.info(f"Saved: {h5_file}")
 
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start

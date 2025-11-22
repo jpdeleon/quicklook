@@ -139,7 +139,7 @@ def main():
     parser.add_argument(
         "--window_length",
         type=float,
-        help="flatten method window length (default=0.5 days)",
+        help="flatten method window length (default=0.5 days); window length is optimized when set to 0",
         default=None,
     )
     parser.add_argument(
@@ -210,6 +210,12 @@ def main():
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "--suffix",
+        help="add suffix to filename if -save flag is used",
+        type=str,
+        default=None,
+    )
 
     # prints help if no argument supplied
     args = parser.parse_args(None if sys.argv[1:] else ["-h"])
@@ -256,6 +262,7 @@ def main():
         outdir=args.outdir,
         verbose=args.verbose,
         overwrite=args.overwrite,
+        suffix=args.suffix,
         # check_if_variable=args.check_if_variable,
         # estimate_spec_type=args.spec_type,
         # estimate_gyro_age=args.gyro_age,

@@ -7,5 +7,6 @@ from .measure import *
 from .gls import *
 from .utils import *
 from .tql import *
+from .inject import *
 
 # from .kql import *
