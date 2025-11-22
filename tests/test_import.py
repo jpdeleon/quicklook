@@ -46,6 +46,16 @@ def test_import_utils():
         pytest.fail(f"Failed to import utils: {e}")
 
 
+def test_import_inject():
+    """Test that the utils module can be imported."""
+    try:
+        from quicklook import inject
+
+        assert inject is not None
+    except ImportError as e:
+        pytest.fail(f"Failed to import inject: {e}")
+
+
 def test_import_plot():
     """Test that the plot module can be imported."""
     try:

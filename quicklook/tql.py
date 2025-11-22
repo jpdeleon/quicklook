@@ -57,12 +57,11 @@ from quicklook.inject import InjectionParams, run_grid, select_best_window
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
-
-__all__ = ["TessQuickLook"]
-
 DATA_PATH = get_data_path("quicklook")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
+
+__all__ = ["TessQuickLook"]
 
 
 class TessQuickLook:
@@ -102,6 +101,8 @@ class TessQuickLook:
         self.show_plot = show_plot
         self.tfop_info = get_tfop_info(target_name)
         self.parse_tfop_info()
+        self.custom_ephem = custom_ephem
+        self.parse_custom_ephem()
         self.simbad_obj_type = self.get_simbad_obj_type()
         self.flux_type = flux_type
         self.exptime = exptime
@@ -123,8 +124,6 @@ class TessQuickLook:
         self.gp_kernel = gp_kernel  # squared_exp, matern, periodic, periodic_auto
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
-        self.custom_ephem = custom_ephem
-        self.parse_custom_ephem()
 
         if window_length is None:
             self.window_length = (
@@ -284,8 +283,6 @@ class TessQuickLook:
 
     def check_output_file_exists(self):
         name = self.target_name.replace(" ", "")
-        if self.target_name.lower()[:4] == "gaia":
-            name = self.target_name.replace(" ", "_")
         if name.lower()[:3] == "toi":
             name = f"TOI{str(self.toiid).zfill(4)}"
         lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
@@ -954,7 +951,7 @@ class TessQuickLook:
                 val = self.nearby_star_sep.to(u.arcsec)
             else:
                 val = self.nearby_star_sep
-            msg += f"Nearby star sep={val:.2f}\n"
+            msg += f"Nearby star sep={val:.1f}\n"
         if self.simbad_obj_type is not None:
             msg += f"Simbad Object: {self.simbad_obj_type}"
         # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
@@ -1052,12 +1049,15 @@ class TessQuickLook:
 
         if self.verbose:
             logger.info("Running Lomb-Scargle periodogram...")
+
+        ref_period = self.tfop_period[0] if self.tfop_period is not None else None
         ax = axes.flatten()[1]
         if self.pg_method == "gls":
             self.gls = self.init_gls()
             ax = plot_gls_periodogram(
                 self.gls,
                 offset=0.1,
+                toi_period=ref_period,
                 N_peaks=3,
                 relative_height=10,
                 FAP_levels=[0.1, 0.01, 0.001],
@@ -1072,6 +1072,7 @@ class TessQuickLook:
                 self.pg_method = "lombscargle"
                 pg = plot_periodogram(
                     self.raw_lc[~self.tmask],
+                    toi_period=ref_period,
                     method="lombscargle",
                     verbose=self.verbose,
                     ax=ax,
@@ -1081,6 +1082,7 @@ class TessQuickLook:
             self.gls = None
             pg = plot_periodogram(
                 self.raw_lc[~self.tmask],
+                toi_period=ref_period,
                 method=self.pg_method,
                 verbose=self.verbose,
                 ax=ax,
@@ -1135,6 +1137,7 @@ class TessQuickLook:
         ax = axes.flatten()[4]
         ax = plot_tls(
             self.tls_results,
+            toi_period=ref_period,
             period_min=self.Porb_min,
             period_max=self.Porb_max,
             ax=ax,

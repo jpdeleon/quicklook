@@ -1,4 +1,5 @@
 import importlib.resources as pkg_resources
+from typing import List, Tuple
 import matplotlib.pyplot as pl
 import numpy as np
 from matplotlib.patches import Circle
@@ -145,35 +146,52 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
     return ax
 
 
-def plot_periodogram(lc, method="lombscargle", verbose=True, ax=None) -> tuple:
+def plot_periodogram(
+    lc,
+    method: str = "lombscargle",
+    toi_period: float = None,
+    period_min: float = 0.1,
+    period_max: float = None,
+    verbose: bool = True,
+    ax: pl.axis = None,
+) -> Tuple:
+    """ """
     if ax is None:
         _, ax = pl.subplots()
     baseline = int(lc.time.value[-1] - lc.time.value[0])
-    Prot_max = baseline / 2.0
+    if period_max is None:
+        period_max = baseline / 2.0
     pg = lc.to_periodogram(
         method=method,
         # minimum_period=0.5,
-        maximum_period=Prot_max,
+        maximum_period=period_max,
         # minimum_frequency = 2.0,
-        # maximum_frequency = 1/Prot_max
+        # maximum_frequency = 1/period_max
     )
+    # plot periodogram
+    pg.plot(ax=ax, view="period", color="black", lw=0.5, label="__nolegend__")
+    # mark best period
     best_period = pg.period_at_max_power.value
-    pg.plot(ax=ax, view="period", lw=2, color="k", label="__nolegend__")
-    ax.axvline(
-        best_period,
-        0,
-        1,
-        color="r",
-        ls="--",
-        lw=2,
-        label=f"peak={best_period:.2f}",
-    )
-    ax.set_xscale("log")
+    label = f"best={best_period:.3f}"
+    ax.axvline(best_period, alpha=0.4, lw=6, label=label)
+    if toi_period is not None:
+        label = f"TOI={toi_period:.3f}"
+        ax.axvline(toi_period, alpha=0.4, lw=2, c="red", label=label)
+    # mark harmonics
+    for i in range(2, 10):
+        higher_harmonics = i * best_period
+        if period_min <= higher_harmonics <= period_max:
+            ax.axvline(higher_harmonics, alpha=0.4, lw=1, linestyle="dashed")
+        lower_harmonics = best_period / i
+        if period_min <= lower_harmonics <= period_max:
+            ax.axvline(lower_harmonics, alpha=0.4, lw=1, linestyle="dashed")
+    if best_period < 2:
+        ax.set_xscale("log")
     ax.set_ylabel("Lomb-Scargle Power")
     ax.set_xlabel("Rotation period [days]")
-    ax.legend(title="Rotation period [d]")
     xmin, _ = ax.get_xlim()
-    ax.set_xlim(xmin, Prot_max)
+    ax.set_xlim(xmin, period_max)
+    ax.legend(title="Prot peaks [d]")
     if verbose:
         print(pg.show_properties())
     return pg
@@ -181,76 +199,72 @@ def plot_periodogram(lc, method="lombscargle", verbose=True, ax=None) -> tuple:
 
 def plot_gls_periodogram(
     gls,
-    offset=0.1,
-    N_peaks=3,
-    relative_height=10,
-    FAP_levels=[0.1, 0.01, 0.001],
-    ax=None,
-    verbose=True,
-) -> tuple:
+    toi_period: float = None,
+    period_min: float = 0.1,
+    period_max: float = None,
+    offset: float = 0.1,
+    N_peaks: int = 3,
+    relative_height: float = 10,
+    FAP_levels: List = [0.1, 0.01, 0.001],
+    ax: pl.axis = None,
+    verbose: bool = True,
+) -> Tuple:
     """
     Based on:
     https://github.com/SLSkrzypinski/TESS_diagnosis
     """
-    from scipy.signal import find_peaks
+    # from scipy.signal import find_peaks
 
     linestyles = [":", "dotted", "solid"]
     if ax is None:
         _, ax = pl.subplots()
     x = 1 / gls.freq
+
+    if min(x) < period_min:
+        period_min = min(x)
+    if period_max is None:
+        period_max = max(x)
+
     # idx = np.argsort(x)
     # x = x[idx]
     # y = gls.power[idx]
     y = gls.power
     power_levels = [[gls.powerLevel(i)] * len(x) for i in FAP_levels]
     best_period = gls.best["P"]
-    # Find peaks
-    max_power = y.max()
-    peaks = find_peaks(y, height=max_power / relative_height)
-    # print(peaks)
-    peak_pos = peaks[0]
-    peak_pos = peak_pos[(x[peak_pos] < best_period - offset) | (x[peak_pos] > best_period + offset)]
-    peak_pos = peak_pos[
-        (x[peak_pos] < best_period / 2 - offset) | (x[peak_pos] > best_period / 2 + offset)
-    ]
-    peak_pos = peak_pos[
-        (x[peak_pos] < 2 * best_period - offset) | (x[peak_pos] > 2 * best_period + offset)
-    ]
-    while len(peak_pos) > N_peaks:
-        peak_pos = np.delete(peak_pos, peak_pos.argmin())
-    peaks = x[peak_pos]
-    heights = y[peak_pos]
 
-    ax.plot(x, y, c="C0", linewidth=0.8)
-    # mark best period and multiples
-    ax.axvline(
-        best_period,
-        0,
-        1,
-        c="k",
-        lw=2,
-        alpha=0.5,
-        label=f"best={best_period:.3}",
-    )
-    # mark best period and multiples
-    if best_period * 2 <= max(x):
-        ax.axvline(x=best_period * 2, color="k", ls="--", linewidth=2, alpha=0.5)
-    ax.axvline(
-        x=best_period / 2,
-        color="k",
-        ls="--",
-        linewidth=2,
-        alpha=0.5,
-        label="best alias",
-    )
-    for i in range(len(peaks)):
-        ax.scatter(
-            peaks[i],
-            heights[i],
-            c="k",
-            s=20,
-            label=f"P$_{i+1}$={peaks[i]:.3f}",
-        )
+    # Find peaks
+    # max_power = y.max()
+    # peaks = find_peaks(y, height=max_power / relative_height)
+    # # print(peaks)
+    # peak_pos = peaks[0]
+    # peak_pos = peak_pos[(x[peak_pos] < best_period - offset) | (x[peak_pos] > best_period + offset)]
+    # peak_pos = peak_pos[
+    #     (x[peak_pos] < best_period / 2 - offset) | (x[peak_pos] > best_period / 2 + offset)
+    # ]
+    # peak_pos = peak_pos[
+    #     (x[peak_pos] < 2 * best_period - offset) | (x[peak_pos] > 2 * best_period + offset)
+    # ]
+    # while len(peak_pos) > N_peaks:
+    #     peak_pos = np.delete(peak_pos, peak_pos.argmin())
+    # peaks = x[peak_pos]
+    # heights = y[peak_pos]
+
+    # plot periodogram
+    ax.plot(x, y, color="black", lw=0.5)
+    # mark best period
+    label = f"best={best_period:.3f}"
+    ax.axvline(best_period, alpha=0.4, lw=6, label=label)
+    if toi_period is not None:
+        label = f"TOI={toi_period:.3f}"
+        ax.axvline(toi_period, alpha=0.4, lw=2, c="red", label=label)
+    # mark harmonics
+    for i in range(2, 10):
+        higher_harmonics = i * best_period
+        if period_min <= higher_harmonics <= period_max:
+            ax.axvline(higher_harmonics, alpha=0.4, lw=1, linestyle="dashed")
+        lower_harmonics = best_period / i
+        if period_min <= lower_harmonics <= period_max:
+            ax.axvline(lower_harmonics, alpha=0.4, lw=1, linestyle="dashed")
     # mark FAP levels
     for i in range(len(FAP_levels)):
         label = f"FAP={max(FAP_levels)}" if i == np.argmax(FAP_levels) else None
@@ -259,13 +273,57 @@ def plot_gls_periodogram(
             power_levels[i],
             linestyle=linestyles[i],
             linewidth=0.8,
-            c="red",
+            c="orange",
             label=label,
         )
-    ax.minorticks_on()
+    if best_period < 2:
+        ax.set_xscale("log")
     ax.set_ylabel("Gen. Lomb-Scargle Power")
     ax.set_xlabel("Rotation period [days]")
+    ax.set_xlim(period_min, period_max)
     ax.legend(title="Prot peaks [d]")
+    return ax
+
+
+def plot_tls(
+    tls_results: dict,
+    toi_period: float = None,
+    period_min: float = 0.1,
+    period_max: float = None,
+    ax: pl.axis = None,
+) -> pl.axis:
+    if ax is None:
+        _, ax = pl.subplots()
+    if period_max is None:
+        period_max = tls_results.get("Porb_max", 13)
+
+    # plot periodogram
+    ax.plot(tls_results.periods, tls_results.power, color="black", lw=0.5)
+    # mark best period
+    best_period = tls_results.period
+    label = f"best={best_period:.3f}"
+    ax.axvline(best_period, alpha=0.4, lw=6, label=label)
+    if toi_period is not None:
+        label = f"TOI={toi_period:.3f}"
+        ax.axvline(toi_period, alpha=0.4, lw=2, c="red", label=label)
+    # mark harmonics
+    for i in range(2, 10):
+        higher_harmonics = i * best_period
+        if period_min <= higher_harmonics <= period_max:
+            ax.axvline(higher_harmonics, alpha=0.4, lw=1, linestyle="dashed")
+        lower_harmonics = best_period / i
+        if period_min <= lower_harmonics <= period_max:
+            ax.axvline(lower_harmonics, alpha=0.4, lw=1, linestyle="dashed")
+    if best_period < 2:
+        ax.set_xscale("log")
+    ax.set_ylabel("Transit Least Squares SDE")
+    ax.set_xlabel("Orbital Period [days]")
+    ax.set_xlim(period_min, period_max)
+    # do not show negative SDE
+    y1, y2 = ax.get_ylim()
+    y1 = 0 if y1 < 0 else y1
+    ax.set_ylim(y1, y2)
+    ax.legend(title="Porb peaks [d]")
     return ax
 
 
@@ -683,40 +741,6 @@ def plot_gaia_sources_on_survey(
         f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')",
         y=0.99,
     )
-    return ax
-
-
-def plot_tls(
-    tls_results: dict,
-    period_min: float = 0.1,
-    period_max: float = None,
-    ax=None,
-) -> pl.axis:
-    if ax is None:
-        _, ax = pl.subplots()
-    if period_max is None:
-        period_max = tls_results.get("Porb_max", 13)
-
-    label = f"best={tls_results.period:.3f}"
-    ax.axvline(tls_results.period, alpha=0.4, lw=3, label=label)
-    ax.set_xlim(np.min(tls_results.periods), np.max(tls_results.periods))
-
-    for i in range(2, 10):
-        higher_harmonics = i * tls_results.period
-        if period_min <= higher_harmonics <= period_max:
-            ax.axvline(higher_harmonics, alpha=0.4, lw=1, linestyle="dashed")
-        lower_harmonics = tls_results.period / i
-        if period_min <= lower_harmonics <= period_max:
-            ax.axvline(lower_harmonics, alpha=0.4, lw=1, linestyle="dashed")
-    ax.set_ylabel("Transit Least Squares SDE")
-    ax.set_xlabel("Orbital Period [days]")
-    ax.plot(tls_results.periods, tls_results.power, color="black", lw=0.5)
-    ax.set_xlim(period_min, period_max)
-    # do not show negative SDE
-    y1, y2 = ax.get_ylim()
-    y1 = 0 if y1 < 0 else y1
-    ax.set_ylim(y1, y2)
-    ax.legend(title="Porb peaks [d]")
     return ax
 
 
