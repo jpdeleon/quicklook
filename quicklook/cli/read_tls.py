@@ -8,7 +8,7 @@ import argparse
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Summarize TLS results.")
+    parser = argparse.ArgumentParser(description="Summarize TLS results into a single csv file.")
     parser.add_argument("input_dir", type=str, help="Input directory containing *.h5 files")
     parser.add_argument(
         "-param",

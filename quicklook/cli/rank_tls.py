@@ -17,16 +17,22 @@ def is_near_integer(series, tolerance):
     )
 
 
-def apply_filters(df, tolerance=0.2, depth_min=1, depth_max=100, min_SDE=5):
+def apply_filters(
+    df: pd.DataFrame,
+    tolerance: float = 0.2,
+    min_depth: float = 1,
+    max_depth: float = 100,
+    min_SDE: float = 5,
+) -> pd.DataFrame:
     """
     tolerance in days
-    depth_min, depth_max in ppt
+    min_depth, max_depth in ppt
     """
     df2 = df.copy()
     # Condition 1: Absolute difference is not near an integer
     # not_near_period = abs(df['Prot_gls'] - df['Porb_tls']) >= period_tolerance
-    depth_range = (df2["depth"] >= depth_min) & (df2["depth"] < depth_max)
-    errmsg = f"No candidates satisfy `{depth_min}<depth_range<{depth_max}` ppt."
+    depth_range = (df2["depth"] >= min_depth) & (df2["depth"] < max_depth)
+    errmsg = f"No candidates satisfy `{min_depth}<depth_range<{max_depth}` ppt."
     assert sum(depth_range) > 0, errmsg
 
     # Condition 2: Ratio is not close to an integer
@@ -40,7 +46,8 @@ def apply_filters(df, tolerance=0.2, depth_min=1, depth_max=100, min_SDE=5):
     assert sum(not_near_period_ratio) > 0, errmsg
 
     # Condition 3: Not EB!
-    not_EB = ~df2["simbad_object"].str.lower().isin(["eclipsing binary", "eclbin"])
+    # not_EB = ~df2["simbad_object"].str.lower().isin(["eclipsing binary", "eclbin"])
+    not_EB = ~df2["simbad_object"].fillna("").str.lower().isin(["eclipsing binary", "eclbin"])
     errmsg = "No candidates satisfy `not_EB`."
     assert sum(not_EB) > 0, errmsg
 
@@ -55,7 +62,18 @@ def apply_filters(df, tolerance=0.2, depth_min=1, depth_max=100, min_SDE=5):
     return df2[idx]
 
 
-def rename_and_copy(src_dir, csv_path, dst_dir, column_name=None):
+def rename_and_copy(
+    src_dir: str,
+    csv_path: str,
+    dst_dir: str,
+    column_name: str = None,
+    remove_filter: bool = True,
+    use_ascending: bool = False,
+    min_SDE: float = 5,
+    tolerance: float = 0.2,
+    min_depth: float = 1,
+    max_depth: float = 100,
+):
     """ """
     # Create output directory if it doesn't exist
     Path(dst_dir).mkdir(exist_ok=True)
@@ -67,10 +85,17 @@ def rename_and_copy(src_dir, csv_path, dst_dir, column_name=None):
     if column_name is not None:
         if column_name not in df.columns:
             raise ValueError(f"Column '{column_name}' not found in CSV.")
-        df = df.sort_values(by=column_name, ascending=False)
+        df = df.sort_values(by=column_name, ascending=use_ascending)
 
     # import pdb; pdb.set_trace()
-    df2 = apply_filters(df)
+    if remove_filter:
+        print("Ranking all files...")
+        df2 = df.copy()
+    else:
+        print("Applying filters to files...")
+        df2 = apply_filters(
+            df, tolerance=tolerance, min_depth=min_depth, max_depth=max_depth, min_SDE=min_SDE
+        )
 
     filenames = df2.filename.apply(lambda x: x.split("/")[-1].split("_tls.")[0] + ".png").values
 
@@ -93,20 +118,53 @@ def rename_and_copy(src_dir, csv_path, dst_dir, column_name=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Copy and prefix-rank files based on CSV order using pandas."
+        description="Copy and add prefix to png files ordered by `SDE_tls` (default) defined in csv output of `read_tls` script."
     )
     parser.add_argument("input_dir", help="Directory where the original files are located.")
     parser.add_argument(
-        "--csv_path", help="Path to the CSV file containing the ranked filenames.", default=None
+        "--csv_path",
+        help="Path to the CSV file containing the ranked filenames.",
+        default=None,
+        type=str,
     )
     parser.add_argument(
-        "--output_dir", help="Directory where renamed files will be copied.", default=None
+        "--output_dir",
+        help="Directory where renamed files will be copied. Default is `temp`.",
+        default=None,
+        type=str,
     )
     parser.add_argument(
-        "--column", help="Column name in csv to rank the files in order.", default=None
+        "--column",
+        help="Column name in csv to rank the files in order. Default is `SDE_tls`.",
+        default=None,
+        type=str,
     )
     parser.add_argument(
-        "--ascending", help="Ranking order. Default is False (descending).", default=False
+        "--remove_filter",
+        help="Remove default filters. Default is False (use filters).",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--use_ascending",
+        help="Ranking order. Default is False (descending).",
+        action="store_true",
+        default=False,
+    )
+    parser.add_argument(
+        "--min_sde", help="Minimum SDE to copy. Default is 5.", default=5, type=float
+    )
+    parser.add_argument(
+        "--min_depth",
+        help="Minimum transit depth in ppt to copy. Default is 1 ppt.",
+        default=1,
+        type=float,
+    )
+    parser.add_argument(
+        "--max_depth",
+        help="Maximum transit depth in ppt to copy. Default is 100 ppt.",
+        default=100,
+        type=float,
     )
 
     args = parser.parse_args()
@@ -116,7 +174,19 @@ def main():
             os.system(f"read_tls {args.input_dir}")
     if args.output_dir is None:
         output_dir = f"{args.input_dir}/temp"
-    rename_and_copy(args.input_dir, csv_path, output_dir, column_name=args.column)
+    else:
+        output_dir = f"{args.input_dir}/{args.output_dir}"
+    rename_and_copy(
+        args.input_dir,
+        csv_path,
+        output_dir,
+        remove_filter=args.remove_filter,
+        # use_ascending=args.use_ascending,
+        min_SDE=args.min_sde,
+        min_depth=args.min_depth,
+        max_depth=args.max_depth,
+        column_name=args.column,
+    )
 
 
 if __name__ == "__main__":

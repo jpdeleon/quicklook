@@ -54,7 +54,7 @@ def use_style(name="science"):
         pl.style.use(str(style_path))
 
 
-def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
+def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=None):
     if ax is None:
         _, ax = pl.subplots()
     yline = tls_results.depth
@@ -64,7 +64,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
         c="#1f77b4",
         marker="o",
         lw=2,
-        markersize=8,
+        markersize=markersize,
         ax=ax,
         zorder=2,
     )
@@ -73,7 +73,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
         c="#d62728",
         marker="o",
         lw=2,
-        markersize=8,
+        markersize=markersize,
         ax=ax,
         zorder=2,
     )
@@ -97,7 +97,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, ax=None):
     return ax
 
 
-def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
+def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=6, ax=None):
     if ax is None:
         _, ax = pl.subplots()
     # mask transit and shift phase
@@ -133,7 +133,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, ax=None):
         fold_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
             ax=ax,
             marker="o",
-            markersize=8,
+            markersize=markersize,
             lw=2,
             label=f"sec_eclipse_thresh={secthresh*1e3:.2f} ppt",
             zorder=2,

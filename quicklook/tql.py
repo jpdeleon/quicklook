@@ -34,8 +34,8 @@ from astroquery.mast import Catalogs
 import lightkurve as lk
 import flammkuchen as fk
 from quicklook.utils import (
-    get_tfop_info,
-    get_params_from_tfop,
+    get_exofop_json,
+    get_params_from_exofop,
     TESS_TIME_OFFSET,
     TESS_pix_scale,
 )
@@ -74,8 +74,8 @@ class TessQuickLook:
         exptime: float = None,
         pg_method: str = "gls",
         flatten_method: str = "biweight",
-        gp_kernel: str = "matern",
-        gp_kernel_size: float = 1,
+        gp_kernel: str = "periodic_auto",
+        gp_kernel_size: float = 5,
         window_length: float = None,
         edge_cutoff: float = 0.1,
         sigma_clip_raw: tuple = None,
@@ -99,8 +99,8 @@ class TessQuickLook:
         logger.info(f"Generating quicklook for {self.target_name}...")
         self.verbose = verbose
         self.show_plot = show_plot
-        self.tfop_info = get_tfop_info(target_name)
-        self.parse_tfop_info()
+        self.exofop_data = get_exofop_json(target_name)
+        self.parse_exofop_info()
         self.custom_ephem = custom_ephem
         self.parse_custom_ephem()
         self.simbad_obj_type = self.get_simbad_obj_type()
@@ -127,8 +127,8 @@ class TessQuickLook:
 
         if window_length is None:
             self.window_length = (
-                self.tfop_dur[0] * 3
-                if (self.tfop_dur is not None) and (self.tfop_dur[0] * 3 >= 0.1)
+                self.toi_dur[0] * 3
+                if (self.toi_dur is not None) and (self.toi_dur[0] * 3 >= 0.1)
                 else 0.5
             )
         else:
@@ -136,7 +136,7 @@ class TessQuickLook:
 
         self.tmask = self.get_transit_mask()
         err_msg = "No masked transits"
-        if self.tfop_epoch is not None and self.tmask.sum() == 0:
+        if self.toi_epoch is not None and self.tmask.sum() == 0:
             logger.error(f"Error: {err_msg}")
             sys.exit()
         if self.mask_ephem:
@@ -202,12 +202,12 @@ class TessQuickLook:
         args = ", ".join(args)
         return f"{type(self).__name__}({args})"
 
-    def parse_tfop_info(self):
+    def parse_exofop_info(self):
         """
         Parse the TFOP info to get the star names,
         Gaia name, Gaia ID, and target coordinates.
         """
-        self.star_names = np.array(self.tfop_info.get("basic_info")["star_names"].split(", "))
+        self.star_names = np.array(self.exofop_data.get("basic_info")["star_names"].split(", "))
         if self.verbose:
             print("Catalog names:")
             for n in self.star_names:
@@ -217,8 +217,8 @@ class TessQuickLook:
         ][0]
         self.gaiaid = int(self.gaia_name.split()[-1])
         ra, dec = (
-            self.tfop_info.get("coordinates")["ra"],
-            self.tfop_info.get("coordinates")["dec"],
+            self.exofop_data.get("coordinates")["ra"],
+            self.exofop_data.get("coordinates")["dec"],
         )
         self.target_coord = SkyCoord(ra=ra, dec=dec, unit="degree")
 
@@ -231,7 +231,7 @@ class TessQuickLook:
             else:
                 toiid = None
             self.toiid = toiid
-        self.ticid = int(self.tfop_info.get("basic_info")["tic_id"])
+        self.ticid = int(self.exofop_data.get("basic_info")["tic_id"])
         if self.ticid is not None:
             self.query_name = f"TIC{self.ticid}"
         else:
@@ -258,28 +258,28 @@ class TessQuickLook:
                     msg += f"Converting to BTJD = JD-{TESS_TIME_OFFSET:,}."
                     logger.info(msg)
                 self.custom_ephem[0] -= TESS_TIME_OFFSET
-            self.tfop_epoch = (self.custom_ephem[0], self.custom_ephem[1])
-            self.tfop_period = (self.custom_ephem[2], self.custom_ephem[3])
+            self.toi_epoch = (self.custom_ephem[0], self.custom_ephem[1])
+            self.toi_period = (self.custom_ephem[2], self.custom_ephem[3])
             if self.custom_ephem[4] > 1:
                 if self.verbose:
                     logger.info("Custom transit duration given in hours. Converting to days.")
                 self.custom_ephem[4] /= 24
                 self.custom_ephem[5] /= 24
-            self.tfop_dur = (self.custom_ephem[4], self.custom_ephem[5])
-            self.tfop_depth = None
+            self.toi_dur = (self.custom_ephem[4], self.custom_ephem[5])
+            self.toi_depth = None
         else:
             # use tfop ephem if available
             (
-                self.tfop_epoch,
-                self.tfop_period,
-                self.tfop_dur,
-                self.tfop_depth,
+                self.toi_epoch,
+                self.toi_period,
+                self.toi_dur,
+                self.toi_depth,
             ) = (
                 self.get_toi_ephem()
-                if len(self.tfop_info.get("planet_parameters")) != 0
+                if len(self.exofop_data.get("planet_parameters")) != 0
                 else (None, None, None, None)
             )
-            self.ephem_source = "tfop" if self.tfop_epoch is not None else None
+            self.ephem_source = "TFOP" if self.toi_epoch is not None else None
 
     def check_output_file_exists(self):
         name = self.target_name.replace(" ", "")
@@ -382,7 +382,12 @@ class TessQuickLook:
             sector_orig = None
         else:
             sector_orig = kwargs.pop("sector")
-            sector = None if sector_orig in ["all", -1] else int(sector_orig)
+            # sector = None if sector_orig in ["all", -1] else int(sector_orig)
+            sector = (
+                None
+                if str(sector_orig).lower() == "all" or int(sector_orig) == -1
+                else int(sector_orig)
+            )
             kwargs["sector"] = sector
 
         if sector_orig == "all":
@@ -596,6 +601,32 @@ class TessQuickLook:
             tpf = tpf[~zero_mask]
         return tpf
 
+    def get_planet_params(self):
+        """
+        e.g.
+        https://exofop.ipac.caltech.edu/tess/target.php?id=TOI-6715&json
+        """
+        if self.verbose:
+            logger.info(f"Querying ephemeris for {self.target_name}:")
+        try:
+            # Use TIC latest uploaded ephem as default
+            planet_params = get_params_from_exofop(self.exofop_data, "planet_parameters")
+        except Exception as e:
+            logger.error(e)
+            # If latest uploaded ephem is not available, use the first one
+            planet_params = get_params_from_exofop(self.exofop_data, "planet_parameters", idx=1)
+        return planet_params
+
+    def get_toi_radius(self) -> tuple:
+        planet_params = self.get_planet_params()
+        if planet_params is not None:
+            r = planet_params.get("rad")
+            r = float(r) if r and (r != "") else np.nan
+            re = planet_params.get("rad_e")
+            re = float(re) if re and (re != "") else np.nan
+            if not math.isnan(r) or not math.isnan(re):
+                return (r, re)
+
     def get_toi_ephem(self, params=["epoch", "per", "dur"]) -> list:
         """
         Query TOI ephemeris from TFOP.
@@ -611,23 +642,15 @@ class TessQuickLook:
             A list of tuples, each containing the value and error for the
             corresponding parameter.
         """
-        if self.verbose:
-            logger.info(f"Querying ephemeris for {self.target_name}:")
-        try:
-            # Use TIC latest uploaded ephem as default
-            planet_params = get_params_from_tfop(self.tfop_info, "planet_parameters")
-        except Exception as e:
-            logger.error(e)
-            # If latest uploaded ephem is not available, use the first one
-            planet_params = get_params_from_tfop(self.tfop_info, "planet_parameters", idx=1)
+        planet_params = self.get_planet_params()
         if self.verbose:
             print(f"Parameters for {planet_params['name']}:")
 
         # Initialize variables
-        tfop_epoch = None
-        tfop_period = None
-        tfop_dur = None
-        tfop_depth = None
+        toi_epoch = None
+        toi_period = None
+        toi_dur = None
+        toi_depth = None
 
         # Query values and errors
         for p in params:
@@ -639,12 +662,12 @@ class TessQuickLook:
             if self.verbose:
                 print(f"{p}: {val}, {err} {unit}")
             if p == "epoch":
-                tfop_epoch = np.array((val, err))
-                tfop_epoch[0] -= TESS_TIME_OFFSET
+                toi_epoch = np.array((val, err))
+                toi_epoch[0] -= TESS_TIME_OFFSET
             elif p == "per":
-                tfop_period = np.array((val, err))
+                toi_period = np.array((val, err))
             elif p == "dur":
-                tfop_dur = np.array((val, err)) / 24
+                toi_dur = np.array((val, err)) / 24
 
         # Query depth
         d = planet_params.get("dep_p")
@@ -652,9 +675,9 @@ class TessQuickLook:
         d = float(d) if d and (d != "") else np.nan
         de = float(de) if de and (de != "") else np.nan
         if not math.isnan(d) or not math.isnan(de):
-            tfop_depth = np.array((d, de)) / 1e3
+            toi_depth = np.array((d, de)) / 1e3
 
-        return (tfop_epoch, tfop_period, tfop_dur, tfop_depth)
+        return (toi_epoch, toi_period, toi_dur, toi_depth)
 
     def run_tls(self):
         """
@@ -752,6 +775,7 @@ class TessQuickLook:
             self.window_length_opt = self.window_length
         else:
             self.window_length_opt = None
+        # https://github.com/hippke/wotan#available-detrending-algorithms
         wflat_lc, wtrend_lc = flatten(
             # Array of time values
             self.raw_lc.time.value,
@@ -759,6 +783,9 @@ class TessQuickLook:
             self.raw_lc.flux.value,
             # The method to use for detrending
             method=self.flatten_method,
+            # robust=True uses iterative clipping approach
+            # outliers beyond 2 sigma from the fitted trend are removed in each iteration until convergence
+            robust=True,
             # The kernel to use for the Gaussian process
             kernel=self.gp_kernel,
             # The size of the kernel (if applicable)
@@ -802,7 +829,7 @@ class TessQuickLook:
     def get_transit_mask(self):
         """
         Generate a mask for the transit based on the user-provided
-        transit ephemeris or the ephemeris from the TFOP portal.
+        transit ephemeris or the ephemeris from the TOI portal.
 
         Returns
         -------
@@ -810,12 +837,12 @@ class TessQuickLook:
             A boolean mask where the transit is True and the out-of-transit
             periods are False.
         """
-        if np.all([self.tfop_epoch, self.tfop_period, self.tfop_dur]):
+        if np.all([self.toi_epoch, self.toi_period, self.toi_dur]):
             # Use the user-provided transit ephemeris to create the mask
             tmask = self.raw_lc.create_transit_mask(
-                transit_time=self.tfop_epoch[0],
-                period=self.tfop_period[0],
-                duration=self.tfop_dur[0],
+                transit_time=self.toi_epoch[0],
+                period=self.toi_period[0],
+                duration=self.toi_dur[0],
             )
         else:
             # If no transit ephemeris is provided, create an empty mask
@@ -834,10 +861,10 @@ class TessQuickLook:
         """
         try:
             # Use the TIC stellar parameters as default
-            star_params = get_params_from_tfop(self.tfop_info, name="stellar_parameters", idx=1)
+            star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters", idx=1)
         except Exception as e:
             logger.error(e)
-            star_params = get_params_from_tfop(self.tfop_info, name="stellar_parameters")
+            star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters")
         params = {}
         param_names = ["srad", "mass", "teff", "logg", "dist"]
         for name in param_names:
@@ -881,37 +908,50 @@ class TessQuickLook:
         msg += "\n".join(textwrap.wrap(text, 60))
         msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
         msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)"
-        if self.tfop_period is not None:
-            msg += f", {self.tfop_period[0]:.4f}" + r"$\pm$"
-            msg += f"{self.tfop_period[1]:.4f} d ({self.ephem_source})\n"
+        if self.toi_period is not None:
+            msg += f", {self.toi_period[0]:.4f}" + r"$\pm$"
+            msg += f"{self.toi_period[1]:.4f} d ({self.ephem_source})\n"
         else:
             msg += "\n"
         msg += f"T0={self.tls_results.T0:.4f} "
-        if self.tfop_period is not None:
-            msg += f"(TLS), {self.tfop_epoch[0]:.4f}" + r"$\pm$"
-            msg += f"{self.tfop_epoch[1]:.4f} "
+        if self.toi_period is not None:
+            msg += f"(TLS), {self.toi_epoch[0]:.4f}" + r"$\pm$"
+            msg += f"{self.toi_epoch[1]:.4f} "
             msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
         else:
             msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
         msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
-        if self.tfop_dur is not None:
-            msg += f", {self.tfop_dur[0]*24:.2f}" + r"$\pm$"
-            msg += f"{self.tfop_dur[1]*24:.2f} hr ({self.ephem_source})\n"
+        if self.toi_dur is not None:
+            msg += f", {self.toi_dur[0]*24:.2f}" + r"$\pm$"
+            msg += f"{self.toi_dur[1]*24:.2f} hr ({self.ephem_source})\n"
         else:
             msg += "\n"
         msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
-        if self.tfop_depth is not None:
-            msg += f", {self.tfop_depth[0]:.1f}" + r"$\pm$"
-            msg += f"{self.tfop_depth[1]:.1f} ppt (tfop)\n"
+        if self.toi_depth is not None:
+            msg += f", {self.toi_depth[0]:.1f}" + r"$\pm$"
+            msg += f"{self.toi_depth[1]:.1f} ppt (TFOP)\n"
         else:
             msg += "\n"
-        if (meta["FLUX_ORIGIN"].lower() == "pdcsap") or (meta["FLUX_ORIGIN"].lower() == "sap"):
+        if (
+            (meta["FLUX_ORIGIN"].lower() == "pdcsap")
+            or (meta["FLUX_ORIGIN"].lower() == "sap")
+            or self.pipeline == "tglc"
+        ):
             # msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 5
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$ "
             msg += f"= {Rp_true*u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
         else:
             msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
+
+        if self.toi_rp is not None:
+            msg += (
+                f"Rp={self.toi_rp[0]:.2f}"
+                + r"$\pm$"
+                + f"{self.toi_rp[1]:.2f} "
+                + r"R$_{\oplus}$ "
+                + "(TFOP)\n"
+            )
         msg += f"Odd-Even mismatch={self.tls_results.odd_even_mismatch:.2f}" + r"$\sigma$"
         msg += "\n" * 2
         msg += "Stellar Properties\n"
@@ -940,7 +980,7 @@ class TessQuickLook:
         # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
         msg += f"RA,Dec={float(coords[0]), float(coords[1])}"
-        mags = self.tfop_info["magnitudes"][0]
+        mags = self.exofop_data["magnitudes"][0]
         msg += f", {mags['band']}mag={float(mags['value']):.1f}\n"
         msg += f"Distance={params['dist']:.1f}" + r"$\pm$" + f"{params['dist_e']:.1f} pc\n"
         # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
@@ -981,18 +1021,28 @@ class TessQuickLook:
         # Append the period limits
         self.tls_results["Porb_min"] = self.Porb_min
         self.tls_results["Porb_max"] = self.Porb_max
+        self.tls_results["depth_ppt"] = (1 - self.tls_results.depth) * 1e3
 
         # Append the TFOP parameters
-        self.tls_results["period_tfop"] = self.tfop_period
-        self.tls_results["T0_tfop"] = self.tfop_epoch
-        self.tls_results["duration_tfop"] = self.tfop_dur
-        self.tls_results["depth_tfop"] = self.tfop_depth
+        self.tls_results["period_toi"] = self.toi_period
+        self.tls_results["T0_toi"] = self.toi_epoch
+        self.tls_results["duration_toi"] = self.toi_dur
+        self.tls_results["depth_toi"] = self.toi_depth
+        self.toi_rp = self.get_toi_radius()
+        self.tls_results["Rp_toi"] = self.toi_rp
 
         # Append the Gaia ID, TIC ID, and TOI ID
         self.tls_results["gaiaid"] = int(self.gaiaid)
         self.tls_results["ticid"] = int(self.ticid)
         self.tls_results["toiid"] = self.toiid
         self.tls_results["sector"] = self.sector
+
+        # Append baseline model used to flatten raw flux
+        self.tls_results["flatten_method"] = self.flatten_method
+        self.tls_results["window_length"] = self.window_length
+
+        # Append exofop data (TICv8)
+        self.tls_results["exofop_data"] = self.exofop_data
 
         # Append the Gls results
         if self.gls is not None:
@@ -1050,7 +1100,7 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Running Lomb-Scargle periodogram...")
 
-        ref_period = self.tfop_period[0] if self.tfop_period is not None else None
+        ref_period = self.toi_period[0] if self.toi_period is not None else None
         ax = axes.flatten()[1]
         if self.pg_method == "gls":
             self.gls = self.init_gls()
@@ -1181,6 +1231,8 @@ class TessQuickLook:
         fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
         tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
         self.gaia_sources = tab.to_pandas()
+        # TODO: Add Gaia RUWE attribute
+        # self.gaia_ruwe = self.gaia_sources["ruwe"]
         if len(self.gaia_sources) > 1:
             sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
             self.nearby_star_sep = sep.iloc[1] * u.arcmin
@@ -1236,12 +1288,14 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting odd-even transit...")
         ax = axes.flatten()[6]
-        _ = plot_odd_even_transit(self.fold_lc, self.tls_results, bin_mins=10, ax=ax)
+        _ = plot_odd_even_transit(self.fold_lc, self.tls_results, bin_mins=10, markersize=6, ax=ax)
 
         if self.verbose:
             logger.info("Plotting secondary eclipse...")
         ax = axes.flatten()[7]
-        _ = plot_secondary_eclipse(self.flat_lc, self.tls_results, tmask2, bin_mins=10, ax=ax)
+        _ = plot_secondary_eclipse(
+            self.flat_lc, self.tls_results, tmask2, bin_mins=10, markersize=6, ax=ax
+        )
 
         if self.verbose:
             logger.info("Plotting summary panel...")

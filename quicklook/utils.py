@@ -18,8 +18,8 @@ TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # Kepler_pix_scale = 3.98 * u.arcsec  # /pix
 
 __all__ = [
-    "get_tfop_info",
-    "get_params_from_tfop",
+    "get_exofop_json",
+    "get_params_from_exofop",
     "parse_aperture_mask",
     "compute_secthresh",
     "is_point_inside_mask",
@@ -112,7 +112,7 @@ def get_tois(
     return d.sort_values("TOI")
 
 
-def get_tfop_info(target_name: str) -> dict:
+def get_exofop_json(target_name: str) -> dict:
     base_url = "https://exofop.ipac.caltech.edu/tess"
     if target_name.lower()[:4] == "gaia":
         query_name = target_name.replace(" ", "_")
@@ -128,28 +128,31 @@ def get_tfop_info(target_name: str) -> dict:
         raise ValueError(f"No TIC data found for {target_name}")
 
 
-def get_params_from_tfop(tfop_info, name="planet_parameters", idx=None):
-    params_dict = tfop_info.get(name)
-    if idx is None:
-        key = "pdate" if name == "planet_parameters" else "sdate"
-        # get the latest parameter based on upload date
-        dates = []
-        for d in params_dict:
-            t = d.get(key)
-            dates.append(t)
-        df = pd.DataFrame({"date": dates})
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        idx = df["date"].idxmax()
-    return params_dict[idx]
+def get_params_from_exofop(exofop_info, name="planet_parameters", idx=None):
+    params_dict = exofop_info.get(name)
+    try:
+        if idx is None:
+            key = "pdate" if name == "planet_parameters" else "sdate"
+            # get the latest parameter based on upload date
+            dates = []
+            for d in params_dict:
+                t = d.get(key)
+                dates.append(t)
+            df = pd.DataFrame({"date": dates})
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            idx = df["date"].idxmax()
+        return params_dict[idx]
+    except Exception as e:
+        print("Error: ", e)
 
 
 def get_tic_id(target_name: str) -> int:
-    return int(get_tfop_info(target_name)["basic_info"]["tic_id"])
+    return int(get_exofop_json(target_name)["basic_info"]["tic_id"])
 
 
 def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> list:
     print(f"Querying ephemeris for {target_name}:")
-    r = get_tfop_info(target_name)
+    r = get_exofop_json(target_name)
     planet_params = r["planet_parameters"][idx]
     vals = []
     for p in params:

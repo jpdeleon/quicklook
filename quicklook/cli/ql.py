@@ -130,6 +130,18 @@ def main():
         default="biweight",
     )
     parser.add_argument(
+        "--gp_kernel",
+        type=str,
+        help="wotan gp kernel (default=periodic_auto)",
+        default="periodic_auto",
+    )
+    parser.add_argument(
+        "--gp_kernel_size",
+        type=int,
+        help="wotan gp kernel size (default=5)",
+        default=5,
+    )
+    parser.add_argument(
         "--pg_method",
         type=str,
         help="periodogram method (default=gls)",
@@ -164,7 +176,7 @@ def main():
     )
     parser.add_argument(
         "--period_limits",
-        help="period limits in TLS search; default=(0.5, baseline/2) d",
+        help="period limits in TLS search; default=(0.1, baseline/2) d",
         nargs=2,
         type=float,
         default=None,
@@ -206,7 +218,7 @@ def main():
     # )
     parser.add_argument(
         "-mask_ephem",
-        help="mask transits either using TFOP or custom ephemerides if available (default=False)",
+        help="mask transits either using TOI or custom ephemerides if available (default=False)",
         action="store_true",
         default=False,
     )
@@ -245,6 +257,8 @@ def main():
         quality_bitmask=args.quality_bitmask,
         # apply_data_quality_mask=args.quality_mask,
         flatten_method=args.flatten_method,
+        gp_kernel=args.gp_kernel,
+        gp_kernel_size=args.gp_kernel_size,
         window_length=args.window_length,
         sigma_clip_raw=args.sigma_clip_raw,
         sigma_clip_flat=args.sigma_clip_flat,
