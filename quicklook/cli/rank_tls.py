@@ -58,7 +58,19 @@ def apply_filters(
 
     # Condition 5: not a known TOI
     not_TOI = df2["TOI"].isna() | (df2["TOI"] == "")
-    idx = depth_range & not_near_period_ratio & not_EB & strong_signal & not_TOI
+
+    # Condition 6: In transit data is not sparse
+    exp = df2.get("exptime", 9999)
+    count = df2.get("per_transit_count", 0)
+
+    # Define the two valid "not sparse" conditions
+    short_exp_valid = (exp <= 120) & (count > 10)
+    long_exp_valid = (exp > 120) & (count > 5)
+
+    # Data is not sparse if it meets either valid condition OR if count is missing (0)
+    not_sparse = short_exp_valid | long_exp_valid | (count == 0)
+
+    idx = depth_range & not_near_period_ratio & not_EB & strong_signal & not_TOI & not_sparse
     return df2[idx]
 
 
@@ -96,6 +108,8 @@ def rename_and_copy(
         df2 = apply_filters(
             df, tolerance=tolerance, min_depth=min_depth, max_depth=max_depth, min_SDE=min_SDE
         )
+        err_msg = "No good candidates left after applying the filters. Try --remove_filter."
+        assert len(df2) > 0, err_msg
 
     filenames = df2.filename.apply(lambda x: x.split("/")[-1].split("_tls.")[0] + ".png").values
 
@@ -118,7 +132,7 @@ def rename_and_copy(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Copy and add prefix to png files ordered by `SDE_tls` (default) defined in csv output of `read_tls` script."
+        description="Copy and add prefix to png files ordered by `SDE_tls` (default) defined in csv output of `read_tls` script. Only ranks filtered results."
     )
     parser.add_argument("input_dir", help="Directory where the original files are located.")
     parser.add_argument(

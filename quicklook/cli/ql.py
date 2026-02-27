@@ -85,6 +85,12 @@ def main():
         default=None,
     )
     # parser.add_argument(
+    #     "--binsize",
+    #     type=float,
+    #     help="size (in minutes) to bin the raw lc",
+    #     default=None,
+    # )
+    # parser.add_argument(
     #     "-m",
     #     "--mission",
     #     type=str,

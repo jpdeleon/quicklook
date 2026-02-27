@@ -165,6 +165,35 @@ def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> li
     return vals
 
 
+def mag_to_flux(mag: np.ndarray, mag_err: np.ndarray = None):
+    """
+    Convert magnitudes and magnitude uncertainties to relative flux and flux uncertainties.
+
+    Parameters
+    ----------
+    mag : np.ndarray
+        Magnitude values.
+    mag_err : np.ndarray
+        Magnitude uncertainties.
+
+    Returns
+    -------
+    flux : np.ndarray
+        Relative flux values (normalized to 1 at mag=0 reference).
+    flux_err : np.ndarray
+        Corresponding flux uncertainties.
+    """
+    # Convert magnitude to relative flux (zero-point cancels in relative space)
+    flux = 10 ** (-0.4 * mag)
+
+    if mag_err is not None:
+        # Propagate uncertainty analytically
+        flux_err = 0.921034 * flux * mag_err
+        return flux, flux_err
+    else:
+        return flux
+
+
 def parse_aperture_mask(
     tpf,
     sap_mask="pipeline",

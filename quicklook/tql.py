@@ -74,8 +74,9 @@ class TessQuickLook:
         exptime: float = None,
         pg_method: str = "gls",
         flatten_method: str = "biweight",
-        gp_kernel: str = "periodic_auto",
-        gp_kernel_size: float = 5,
+        gp_kernel: str = "periodic_auto",  # works if flatten_method=='gp'
+        gp_kernel_size: float = 5,  # works if flatten_method=='gp'
+        # bin_size : float = None, # useful for dense lc (exp<=120s)
         window_length: float = None,
         edge_cutoff: float = 0.1,
         sigma_clip_raw: tuple = None,
@@ -110,6 +111,7 @@ class TessQuickLook:
         self.sigma_clip_raw = sigma_clip_raw
         self.sigma_clip_flat = sigma_clip_flat
         self.quality_bitmask = quality_bitmask
+        self.flatten_method = flatten_method
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
@@ -120,7 +122,6 @@ class TessQuickLook:
         self.suffix = suffix
         self.mask_ephem = mask_ephem
         _ = self.check_output_file_exists()
-        self.flatten_method = flatten_method
         self.gp_kernel = gp_kernel  # squared_exp, matern, periodic, periodic_auto
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
@@ -162,6 +163,8 @@ class TessQuickLook:
             normalize_phase=False,
             wrap_phase=self.tls_results.period / 2,
         )
+        # if self.fold_lc.primary_key is None:
+        #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
@@ -457,10 +460,11 @@ class TessQuickLook:
             self.sector = self.all_sectors
 
             if self.pipeline in ["spoc"]:
-                exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+                # exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+                exptime = int(lc._meta["FRAMETIM"] * lc._meta["NUM_FRM"])
             else:
                 # estimate exp time
-                exptime = round(np.diff(lc.time.jd).mean() * 24 * 60 * 60, -2)
+                exptime = int(np.median(np.diff(lc.time.jd)) * 24 * 60 * 60)
             msg = f"Downloaded all {kwargs.get('author')} (exp={exptime} s) lcs "
             msg += f"in sectors {', '.join([str(s) for s in self.all_sectors])}."
             if self.verbose:
@@ -474,10 +478,11 @@ class TessQuickLook:
             lc = search_result[idx].download(quality_bitmask=self.quality_bitmask)
 
             if self.pipeline in ["spoc"]:
-                exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+                # exptime = int(lc.meta["EXPOSURE"] / 10) * 10
+                exptime = int(lc._meta["FRAMETIM"] * lc._meta["NUM_FRM"])
             else:
                 # estimate exp time
-                exptime = round(np.diff(lc.time.jd).mean() * 24 * 60 * 60, -2)
+                exptime = int(np.median(np.diff(lc.time.jd)) * 24 * 60 * 60)
             msg = f"Downloaded {lc.meta['AUTHOR'].upper()} "
             msg += f"(exp={exptime} s) lc in sector {lc.sector}."
             if self.verbose:
@@ -491,8 +496,19 @@ class TessQuickLook:
         # Set exposure time and cadence
         if self.exptime is None:
             self.exptime = exptime
+        if (self.exptime <= 120) and (self.flatten_method == "gp"):
+            err_msg = "Using flatten_method='GP' for dense data with exp<=120s is not recommended. Exiting."
+            logger.error(err_msg)
+            sys.exit()
         # assert self.exptime == search_result.exptime[idx].value
         self.cadence = "short" if self.exptime < 1800 else "long"
+
+        if self.pipeline in ["cdips"]:
+            # TODO: improve mag err estimate
+            lc.flux_err = np.full_like(lc.flux, 0.01 * u.mag)  # magnitude error
+            err_msg = "CDIPS pipeline has no flux error column.\n"
+            err_msg += "Assuming err=0.1 mag"
+            logger.error(err_msg)  # show in red
 
         # Apply sigma clipping if specified
         if self.sigma_clip_raw is not None:
@@ -1008,6 +1024,12 @@ class TessQuickLook:
         -------
         None
         """
+        # Append meta
+        # self.tls_results["meta"] = self.raw_lc._meta
+        # self.tls_results["pipeline"] = self.pipeline
+        # self.tls_results["flux_type"] = self.flux_type
+        # self.tls_results["exptime"] = self.exptime
+
         # Append the raw light curve
         self.tls_results["time_raw"] = self.raw_lc.time.value
         self.tls_results["flux_raw"] = self.raw_lc.flux.value
@@ -1023,7 +1045,7 @@ class TessQuickLook:
         self.tls_results["Porb_max"] = self.Porb_max
         self.tls_results["depth_ppt"] = (1 - self.tls_results.depth) * 1e3
 
-        # Append the TFOP parameters
+        # Append the TFOP parameters (also available in meta)
         self.tls_results["period_toi"] = self.toi_period
         self.tls_results["T0_toi"] = self.toi_epoch
         self.tls_results["duration_toi"] = self.toi_dur
@@ -1208,7 +1230,7 @@ class TessQuickLook:
             logger.info("Plotting TPF...")
         ax = axes.flatten()[5]
         if self.pipeline in [
-            "cdips",
+            "cdips",  # TODO: missing flux err raises error in errorbar plot
             "gsfc-eleanor-lite",
         ]:
             err_msg = "Pipeline to be added soon."
