@@ -78,6 +78,14 @@ def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
             x = mission.split()
             if len(x) == 3:
                 sectors.append(int(x[-1]))
+
+    # TGLC can run locally on any FFI sector, so fall back to all sectors
+    if not sectors and pipeline.upper() == "TGLC":
+        for mission in df["mission"].tolist():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+
     return sorted(set(sectors))
 
 

@@ -1,22 +1,25 @@
 """
-This code was copied verbatim from:
+This code was adapted from:
 https://github.com/TeHanHunter/TESS_Gaia_Light_Curve
 
-TGLC workflow
-
-
+Changes from the original:
+- Vectorized per-star loops (WCS, magnitude, in_frame) with batch numpy operations
+- Removed unused proper-motion variables in Source.__init__
+- Replaced print()/warnings.warn() with loguru logger calls
+- Added get_tglc_lc() function returning lightkurve.TessLightCurve
 """
 
 import json
 import sys
 import numpy as np
-import warnings
 import pickle
 import os
 import requests
 from os.path import exists
 from urllib.parse import quote as urlencode
 import time
+
+from loguru import logger
 
 from astropy.wcs import WCS
 import astropy.units as u
@@ -234,7 +237,7 @@ class Source(object):
             try:
                 tic_id[i] = tic_lookup.get(designation.split()[2], np.nan)
             except Exception as e:
-                print(e)
+                logger.debug(f"TIC ID lookup failed for {designation}: {e}")
                 tic_id[i] = np.nan
 
         # Vectorized magnitude and in_frame computation
@@ -289,10 +292,12 @@ class Source(object):
                 ).get_results()
                 return catalogdata
             except Exception as e:
-                print(e)
+                logger.warning(f"Gaia search failed: {e}")
                 attempt += 1
                 time.sleep(10)
-                print(f"Trying Gaia search again. Coord = {coord}, radius = {radius}")
+                logger.info(
+                    f"Retrying Gaia search ({attempt}/5). Coord = {coord}, radius = {radius}"
+                )
 
 
 class Source_cut(object):
@@ -319,7 +324,7 @@ class Source_cut(object):
         if cadence is None:
             cadence = []
         if size < 25:
-            warnings.warn("FFI cut size too small, try at least 25*25")
+            logger.warning("FFI cut size too small, try at least 25*25")
         self.name = name
         self.size = size
         self.sector = 0
@@ -347,7 +352,7 @@ class Source_cut(object):
         dec = target[0]["dec"]
         coord = SkyCoord(ra=ra, dec=dec, unit=(u.degree, u.degree), frame="icrs")
         radius = u.Quantity((self.size + 6) * 21 * 0.707 / 3600, u.deg)
-        print(f"Target Gaia: {target[0]['designation']}")
+        logger.info(f"Target Gaia: {target[0]['designation']}")
         catalogdata = Gaia.cone_search_async(
             coord,
             radius=radius,
@@ -362,18 +367,18 @@ class Source_cut(object):
                 "pmdec",
             ],
         ).get_results()
-        print(f"Found {len(catalogdata)} Gaia DR3 objects.")
+        logger.info(f"Found {len(catalogdata)} Gaia DR3 objects.")
         catalogdata_tic = tic_advanced_search_position_rows(
             ra=ra,
             dec=dec,
             radius=(self.size + 2) * 21 * 0.707 / 3600,
             limit_mag=limit_mag,
         )
-        print(f"Found {len(catalogdata_tic)} TIC objects.")
+        logger.info(f"Found {len(catalogdata_tic)} TIC objects.")
         self.tic = convert_gaia_id(catalogdata_tic)
         sector_table = Tesscut.get_sectors(coordinates=coord)
         if len(sector_table) == 0:
-            warnings.warn("TESS has not observed this position yet :(")
+            logger.warning("TESS has not observed this position yet.")
         if sector is None:
             hdulist = Tesscut.get_cutouts(coordinates=coord, size=self.size)
         elif sector == "first":
@@ -413,10 +418,12 @@ class Source_cut(object):
         TESS sector number
         """
         if self.sector == sector:
-            print(f"Already in sector {sector}.")
+            logger.info(f"Already in sector {sector}.")
             return
         elif sector not in self.sector_table["sector"]:
-            print(f"Sector {sector} does not cover this region. Please refer to sector table.")
+            logger.warning(
+                f"Sector {sector} does not cover this region. Please refer to sector table."
+            )
             return
 
         index = self.sector_list.index(sector)
@@ -562,8 +569,7 @@ def ffi_cut(
     if source_exists and os.path.getsize(f"{local_directory}source/{source_name}.pkl") > 0:
         with open(f"{local_directory}source/{source_name}.pkl", "rb") as input_:
             source = pickle.load(input_)
-        print(source.sector_table)
-        print("Loaded ffi_cut from directory. ")
+        logger.info(f"Loaded ffi_cut from directory.\n{source.sector_table}")
     else:
         with open(f"{local_directory}source/{source_name}.pkl", "wb") as output:
             source = Source_cut(
@@ -662,12 +668,12 @@ def lc_output(
     try:
         ticid = str(source.tic["TIC"][np.where(source.tic["dr3_source_id"] == objid)][0])
     except Exception as e:
-        print(e)
+        logger.debug(f"TIC ID lookup failed for {objid}: {e}")
         ticid = ""
     try:
         raw_flux = np.nanmedian(source.flux[:, star_y, star_x])
     except Exception as e:
-        print(e)
+        logger.debug(f"Raw flux extraction failed: {e}")
         raw_flux = None
     if save_aper:
         primary_hdu = fits.PrimaryHDU(aperture)
@@ -1428,7 +1434,7 @@ def bg_mod(
     cal_aper_lc = aper_lc / np.nanmedian(aper_lc)
     cal_aper_lc[np.where(cal_aper_lc > 100)] = np.nan
     if np.isnan(cal_aper_lc).all():
-        print("Calibrated aperture flux are not accessible or processed incorrectly. ")
+        logger.warning("Calibrated aperture flux are not accessible or processed incorrectly.")
     else:
         _, trend = flatten(
             source.time,
@@ -1449,7 +1455,7 @@ def bg_mod(
         cal_psf_lc = psf_lc / np.nanmedian(psf_lc)
         cal_psf_lc[np.where(cal_psf_lc > 100)] = np.nan
         if np.isnan(cal_psf_lc).all():
-            print("Calibrated PSF flux are not accessible or processed incorrectly. ")
+            logger.warning("Calibrated PSF flux are not accessible or processed incorrectly.")
         else:
             _, trend = flatten(
                 source.time,
@@ -1532,14 +1538,14 @@ def epsf(
     epsf_exists = exists(epsf_loc)
     if epsf_exists:
         e_psf = np.load(epsf_loc)
-        print(f"Loaded ePSF {target} from directory. ")
+        logger.info(f"Loaded ePSF {target} from directory.")
     else:
         e_psf = np.zeros((len(source.time), over_size**2 + bg_dof))
         for i in trange(len(source.time), desc="Fitting ePSF", disable=no_progress_bar):
             e_psf[i] = fit_psf(A, source, over_size, power=power, time=i)
         if np.isnan(e_psf).any():
-            warnings.warn(
-                f"TESS FFI cut includes Nan values. Please shift the center of the cutout to remove Nan near edge. Target: {target}"
+            logger.warning(
+                f"TESS FFI cut includes NaN values. Please shift the center of the cutout to remove NaN near edge. Target: {target}"
             )
         np.save(epsf_loc, e_psf)
     # contamination_8 = np.dot(A[:source.size ** 2, :], e_psf[0].T)
@@ -1581,12 +1587,12 @@ def epsf(
             )
             end = start + 1
         except Exception as e:
-            print(e)
+            logger.debug(e)
             try:
                 start = int(np.where(source.gaia["DESIGNATION"] == name)[0][0])
                 end = start + 1
             except IndexError:
-                print(
+                logger.warning(
                     f"Target not found in the requested sector (Sector {sector}). This can be caused by a lack of Gaia "
                     "ID or an incomplete TESS to Gaia crossmatch table. Please check whether the output light curve Gaia"
                     " DR3 ID agrees with your target."
@@ -1743,6 +1749,145 @@ def epsf(
                         target_5x5=target_5x5,
                         field_stars_5x5=field_stars_5x5,
                     )
+
+
+def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
+    """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
+
+    This function downloads an FFI cutout via TESScut, runs the TGLC effective
+    PSF photometry pipeline, and packages the calibrated PSF light curve as a
+    ``lightkurve.TessLightCurve`` object.
+
+    Parameters
+    ----------
+    target_name : str
+        Target identifier resolved by MAST (e.g. "TIC 12345", "TOI-1234").
+    sector : int or None
+        TESS sector.  ``None`` uses the first available sector.
+    size : int
+        Side length in pixels of the TESScut FFI cutout (default 50).
+    limit_mag : float
+        Faintest TESS magnitude to include in the PSF model (default 16).
+    verbose : bool
+        Print progress information.
+
+    Returns
+    -------
+    lightkurve.TessLightCurve
+        Calibrated PSF light curve with BTJD times and normalized flux.
+    """
+    import lightkurve as lk
+    from astropy.time import Time
+
+    # 1. Build the Source_cut object (downloads FFI cutout + Gaia catalog)
+    source = Source_cut(target_name, size=size, sector=sector, limit_mag=limit_mag)
+
+    # 2. Build the PSF model
+    A, star_info, over_size, x_round, y_round = get_psf(source)
+
+    # Determine background degrees of freedom
+    bg_dof = 3
+
+    # 3. Fit the ePSF at every cadence
+    e_psf = np.zeros((len(source.time), over_size**2 + bg_dof))
+    for i in trange(len(source.time), desc="Fitting ePSF", disable=not verbose):
+        e_psf[i] = fit_psf(A, source, over_size, power=0.8, time=i)
+
+    # 4. Quality flags
+    quality_raw = np.zeros(len(source.time), dtype=np.int16)
+    sigma = 1.4826 * np.nanmedian(np.abs(e_psf[:, -1] - np.nanmedian(e_psf[:, -1])))
+    quality_raw[abs(e_psf[:, -1] - np.nanmedian(e_psf[:, -1])) >= 3 * sigma] += 1
+    index_good = np.intersect1d(
+        np.where(np.array(source.quality) == 0)[0],
+        np.where(quality_raw == 0)[0],
+    )
+
+    # 5. Identify the target star (index 0 = brightest / closest match)
+    star_idx = 0
+
+    # Determine edge proximity
+    in_frame = np.where(np.invert(np.isnan(source.flux[0])))
+    x_left = np.min(in_frame[1]) - 0.5
+    x_right = source.size - np.max(in_frame[1]) + 0.5
+    y_left = np.min(in_frame[0]) - 0.5
+    y_right = source.size - np.max(in_frame[0]) + 0.5
+
+    near_edge = not (
+        x_left + 2 <= x_round[star_idx] < source.size - (x_right + 2)
+        and y_left + 2 <= y_round[star_idx] < source.size - (y_right + 2)
+    )
+
+    # 6. Extract the light curve for the target star
+    aperture, psf_lc, star_y, star_x, portion, _, _ = fit_lc(
+        A,
+        source,
+        star_info=star_info,
+        x=x_round[star_idx],
+        y=y_round[star_idx],
+        star_num=star_idx,
+        e_psf=e_psf,
+        near_edge=near_edge,
+    )
+    aper_lc = np.sum(
+        aperture[
+            :,
+            max(0, star_y - 1) : min(5, star_y + 2),
+            max(0, star_x - 1) : min(5, star_x + 2),
+        ],
+        axis=(1, 2),
+    )
+
+    # Handle saturation
+    if source.sector < 27:
+        exposure_time = 1800
+    elif source.sector < 56:
+        exposure_time = 600
+    else:
+        exposure_time = 200
+    sat_limit = 1e5 * 9 * 2e5 / exposure_time
+    aper_lc[aper_lc > sat_limit] = np.nan
+    psf_lc[psf_lc > sat_limit] = np.nan
+
+    # 7. Background correction and calibration
+    local_bg, aper_lc, psf_lc, cal_aper_lc, cal_psf_lc = bg_mod(
+        source,
+        q=index_good,
+        portion=portion,
+        psf_lc=psf_lc,
+        aper_lc=aper_lc,
+        near_edge=near_edge,
+        star_num=star_idx,
+    )
+
+    # 8. Build the TessLightCurve
+    flux = cal_psf_lc
+    flux_err = np.full_like(flux, 1.4826 * np.nanmedian(np.abs(flux - np.nanmedian(flux))))
+
+    # BTJD times (TESS Barycentric Julian Date, BJD - 2457000)
+    btjd = Time(source.time + 2457000, format="jd", scale="tdb")
+
+    lc = lk.TessLightCurve(
+        time=btjd,
+        flux=flux * u.dimensionless_unscaled,
+        flux_err=flux_err * u.dimensionless_unscaled,
+        meta={
+            "AUTHOR": "TGLC",
+            "TARGETID": target_name,
+            "SECTOR": source.sector,
+            "CAMERA": source.camera,
+            "CCD": source.ccd,
+            "EXPOSURE": exposure_time,
+            "FLUX_ORIGIN": "cal_psf_flux",
+        },
+    )
+    lc.sector = source.sector
+
+    if verbose:
+        logger.info(
+            f"TGLC light curve for {target_name} (sector {source.sector}): {len(lc)} cadences"
+        )
+
+    return lc
 
 
 if __name__ == "__main__":

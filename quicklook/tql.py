@@ -52,6 +52,7 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 from quicklook.inject import InjectionParams, run_grid, select_best_window
+from quicklook.tglc import get_tglc_lc
 
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
@@ -406,6 +407,8 @@ class TessQuickLook:
         search_result_all_lcs = lk.search_lightcurve(self.query_name)
         err_msg = f"Search using '{self.query_name}' did not yield any lightcurve results."
         if len(search_result_all_lcs) == 0:
+            if kwargs.get("author", "").upper() == "TGLC":
+                return self._get_tglc_lc_fallback(kwargs.get("sector"))
             logger.error(f"Error: {err_msg}")
             sys.exit()
 
@@ -432,8 +435,10 @@ class TessQuickLook:
             kwargs["author"] = "SPOC"
         else:
             all_authors = set(search_result_all_lcs.table["provenance_name"].tolist())
-            err_msg = f"author={kwargs.get('author')} not in {all_authors}"
-            if kwargs.get("author").upper() not in all_authors:
+            if kwargs["author"].upper() not in all_authors:
+                if kwargs["author"].upper() == "TGLC":
+                    return self._get_tglc_lc_fallback(kwargs.get("sector"))
+                err_msg = f"author={kwargs.get('author')} not in {all_authors}"
                 logger.error(f"Error: {err_msg}")
                 sys.exit()
         self.pipeline = kwargs["author"].lower()
@@ -456,9 +461,11 @@ class TessQuickLook:
         if kwargs.get("exptime") is not None:
             mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
         search_result = search_result_all_lcs[mask]
-        err_msg = f"Search using '{self.query_name}' "
-        err_msg += f"{kwargs} did not yield any lightcurve results."
         if len(search_result) == 0:
+            if kwargs.get("author", "").upper() == "TGLC":
+                return self._get_tglc_lc_fallback(kwargs.get("sector"))
+            err_msg = f"Search using '{self.query_name}' "
+            err_msg += f"{kwargs} did not yield any lightcurve results."
             logger.error(f"Error: {err_msg}")
             sys.exit()
 
@@ -544,6 +551,28 @@ class TessQuickLook:
         missions = search_result.table["mission"].tolist()
         all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
         return sorted(set(all_sectors))
+
+    def _get_tglc_lc_fallback(self, sector):
+        """Run local TGLC ePSF extraction when MAST has no TGLC products."""
+        logger.info("No TGLC products on MAST; running local ePSF extraction...")
+        self.pipeline = "tglc"
+        self.all_pipelines = {"TGLC"}
+        sector_arg = None if sector in (None, -1) else int(sector)
+        lc = get_tglc_lc(
+            self.query_name,
+            sector=sector_arg,
+            verbose=self.verbose,
+        )
+        self.sector = lc.sector
+        self.all_sectors = [lc.sector]
+        self.exptime = lc.meta.get("EXPOSURE", 1800)
+        self.cadence = "short" if self.exptime < 1800 else "long"
+        if self.sigma_clip_raw is not None:
+            return lc.normalize().remove_outliers(
+                sigma_lower=self.sigma_clip_raw[0],
+                sigma_upper=self.sigma_clip_raw[1],
+            )
+        return lc.normalize()
 
     def get_tpf(self, **kwargs: dict) -> lk.targetpixelfile.TargetPixelFile:
         """
