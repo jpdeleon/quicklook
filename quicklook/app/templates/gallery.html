@@ -2,90 +2,211 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook Gallery</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 20px auto; }
-    h1 { text-align: center; }
-    form { margin-bottom: 20px; text-align: center; }
-    input[type="text"] { padding: 6px; width: 200px; }
-    button { padding: 6px 12px; }
-    .gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; }
-    .gallery img { width: 200px; height: auto; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; transition: transform 0.2s; }
-    .gallery img:hover { transform: scale(1.05); }
-    .back-button { display: block; margin: 10px auto; padding: 10px 20px; background-color: #007BFF; color: white; border-radius: 6px; text-decoration: none; text-align: center; }
-    .back-button:hover { background-color: #0056b3; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 20px;
+      color: #1a1a2e;
+      background: #f5f6fa;
+      line-height: 1.5;
+    }
+    h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
+      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
+      transition: background-color 0.2s;
+    }
+    .btn-primary { background: #4a6cf7; }
+    .btn-primary:hover { background: #3451d1; }
+    .btn-green { background: #22c55e; }
+    .btn-green:hover { background: #16a34a; }
+    .btn-red { background: #ef4444; }
+    .btn-red:hover { background: #dc2626; }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
 
-    /* Modal styles */
-    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto;
-             background-color: rgba(0,0,0,0.8); }
-    .modal-content { margin: 5% auto; display: block; max-width: 90%; max-height: 90%; }
-    .modal-caption { text-align: center; color: white; margin: 10px 0; }
-    .close { position: absolute; top: 20px; right: 35px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; }
-    .download-btn { display: block; margin: 10px auto; padding: 8px 12px; background: #28a745; color: white; border-radius: 6px; text-decoration: none; width: fit-content; }
-    .download-btn:hover { background: #218838; }
+    .search-form { display: flex; gap: 6px; }
+    .search-form input {
+      padding: 7px 12px; border: 1px solid #ccc; border-radius: 6px;
+      font-size: 0.9rem; width: 220px;
+    }
+    .search-form input:focus { outline: none; border-color: #4a6cf7; }
+
+    .gallery {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;
+    }
+    .gallery-card {
+      background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+      overflow: hidden; transition: box-shadow 0.2s, transform 0.15s;
+    }
+    .gallery-card:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px);
+    }
+    .gallery-card img { width: 100%; height: auto; display: block; cursor: pointer; }
+    .card-footer {
+      display: flex; align-items: center; padding: 6px 10px;
+      border-top: 1px solid #f0f0f0; gap: 6px;
+    }
+    .card-label {
+      flex: 1; font-size: 0.78rem; color: #555;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .delete-btn {
+      background: none; border: none; cursor: pointer; color: #aaa;
+      font-size: 1.1rem; padding: 2px 4px; line-height: 1; transition: color 0.15s;
+    }
+    .delete-btn:hover { color: #ef4444; }
+    .empty-msg {
+      grid-column: 1 / -1; text-align: center; color: #888; padding: 40px 0; font-size: 1rem;
+    }
+
+    /* Modal */
+    .modal {
+      display: none; position: fixed; z-index: 1000; inset: 0;
+      background: rgba(0,0,0,0.85); align-items: center; justify-content: center; flex-direction: column;
+    }
+    .modal.open { display: flex; }
+    .modal-close {
+      position: absolute; top: 16px; right: 24px; color: #fff;
+      font-size: 2rem; cursor: pointer; line-height: 1; opacity: 0.8; transition: opacity 0.2s;
+    }
+    .modal-close:hover { opacity: 1; }
+    .modal img { max-width: 92%; max-height: 80vh; border-radius: 6px; cursor: grab; }
+    .modal-caption { color: #ccc; margin-top: 10px; font-size: 0.85rem; }
+    .modal-actions { margin-top: 10px; display: flex; gap: 8px; }
+    .modal-actions .btn { font-size: 0.85rem; }
+
+    @media (max-width: 600px) {
+      .top-bar { flex-direction: column; align-items: stretch; }
+      .search-form input { width: 100%; }
+      .gallery { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <h1>TESS QuickLook Output Gallery</h1>
+  <h1>Output Gallery</h1>
 
-  <!-- Back button -->
-  <a href="{{ url_for('index') }}" class="back-button">← Back to QuickLook</a>
+  <div class="top-bar">
+    <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back to QuickLook</a>
+    <form class="search-form" method="get" action="{{ url_for('gallery') }}">
+      <input type="text" name="search" placeholder="Filter by target name"
+             value="{{ search_name or '' }}">
+      <button type="submit" class="btn btn-primary">Search</button>
+    </form>
+  </div>
 
-  <!-- Search form -->
-  <form method="post">
-    <input type="text" name="search" placeholder="Search by name" value="{{ search_name or '' }}">
-    <button type="submit">Search</button>
-  </form>
-
-  <div class="gallery">
-    {% for img in images %}
-      <img src="{{ img }}" alt="{{ img }}" onclick="openModal(this)">
+  <div class="gallery" id="galleryGrid">
+    {% for item in images %}
+      <div class="gallery-card" data-filename="{{ item.name }}">
+        <img src="{{ item.path }}" alt="{{ item.name }}" loading="lazy"
+             onclick="openModal('{{ item.path }}', '{{ item.name }}')">
+        <div class="card-footer">
+          <span class="card-label" title="{{ item.name }}">{{ item.name }}</span>
+          <button class="delete-btn" title="Delete"
+                  onclick="event.stopPropagation(); deleteOutput('{{ item.name }}', this)">&times;</button>
+        </div>
+      </div>
     {% endfor %}
-    {% if images|length == 0 %}
-      <p style="text-align:center;">No matching images found.</p>
+    {% if images | length == 0 %}
+      <p class="empty-msg">No images found{% if search_name %} matching "{{ search_name }}"{% endif %}.</p>
     {% endif %}
   </div>
 
   <!-- Modal -->
-  <div id="imageModal" class="modal">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <img class="modal-content" id="modalImage">
+  <div id="modal" class="modal" onclick="if(event.target===this)closeModal()">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <img id="modalImage" src="" alt="">
     <div class="modal-caption" id="modalCaption"></div>
-    <a id="downloadBtn" class="download-btn" download>Download Image</a>
+    <div class="modal-actions">
+      <a id="modalDownload" class="btn btn-green" download>Download</a>
+      <button id="modalDelete" class="btn btn-red btn-sm">Delete</button>
+    </div>
   </div>
 
   <script>
-    const modal = document.getElementById("imageModal");
-    const modalImg = document.getElementById("modalImage");
-    const captionText = document.getElementById("modalCaption");
-    const downloadBtn = document.getElementById("downloadBtn");
+    const modal = document.getElementById('modal');
+    const modalImg = document.getElementById('modalImage');
+    const modalCaption = document.getElementById('modalCaption');
+    const modalDownload = document.getElementById('modalDownload');
+    const modalDeleteBtn = document.getElementById('modalDelete');
+    let currentModalFilename = '';
 
-    function openModal(imgElement) {
-      modal.style.display = "block";
-      modalImg.src = imgElement.src;
-      captionText.innerText = imgElement.alt.split('/').pop(); // just filename
-      downloadBtn.href = imgElement.src;
-      downloadBtn.download = imgElement.alt.split('/').pop();
+    function openModal(src, name) {
+      modal.classList.add('open');
+      modalImg.src = src;
+      modalImg.style.transform = '';
+      modalCaption.textContent = name;
+      modalDownload.href = src;
+      modalDownload.download = name;
+      currentModalFilename = name;
+      scale = 1; posX = 0; posY = 0;
+      document.body.style.overflow = 'hidden';
     }
 
     function closeModal() {
-      modal.style.display = "none";
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
     }
 
-    // Close modal if click outside image
-    modal.addEventListener('click', (e) => {
-      if(e.target === modal) closeModal();
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeModal();
     });
 
-    // Optional: zoom/pan with wheel and drag
-    let scale = 1;
-    let posX = 0, posY = 0;
+    // Delete from modal
+    modalDeleteBtn.addEventListener('click', async () => {
+      if (!currentModalFilename) return;
+      if (!confirm('Delete ' + currentModalFilename + ' and its associated files?')) return;
+      const ok = await doDelete(currentModalFilename);
+      if (ok) {
+        closeModal();
+        const card = document.querySelector(`.gallery-card[data-filename="${currentModalFilename}"]`);
+        if (card) card.remove();
+      }
+    });
+
+    // Delete helper
+    async function doDelete(filename) {
+      try {
+        const res = await fetch('/delete-output', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filename: filename}),
+        });
+        const data = await res.json();
+        if (data.ok) return true;
+        alert('Delete failed: ' + (data.reason || 'unknown'));
+        return false;
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+        return false;
+      }
+    }
+
+    async function deleteOutput(filename, btnElem) {
+      if (!confirm('Delete ' + filename + ' and its associated files?')) return;
+      const ok = await doDelete(filename);
+      if (ok) {
+        const card = btnElem.closest('.gallery-card');
+        if (card) card.remove();
+      }
+    }
+
+    // Zoom and pan
+    let scale = 1, posX = 0, posY = 0;
     let isDragging = false, startX, startY;
 
     modalImg.addEventListener('wheel', (e) => {
       e.preventDefault();
-      scale += e.deltaY * -0.001;
-      scale = Math.min(Math.max(.5, scale), 5);
+      scale = Math.min(Math.max(0.5, scale + e.deltaY * -0.002), 5);
       modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
     });
 
@@ -99,14 +220,11 @@
     modalImg.addEventListener('mouseup', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
     modalImg.addEventListener('mouseleave', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
     modalImg.addEventListener('mousemove', (e) => {
-      if(!isDragging) return;
+      if (!isDragging) return;
       posX = e.clientX - startX;
       posY = e.clientY - startY;
       modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
     });
-
-    // Initial cursor style
-    modalImg.style.cursor = 'grab';
   </script>
 </body>
 </html>

@@ -57,7 +57,7 @@ dev = [
     #"flake8>=6.0"       # legacy linting
 ]
 
-web = ["flask", "pytest-flask"]
+gui = ["flask", "flask-sock", "pytest-flask"]
 
 notebooks = [
     "ipykernel",
@@ -97,4 +97,4 @@ ignore = [
 ql = "quicklook.cli.ql:main"
 read_tls = "quicklook.cli.read_tls:main"
 rank_tls = "quicklook.cli.rank_tls:main"
-ql-web = "quicklook.app.app:main"
+ql-gui = "quicklook.app.app:main"

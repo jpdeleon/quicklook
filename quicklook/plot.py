@@ -381,7 +381,7 @@ def plot_aperture_outline(
     ny, nx = mask.shape
     contour = np.zeros((ny, nx))
     contour[np.where(mask)] = 1
-    contour = np.lib.pad(contour, 1, PadWithZeros)
+    contour = np.pad(contour, 1, PadWithZeros)
     highres = zoom(contour, 100, order=0, mode="nearest")
     extent = np.array([-1, nx, -1, ny])
 
@@ -652,7 +652,7 @@ def plot_gaia_sources_on_survey(
     # make aperture mask outline
     contour = np.zeros((ny, nx))
     contour[np.where(mask)] = 1
-    contour = np.lib.pad(contour, 1, PadWithZeros)
+    contour = np.pad(contour, 1, PadWithZeros)
     highres = zoom(contour, 100, order=0, mode="nearest")
     extent = np.array([-1, nx, -1, ny])
 

@@ -2,210 +2,524 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook</title>
   <style>
+    *, *::before, *::after { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
-      max-width: 1000px;
-      margin: 20px auto;
-      padding: 0 20px;
-      line-height: 1.6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 24px 20px;
+      color: #1a1a2e;
+      background: #f5f6fa;
+      line-height: 1.5;
     }
-    h1, h2 { text-align: center; }
-    form {
-      margin-bottom: 30px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      background: #f9f9f9;
+    h1 { text-align: center; font-size: 1.6rem; margin-bottom: 4px; }
+    .subtitle { text-align: center; color: #666; font-size: 0.9rem; margin-bottom: 24px; }
+
+    /* --- Card --- */
+    .card {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
-    label { display: block; margin-top: 10px; font-weight: bold; }
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px 20px;
+    }
+    .form-grid .full-width { grid-column: 1 / -1; }
+    label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 3px; color: #333; }
     input[type="text"], input[type="number"], select {
-      width: 100%;
-      padding: 6px;
-      margin-top: 4px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      box-sizing: border-box;
+      width: 100%; padding: 7px 10px; border: 1px solid #ccc; border-radius: 5px;
+      font-size: 0.9rem; background: #fafafa; transition: border-color 0.2s;
     }
-    button {
-      margin-top: 15px;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      background-color: #007BFF;
-      color: white;
-      cursor: pointer;
+    input:focus, select:focus { outline: none; border-color: #4a6cf7; background: #fff; }
+    .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
+    .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
+
+    /* --- Buttons --- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 24px; font-size: 0.95rem; font-weight: 600; border: none; border-radius: 6px;
+      cursor: pointer; transition: background-color 0.2s, opacity 0.2s; text-decoration: none; color: #fff;
     }
-    button:hover { background-color: #0056b3; }
-    img {
-      display: block;
-      margin: 20px auto;
-      max-width: 100%;
-      height: auto;
-      border: 1px solid #ccc;
-      border-radius: 8px;
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary { background: #4a6cf7; }
+    .btn-primary:hover:not(:disabled) { background: #3451d1; }
+    .btn-green { background: #22c55e; }
+    .btn-green:hover { background: #16a34a; }
+    .btn-red { background: #ef4444; }
+    .btn-red:hover { background: #dc2626; }
+    .btn-outline { background: transparent; color: #4a6cf7; border: 1px solid #4a6cf7; }
+    .btn-outline:hover { background: #4a6cf7; color: #fff; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+    /* --- Job queue --- */
+    .queue-section { margin-bottom: 16px; }
+    .queue-section h2 { font-size: 1rem; margin-bottom: 8px; }
+    .queue-list { list-style: none; padding: 0; margin: 0; }
+    .queue-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: #fff; border: 1px solid #e0e0e0;
+      border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem;
     }
-    .download-link { text-align: center; margin-top: 15px; }
-    .download-link a { text-decoration: none; color: #007BFF; font-weight: bold; }
-    .download-link a:hover { text-decoration: underline; }
+    .queue-item .job-name { font-weight: 600; flex: 1; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .badge-running { background: #dbeafe; color: #1d4ed8; }
+    .badge-done { background: #dcfce7; color: #15803d; }
+    .badge-error { background: #fee2e2; color: #b91c1c; }
+    .badge-cancelled { background: #f3f4f6; color: #6b7280; }
+
+    /* --- Status bar --- */
+    .status-bar {
+      display: none; align-items: center; gap: 10px; padding: 10px 16px;
+      border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;
+    }
+    .status-bar.running { display: flex; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; }
+    .status-bar.done { display: flex; background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; }
+    .status-bar.error, .status-bar.cancelled {
+      display: flex; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c;
+    }
+    .spinner {
+      width: 18px; height: 18px; border: 3px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-bar .btn { margin-left: auto; }
+
+    /* --- Progress --- */
+    .progress-section { display: none; margin-bottom: 16px; }
+    .progress-section.visible { display: block; }
+    .progress-bar-wrap { background: #e5e7eb; border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 6px; }
+    .progress-bar-fill { height: 100%; background: #4a6cf7; border-radius: 6px; transition: width 0.5s ease; width: 0%; }
+    .progress-bar-wrap.done .progress-bar-fill { background: #22c55e; }
+    .progress-bar-wrap.error .progress-bar-fill, .progress-bar-wrap.cancelled .progress-bar-fill { background: #ef4444; }
+    .progress-label { font-size: 0.82rem; color: #555; }
+
+    /* --- Log --- */
+    .log-section { display: none; }
+    .log-section.visible { display: block; }
+    .log-toggle {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+      font-size: 0.85rem; font-weight: 600; color: #4a6cf7; margin-bottom: 6px;
+      user-select: none; border: none; background: none; padding: 0;
+    }
+    .log-toggle .arrow { transition: transform 0.2s; }
+    .log-toggle.open .arrow { transform: rotate(90deg); }
     pre {
-      background:#f0f0f0;
-      padding:10px;
-      border:1px solid #ccc;
-      max-height:400px;
-      overflow:auto;
-      white-space: pre-wrap;
+      background: #1a1a2e; color: #e0e0e0; padding: 14px; border-radius: 8px;
+      max-height: 300px; overflow: auto; white-space: pre-wrap; font-size: 0.78rem;
+      line-height: 1.6; margin-top: 0;
     }
-    #loader {
-      display: none;
-      border: 8px solid #f3f3f3;
-      border-top: 8px solid #007BFF;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      margin: 20px auto;
+
+    /* --- Result --- */
+    .result-section { display: none; }
+    .result-section.visible { display: block; }
+    .result-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
+    .result-section img { display: block; width: 100%; height: auto; border: 1px solid #e0e0e0; border-radius: 8px; }
+    .result-actions { display: flex; gap: 12px; margin-top: 12px; justify-content: center; }
+
+    /* --- Recent results --- */
+    .recent-section { margin-top: 28px; }
+    .recent-section h2 { font-size: 1.1rem; margin-bottom: 12px; }
+    .recent-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
     }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .gallery-button {
-      display: block;
-      margin: 20px auto;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      background-color: #28a745;
-      color: white;
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
+    .recent-card {
+      background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;
+      overflow: hidden; transition: box-shadow 0.2s, transform 0.15s; position: relative;
     }
-    .gallery-button:hover { background-color: #218838; }
+    .recent-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
+    .recent-card img { width: 100%; height: auto; display: block; cursor: pointer; }
+    .recent-card .card-footer {
+      display: flex; align-items: center; padding: 4px 8px;
+      border-top: 1px solid #f0f0f0; gap: 4px;
+    }
+    .recent-card .card-label {
+      flex: 1; font-size: 0.72rem; color: #555;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .delete-btn {
+      background: none; border: none; cursor: pointer; color: #aaa; font-size: 1rem;
+      padding: 2px 4px; line-height: 1; transition: color 0.15s;
+    }
+    .delete-btn:hover { color: #ef4444; }
+
+    .footer-nav { text-align: center; margin-top: 20px; }
+
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .checkbox-group { flex-wrap: wrap; gap: 10px; }
+      .recent-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+    }
   </style>
 </head>
 <body>
-<h1>TESS QuickLook Pipeline</h1>
 
-<form method="post" id="qlForm">
-  <label for="name">Target Name:</label>
-  <input type="text" name="name" id="name" value="{{ request.form.name or '' }}" required>
+<h1>TESS QuickLook</h1>
+<p class="subtitle">Transit search pipeline for TESS light curves</p>
 
-  <label for="sector">Sector:</label>
-  <input type="number" name="sector" id="sector" value="{{ request.form.sector or -1 }}">
-
-  <label for="pipeline">Pipeline:</label>
-  <select name="pipeline" id="pipeline">
-    {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
-    <option value="{{p}}" {% if request.form.pipeline == p %}selected{% endif %}>{{p}}</option>
-    {% endfor %}
-  </select>
-
-  <label for="fluxtype">Flux Type:</label>
-  <select name="fluxtype" id="fluxtype">
-    {% for f in ['pdcsap','sap'] %}
-    <option value="{{f}}" {% if request.form.fluxtype == f %}selected{% endif %}>{{f}}</option>
-    {% endfor %}
-  </select>
-
-  <label for="exptime">Exposure Time (optional):</label>
-  <input type="number" name="exptime" id="exptime" value="{{ request.form.exptime or '' }}">
-
-  <label for="quality_bitmask">Quality Bitmask:</label>
-  <select name="quality_bitmask" id="quality_bitmask">
-    {% for q in ['none','default','hard','hardest'] %}
-    <option value="{{q}}" {% if request.form.quality_bitmask == q %}selected{% endif %}>{{q}}</option>
-    {% endfor %}
-  </select>
-
-  <label for="flatten_method">Flatten Method:</label>
-  <input type="text" name="flatten_method" id="flatten_method" value="{{ request.form.flatten_method or 'biweight' }}">
-
-  <label for="pg_method">Periodogram Method:</label>
-  <select name="pg_method" id="pg_method">
-    {% for pg in ['gls','ls','bls'] %}
-    <option value="{{pg}}" {% if request.form.pg_method == pg %}selected{% endif %}>{{pg}}</option>
-    {% endfor %}
-  </select>
-
-  <label for="edge_cutoff">Edge Cutoff (days):</label>
-  <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="{{ request.form.edge_cutoff or 0.1 }}">
-
-  <label>
-    <input type="checkbox" name="save" {% if 'save' in request.form %}checked{% endif %}> Save Figure & TLS
-  </label>
-  <label>
-    <input type="checkbox" name="verbose" {% if 'verbose' in request.form %}checked{% endif %}> Verbose
-  </label>
-  <label>
-    <input type="checkbox" name="overwrite" {% if 'overwrite' in request.form %}checked{% endif %}> Overwrite
-  </label>
-
-  <button type="submit">Run QuickLook</button>
+<form method="post" id="qlForm" class="card">
+  <div class="form-grid">
+    <div class="full-width">
+      <label for="name">Target Name</label>
+      <input type="text" name="name" id="name" placeholder="e.g. TOI-1234, TIC 12345678"
+             value="{{ request.form.name or '' }}" required>
+    </div>
+    <div>
+      <label for="sector">Sector</label>
+      <input type="number" name="sector" id="sector" value="{{ request.form.sector or -1 }}">
+    </div>
+    <div>
+      <label for="pipeline">Pipeline</label>
+      <select name="pipeline" id="pipeline">
+        {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
+        <option value="{{p}}" {% if request.form.pipeline == p %}selected{% endif %}>{{ p | upper }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="fluxtype">Flux Type</label>
+      <select name="fluxtype" id="fluxtype">
+        {% for f in ['pdcsap','sap'] %}
+        <option value="{{f}}" {% if request.form.fluxtype == f %}selected{% endif %}>{{ f | upper }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="exptime">Exposure Time (s)</label>
+      <input type="number" name="exptime" id="exptime" placeholder="auto"
+             value="{{ request.form.exptime or '' }}">
+    </div>
+    <div>
+      <label for="quality_bitmask">Quality Bitmask</label>
+      <select name="quality_bitmask" id="quality_bitmask">
+        {% for q in ['none','default','hard','hardest'] %}
+        <option value="{{q}}" {% if (request.form.quality_bitmask or 'default') == q %}selected{% endif %}>{{ q | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="flatten_method">Flatten Method</label>
+      <input type="text" name="flatten_method" id="flatten_method"
+             value="{{ request.form.flatten_method or 'biweight' }}">
+    </div>
+    <div>
+      <label for="pg_method">Periodogram Method</label>
+      <select name="pg_method" id="pg_method">
+        {% for pg in ['gls','ls','bls'] %}
+        <option value="{{pg}}" {% if request.form.pg_method == pg %}selected{% endif %}>{{ pg | upper }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="edge_cutoff">Edge Cutoff (days)</label>
+      <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff"
+             value="{{ request.form.edge_cutoff or 0.1 }}">
+    </div>
+    <div class="full-width checkbox-group">
+      <label><input type="checkbox" name="save" {% if request.form.save is defined or request.method == 'GET' %}checked{% endif %}> Save outputs</label>
+      <label><input type="checkbox" name="verbose" {% if request.form.verbose is defined or request.method == 'GET' %}checked{% endif %}> Verbose</label>
+      <label><input type="checkbox" name="overwrite" {% if 'overwrite' in request.form %}checked{% endif %}> Overwrite</label>
+    </div>
+    <div class="full-width">
+      <button type="submit" class="btn btn-primary" id="submitBtn">Run QuickLook</button>
+    </div>
+  </div>
 </form>
 
-<!-- Loader -->
-<div id="loader"></div>
+<!-- Job queue -->
+<div id="queueSection" class="queue-section" style="display:none;">
+  <h2>Job Queue</h2>
+  <ul class="queue-list" id="queueList"></ul>
+</div>
 
-<!-- Live Log -->
-<h2>Live Output Log:</h2>
-<pre id="log"></pre>
+<!-- Status bar (for active target) -->
+<div id="statusBar" class="status-bar">
+  <div class="spinner" id="statusSpinner"></div>
+  <span id="statusText"></span>
+  <button class="btn btn-red btn-sm" id="cancelBtn" style="display:none;" type="button">Cancel</button>
+</div>
+
+<!-- Progress -->
+<div id="progressSection" class="progress-section">
+  <div class="progress-bar-wrap" id="progressWrap">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+  <div class="progress-label" id="progressLabel"></div>
+</div>
+
+<!-- Log (collapsible) -->
+<div id="logSection" class="log-section">
+  <button class="log-toggle" id="logToggle" type="button">
+    <span class="arrow">&#9654;</span> Output Log
+  </button>
+  <pre id="log" style="display:none;"></pre>
+</div>
 
 <!-- Result -->
-{% if image_file %}
-  <h2>Result:</h2>
-  <img src="{{ image_file }}" alt="QuickLook result">
-{% endif %}
-
-{% if h5_file %}
-  <div class="download-link">
-    <a href="{{ h5_file }}" download>Download TLS results (.h5)</a>
+<div id="resultSection" class="result-section">
+  <h2>Result</h2>
+  <img id="resultImage" src="" alt="QuickLook result">
+  <div class="result-actions">
+    <a id="downloadH5" class="btn btn-green" download>Download TLS (.h5)</a>
+    <a id="downloadImg" class="btn btn-outline" download>Download Image</a>
   </div>
-{% endif %}
+</div>
 
-<!-- Gallery Button -->
-<a href="{{ url_for('gallery') }}" class="gallery-button">View All Outputs</a>
+<!-- Recent results -->
+<div id="recentSection" class="recent-section" {% if not recent_results %}style="display:none;"{% endif %}>
+  <h2>Recent Results</h2>
+  <div class="recent-grid" id="recentGrid">
+    {% for item in recent_results %}
+    <div class="recent-card" data-filename="{{ item.name }}">
+      <img src="{{ item.path }}" alt="{{ item.name }}" loading="lazy"
+           onclick="window.open('{{ item.path }}', '_blank')">
+      <div class="card-footer">
+        <span class="card-label" title="{{ item.name }}">{{ item.name }}</span>
+        <button class="delete-btn" title="Delete" onclick="deleteOutput('{{ item.name }}', this)">&times;</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="footer-nav">
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse All Results</a>
+</div>
 
 <script>
-const form = document.getElementById('qlForm');
-const loader = document.getElementById('loader');
+const $ = id => document.getElementById(id);
+const form = $('qlForm');
+const submitBtn = $('submitBtn');
+const statusBar = $('statusBar');
+const statusSpinner = $('statusSpinner');
+const statusText = $('statusText');
+const cancelBtn = $('cancelBtn');
+const progressSection = $('progressSection');
+const progressWrap = $('progressWrap');
+const progressFill = $('progressFill');
+const progressLabel = $('progressLabel');
+const logSection = $('logSection');
+const logToggle = $('logToggle');
+const logElem = $('log');
+const resultSection = $('resultSection');
+const resultImage = $('resultImage');
+const downloadH5 = $('downloadH5');
+const downloadImg = $('downloadImg');
+const queueSection = $('queueSection');
+const queueList = $('queueList');
 
-form.addEventListener('submit', () => {
-  loader.style.display = 'block';
-  form.querySelector('button[type="submit"]').disabled = true;
+let activeWs = null;
+let activeTarget = null;
+
+// --- Log toggle ---
+logToggle.addEventListener('click', () => {
+  const open = logElem.style.display !== 'none';
+  logElem.style.display = open ? 'none' : 'block';
+  logToggle.classList.toggle('open', !open);
 });
 
-// Live log and spinner update
-async function updateLog(target) {
-  const logElem = document.getElementById("log");
-  if (!target) return;
+// --- Status helpers ---
+function setStatus(state, message) {
+  statusBar.className = 'status-bar ' + state;
+  statusSpinner.style.display = state === 'running' ? 'block' : 'none';
+  statusText.textContent = message;
+  cancelBtn.style.display = state === 'running' ? '' : 'none';
+}
 
+function setProgress(pct, label, state) {
+  progressSection.classList.add('visible');
+  progressFill.style.width = pct + '%';
+  progressLabel.textContent = label + (state === 'running' ? ' (' + pct + '%)' : '');
+  progressWrap.className = 'progress-bar-wrap' + (state !== 'running' ? ' ' + state : '');
+}
+
+// --- Cancel ---
+cancelBtn.addEventListener('click', () => {
+  if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+    activeWs.send(JSON.stringify({action: 'cancel'}));
+  }
+  // Also POST as fallback
+  if (activeTarget) {
+    fetch('/cancel/' + activeTarget, {method: 'POST'});
+  }
+});
+
+// --- Form submit ---
+form.addEventListener('submit', () => {
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting...';
+  resultSection.classList.remove('visible');
+});
+
+// --- Results display ---
+async function showResults(target) {
   try {
-    const response = await fetch("/log/" + target);
-    const statusRes = await fetch("/status-json/" + target);
-    const status = await statusRes.json();
-
-    if (response.ok) {
-      logElem.textContent = await response.text();
-      logElem.scrollTop = logElem.scrollHeight;
+    const res = await fetch('/results-json/' + target);
+    const data = await res.json();
+    if (data.image) {
+      resultImage.src = data.image;
+      downloadImg.href = data.image;
+      downloadImg.download = data.image.split('/').pop();
+      if (data.h5) {
+        downloadH5.href = data.h5;
+        downloadH5.download = data.h5.split('/').pop();
+        downloadH5.style.display = '';
+      } else {
+        downloadH5.style.display = 'none';
+      }
+      resultSection.classList.add('visible');
     }
-
-    if (status.status === "running") {
-      loader.style.display = 'block';
-      setTimeout(() => updateLog(target), 1000);
-    } else {
-      loader.style.display = 'none';
-    }
-  } catch(err) {
-    console.error(err);
-    setTimeout(() => updateLog(target), 2000);
+  } catch (e) {
+    console.error('Failed to load results:', e);
   }
 }
 
+// --- Job queue polling ---
+async function refreshQueue() {
+  try {
+    const res = await fetch('/jobs-json');
+    const jobs = await res.json();
+    if (jobs.length === 0) {
+      queueSection.style.display = 'none';
+      return;
+    }
+    queueSection.style.display = '';
+    queueList.innerHTML = '';
+    for (const job of jobs) {
+      const li = document.createElement('li');
+      li.className = 'queue-item';
+
+      const badgeClass = {
+        running: 'badge-running', done: 'badge-done',
+        error: 'badge-error', cancelled: 'badge-cancelled'
+      }[job.status] || 'badge-running';
+
+      li.innerHTML = `
+        <span class="job-name">${job.name}</span>
+        <span class="badge ${badgeClass}">${job.status}</span>
+      `;
+
+      if (job.status === 'running' && job.name !== activeTarget) {
+        const watchBtn = document.createElement('button');
+        watchBtn.className = 'btn btn-outline btn-sm';
+        watchBtn.textContent = 'Watch';
+        watchBtn.onclick = () => connectWs(job.name);
+        li.appendChild(watchBtn);
+      }
+
+      queueList.appendChild(li);
+    }
+  } catch (e) {
+    console.error('Queue refresh failed:', e);
+  }
+}
+
+// --- WebSocket connection ---
+function connectWs(target) {
+  if (activeWs) {
+    activeWs.close();
+  }
+  activeTarget = target;
+
+  logSection.classList.add('visible');
+  logElem.style.display = 'block';
+  logToggle.classList.add('open');
+  logElem.textContent = '';
+  setStatus('running', 'Running analysis for ' + target + '...');
+  setProgress(0, 'Starting', 'running');
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(proto + '//' + location.host + '/ws/' + target);
+  activeWs = ws;
+
+  ws.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'update') {
+      if (msg.log) {
+        logElem.textContent += msg.log;
+        logElem.scrollTop = logElem.scrollHeight;
+      }
+      setProgress(msg.progress, msg.step, msg.status);
+      if (msg.status === 'running') {
+        setStatus('running', 'Running analysis for ' + target + '...');
+      }
+    } else if (msg.type === 'finish') {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Run QuickLook';
+      if (msg.status === 'done') {
+        setStatus('done', 'Analysis complete for ' + target);
+        setProgress(100, 'Done', 'done');
+        showResults(target);
+      } else if (msg.status === 'cancelled') {
+        setStatus('cancelled', 'Cancelled ' + target);
+        setProgress(100, 'Cancelled', 'cancelled');
+      } else {
+        setStatus('error', 'Error: ' + (msg.error || 'Check the log below'));
+        setProgress(100, 'Failed', 'error');
+      }
+      refreshQueue();
+      ws.close();
+    }
+  };
+
+  ws.onerror = function() {
+    console.error('WebSocket error');
+  };
+
+  ws.onclose = function() {
+    activeWs = null;
+  };
+
+  // Refresh queue display
+  refreshQueue();
+}
+
+// --- Delete output ---
+async function deleteOutput(filename, btnElem) {
+  if (!confirm('Delete ' + filename + ' and its associated files?')) return;
+  try {
+    const res = await fetch('/delete-output', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({filename: filename}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const card = btnElem.closest('.recent-card');
+      if (card) card.remove();
+      // Hide section if empty
+      const grid = $('recentGrid');
+      if (grid && grid.children.length === 0) {
+        $('recentSection').style.display = 'none';
+      }
+    } else {
+      alert('Delete failed: ' + (data.reason || 'unknown error'));
+    }
+  } catch (e) {
+    alert('Delete failed: ' + e.message);
+  }
+}
+
+// --- Init ---
 {% if target %}
-updateLog("{{ target }}");
+connectWs("{{ target }}");
+{% else %}
+refreshQueue();
 {% endif %}
+
+// Periodic queue refresh
+setInterval(refreshQueue, 5000);
 </script>
 </body>
 </html>

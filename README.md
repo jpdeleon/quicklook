@@ -30,12 +30,12 @@ This is not installed by default to keep dependencies minimal.
 
 To install with GUI support:
 ```bash
-(my_env) $ pip install -U "quicklook-package[web]"
+(my_env) $ pip install -U "quicklook-package[gui]"
 ```
 
 ## Running the Web GUI
 
-After installing with [gui], you can launch the Flask app locally:
+After installing the gui, you can launch the Flask app locally:
 
 ```bash
 (my_env) $ ql-gui
@@ -97,6 +97,8 @@ options:
   -overwrite            overwrite files
   -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
   --suffix SUFFIX       add suffix to filename if -save flag is used
+  --each-sector         run on each available sector for the given pipeline individually
+  -j, --jobs JOBS       number of parallel jobs when using --each-sector (default=1)
 ```
 
 ## Examples
@@ -129,6 +131,8 @@ Try changing the parameters:
 (my_env) $ ql --name TOI-125.01 --sector 2 #specific TESS sector
 (my_env) $ ql --name TOI-125.01 --flatten_method cosine #specific function to detrend baseline
 (my_env) $ ql --name TOI-125.01 --period_limits 1 5 #limit search between 1-5 days
+(my_env) $ ql --name TOI-125.01 --each-sector -save #run on every available sector
+(my_env) $ ql --name TOI-125.01 --each-sector -j 4 -save #same but 4 sectors in parallel
 ```
 
 ## Advanced usage (batch processing)
