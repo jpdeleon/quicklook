@@ -276,7 +276,7 @@ class Source(object):
         attempt = 0
         while attempt < 5:
             try:
-                catalogdata = Gaia.cone_search_async(
+                catalogdata = Gaia.cone_search(
                     coord,
                     radius=radius,
                     columns=[
@@ -294,10 +294,13 @@ class Source(object):
             except Exception as e:
                 logger.warning(f"Gaia search failed: {e}")
                 attempt += 1
-                time.sleep(10)
-                logger.info(
-                    f"Retrying Gaia search ({attempt}/5). Coord = {coord}, radius = {radius}"
-                )
+                if attempt < 5:
+                    time.sleep(10)
+                    logger.info(
+                        f"Retrying Gaia search ({attempt}/5). Coord = {coord}, radius = {radius}"
+                    )
+                else:
+                    raise
 
 
 class Source_cut(object):
@@ -353,20 +356,34 @@ class Source_cut(object):
         coord = SkyCoord(ra=ra, dec=dec, unit=(u.degree, u.degree), frame="icrs")
         radius = u.Quantity((self.size + 6) * 21 * 0.707 / 3600, u.deg)
         logger.info(f"Target Gaia: {target[0]['designation']}")
-        catalogdata = Gaia.cone_search_async(
-            coord,
-            radius=radius,
-            columns=[
-                "DESIGNATION",
-                "phot_g_mean_mag",
-                "phot_bp_mean_mag",
-                "phot_rp_mean_mag",
-                "ra",
-                "dec",
-                "pmra",
-                "pmdec",
-            ],
-        ).get_results()
+        attempt = 0
+        while attempt < 5:
+            try:
+                catalogdata = Gaia.cone_search(
+                    coord,
+                    radius=radius,
+                    columns=[
+                        "DESIGNATION",
+                        "phot_g_mean_mag",
+                        "phot_bp_mean_mag",
+                        "phot_rp_mean_mag",
+                        "ra",
+                        "dec",
+                        "pmra",
+                        "pmdec",
+                    ],
+                ).get_results()
+                break
+            except Exception as e:
+                logger.warning(f"Gaia search failed: {e}")
+                attempt += 1
+                if attempt < 5:
+                    time.sleep(10)
+                    logger.info(
+                        f"Retrying Gaia search ({attempt}/5). Coord = {coord}, radius = {radius}"
+                    )
+                else:
+                    raise
         logger.info(f"Found {len(catalogdata)} Gaia DR3 objects.")
         catalogdata_tic = tic_advanced_search_position_rows(
             ra=ra,
