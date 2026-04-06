@@ -61,7 +61,47 @@ DATA_PATH = get_data_path("quicklook")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
 
-__all__ = ["TessQuickLook"]
+__all__ = ["TessQuickLook", "get_available_sectors"]
+
+
+def get_available_sectors(target_name, pipeline="SPOC"):
+    """Query available sectors for target+pipeline.
+
+    Parameters
+    ----------
+    target_name : str
+        Target name (e.g., "TOI-1234" or "TIC123456")
+    pipeline : str
+        Pipeline name (e.g., "SPOC", "QLP", "TGLC")
+
+    Returns
+    -------
+    list
+        Sorted list of unique sector numbers available for the target and pipeline.
+    """
+    import lightkurve as lk
+
+    search = lk.search_lightcurve(target_name)
+    if len(search) == 0:
+        return []
+
+    df = search.table.to_pandas()
+
+    if pipeline.upper() == "SPOC":
+        sectors = []
+        for mission in df["mission"].tolist():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+        return sorted(set(sectors))
+
+    sectors = []
+    for mission, author in zip(df["mission"].tolist(), df["provenance_name"].tolist()):
+        if author.lower() == pipeline.lower():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+    return sorted(set(sectors))
 
 
 class TessQuickLook:
@@ -198,7 +238,7 @@ class TessQuickLook:
                 if key == "target_coord":
                     # Format the coordinate string
                     coord = self.target_coord.to_string("decimal")
-                    args.append(f"{key}=({coord.replace(' ',',')})")
+                    args.append(f"{key}=({coord.replace(' ', ',')})")
                 elif val is not None:
                     args.append(f"{key}={val}")
         # Join the args with commas
@@ -936,13 +976,13 @@ class TessQuickLook:
             msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
         else:
             msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
-        msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
+        msg += f"Duration={self.tls_results.duration * 24:.2f} hr (TLS)"
         if self.toi_dur is not None:
-            msg += f", {self.toi_dur[0]*24:.2f}" + r"$\pm$"
-            msg += f"{self.toi_dur[1]*24:.2f} hr ({self.ephem_source})\n"
+            msg += f", {self.toi_dur[0] * 24:.2f}" + r"$\pm$"
+            msg += f"{self.toi_dur[1] * 24:.2f} hr ({self.ephem_source})\n"
         else:
             msg += "\n"
-        msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
+        msg += f"Depth={(1 - self.tls_results.depth) * 1e3:.2f} ppt (TLS)"
         if self.toi_depth is not None:
             msg += f", {self.toi_depth[0]:.1f}" + r"$\pm$"
             msg += f"{self.toi_depth[1]:.1f} ppt (TFOP)\n"
@@ -955,7 +995,7 @@ class TessQuickLook:
         ):
             # msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 5
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$ "
-            msg += f"= {Rp_true*u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
+            msg += f"= {Rp_true * u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
         else:
             msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
@@ -991,7 +1031,7 @@ class TessQuickLook:
         msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
-        msg += f"Vsini={per/t:.2f} km/s\n"
+        msg += f"Vsini={per / t:.2f} km/s\n"
         msg += f"Gaia DR2 ID={self.gaiaid}\n"
         # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
