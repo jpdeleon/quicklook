@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import flammkuchen as fk
+from quicklook import h5io
 from glob import glob
 import pandas as pd
 from tqdm import tqdm
@@ -31,7 +31,7 @@ def main():
     print("Reading *.tls files...")
     for file in tqdm(files):
         try:
-            data = fk.load(file)
+            data = h5io.load(file)
             d = {
                 "TOI": data.get("toiid"),
                 "TIC": data.get("ticid"),

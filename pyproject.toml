@@ -24,7 +24,7 @@ name = "quicklook-package"
 dynamic = ["version"]
 authors = [{name = "jpdeleon", email = "jpdeleon.bsap@gmail.com"}]
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: POSIX :: Linux",
@@ -32,13 +32,13 @@ classifiers = [
 ]
 dependencies = [
     "matplotlib",
-    "lightkurve==2.5",
-    "numpy==1.23",
-    "transitleastsquares==1.32",
-    "wotan==1.10",
-    "flammkuchen==1.0.3",
-    "reproject==0.12.0",
-    "astroplan==0.9",
+    "lightkurve>=2.5",
+    "numpy>=2.0",
+    "transitleastsquares>=1.32",
+    "wotan>=1.10",
+    "h5py>=3.10",
+    "reproject>=0.13",
+    "astroplan>=0.10",
     "loguru",
     "importlib_resources>=5.0.0",
     "flask"
@@ -75,9 +75,9 @@ exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist)/'
 
 [tool.ruff]
 line-length = 100
-select = ["B", "C", "E", "F", "W", "B9"]
 
 [tool.ruff.lint]
+select = ["B", "C", "E", "F", "W", "B9"]
 ignore = [
   "E203",
   "E266",
@@ -87,7 +87,9 @@ ignore = [
   "C901",
   "B904",  # exceptions
   "B006",  # Do not use mutable data structures for argument defaults
+  "B008",  # Do not perform function call in argument defaults; in tglc.py
   "B028",  # No explicit `stacklevel` keyword argument found; in gls.py
+  "B905",  # `zip()` without an explicit `strict=` parameter
   "C408",  # Unnecessary `dict()` call; in gls.py
 ]
 

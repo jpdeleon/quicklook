@@ -55,16 +55,16 @@ def find_contours(
         consisting of n ``(row, column)`` coordinates along the contour.
     """
     if fully_connected not in ("high", "low"):
-        raise ValueError('Parameters "fully_connected" must be either ' '"high" or "low".')
+        raise ValueError('Parameters "fully_connected" must be either "high" or "low".')
     if positive_orientation not in ("high", "low"):
-        raise ValueError('Parameters "positive_orientation" must be either ' '"high" or "low".')
+        raise ValueError('Parameters "positive_orientation" must be either "high" or "low".')
     if image.shape[0] < 2 or image.shape[1] < 2:
         raise ValueError("Input array must be at least 2x2.")
     if image.ndim != 2:
         raise ValueError("Only 2D arrays are supported.")
     if mask is not None:
         if mask.shape != image.shape:
-            raise ValueError('Parameters "array" and "mask"' " must have same shape.")
+            raise ValueError('Parameters "array" and "mask" must have same shape.')
         if not np.can_cast(mask.dtype, bool, casting="safe"):
             raise TypeError('Parameter "mask" must be a binary array.')
         mask = mask.astype(np.uint8, copy=False)
@@ -170,97 +170,111 @@ def _get_contour_segments(array, level, vertex_connect_high, mask):
     segments = []
 
     use_mask = mask is not None
-    square_case = 0
-    # cdef tuple top, bottom, left, right
-    # cdef cnp.float64_t ul, ur, ll, lr
-    # cdef Py_ssize_t r0, r1, c0, c1
 
-    for r0 in range(array.shape[0] - 1):
-        for c0 in range(array.shape[1] - 1):
-            r1, c1 = r0 + 1, c0 + 1
+    ul = array[:-1, :-1]
+    ur = array[:-1, 1:]
+    ll = array[1:, :-1]
+    lr = array[1:, 1:]
 
-            # Skip this square if any of the four input values are masked out.
-            if use_mask and not (mask[r0, c0] and mask[r0, c1] and mask[r1, c0] and mask[r1, c1]):
-                continue
+    if use_mask:
+        mask_ul = mask[:-1, :-1]
+        mask_ur = mask[:-1, 1:]
+        mask_ll = mask[1:, :-1]
+        mask_lr = mask[1:, 1:]
+        valid = mask_ul & mask_ur & mask_ll & mask_lr
+    else:
+        valid = np.ones((array.shape[0] - 1, array.shape[1] - 1), dtype=bool)
 
-            ul = array[r0, c0]
-            ur = array[r0, c1]
-            ll = array[r1, c0]
-            lr = array[r1, c1]
+    valid &= ~(np.isnan(ul) | np.isnan(ur) | np.isnan(ll) | np.isnan(lr))
 
-            # Skip this square if any of the four input values are NaN.
-            if np.isnan(ul) or np.isnan(ur) or np.isnan(ll) or np.isnan(lr):
-                continue
+    ul = ul[valid]
+    ur = ur[valid]
+    ll = ll[valid]
+    lr = lr[valid]
 
-            square_case = 0
-            if ul > level:
-                square_case += 1
-            if ur > level:
-                square_case += 2
-            if ll > level:
-                square_case += 4
-            if lr > level:
-                square_case += 8
+    r0, c0 = np.where(valid)
+    r1 = r0 + 1
+    c1 = c0 + 1
 
-            if square_case in [0, 15]:
-                # only do anything if there's a line passing through the
-                # square. Cases 0 and 15 are entirely below/above the contour.
-                continue
+    ul = ul.ravel()
+    ur = ur.ravel()
+    ll = ll.ravel()
+    lr = lr.ravel()
 
-            top = r0, c0 + _get_fraction(ul, ur, level)
-            bottom = r1, c0 + _get_fraction(ll, lr, level)
-            left = r0 + _get_fraction(ul, ll, level), c0
-            right = r0 + _get_fraction(ur, lr, level), c1
+    square_case = np.zeros(len(ul), dtype=np.int32)
+    square_case[ul > level] += 1
+    square_case[ur > level] += 2
+    square_case[ll > level] += 4
+    square_case[lr > level] += 8
 
-            if square_case == 1:
-                # top to left
-                segments.append((top, left))
-            elif square_case == 2:
-                # right to top
-                segments.append((right, top))
-            elif square_case == 3:
-                # right to left
-                segments.append((right, left))
-            elif square_case == 4:
-                # left to bottom
-                segments.append((left, bottom))
-            elif square_case == 5:
-                # top to bottom
-                segments.append((top, bottom))
-            elif square_case == 6:
-                if vertex_connect_high:
-                    segments.append((left, top))
-                    segments.append((right, bottom))
-                else:
-                    segments.append((right, top))
-                    segments.append((left, bottom))
-            elif square_case == 7:
-                # right to bottom
-                segments.append((right, bottom))
-            elif square_case == 8:
-                # bottom to right
-                segments.append((bottom, right))
-            elif square_case == 9:
-                if vertex_connect_high:
-                    segments.append((top, right))
-                    segments.append((bottom, left))
-                else:
-                    segments.append((top, left))
-                    segments.append((bottom, right))
-            elif square_case == 10:
-                # bottom to top
-                segments.append((bottom, top))
-            elif square_case == 11:
-                # bottom to left
-                segments.append((bottom, left))
-            elif square_case == 12:
-                # lef to right
-                segments.append((left, right))
-            elif square_case == 13:
-                # top to right
-                segments.append((top, right))
-            elif square_case == 14:
-                # left to top
-                segments.append((left, top))
+    # Filter out trivial cases (0 and 15) up front
+    active = (square_case != 0) & (square_case != 15)
+    if not active.any():
+        return segments
+
+    sc = square_case[active]
+    r0_a = r0[active].astype(float)
+    c0_a = c0[active].astype(float)
+    r1_a = r1[active].astype(float)
+    c1_a = c1[active].astype(float)
+    ul_a = ul[active]
+    ur_a = ur[active]
+    ll_a = ll[active]
+    lr_a = lr[active]
+
+    # Vectorized fraction computation (safe divide, 0 where denom is 0)
+    def _frac(fm, to):
+        denom = to - fm
+        return np.where(denom != 0, (level - fm) / denom, 0.0)
+
+    top_r = r0_a
+    top_c = c0_a + _frac(ul_a, ur_a)
+    bot_r = r1_a
+    bot_c = c0_a + _frac(ll_a, lr_a)
+    lft_r = r0_a + _frac(ul_a, ll_a)
+    lft_c = c0_a
+    rgt_r = r0_a + _frac(ur_a, lr_a)
+    rgt_c = c1_a
+
+    # Segment lookup: for each case, (from_row, from_col, to_row, to_col)
+    # Cases 6 and 9 produce two segments and depend on vertex_connect_high
+    _T, _B, _L, _R = 0, 1, 2, 3  # point indices
+    # Single-segment cases: case -> (from_point, to_point)
+    single = {
+        1: (_T, _L),
+        2: (_R, _T),
+        3: (_R, _L),
+        4: (_L, _B),
+        5: (_T, _B),
+        7: (_R, _B),
+        8: (_B, _R),
+        10: (_B, _T),
+        11: (_B, _L),
+        12: (_L, _R),
+        13: (_T, _R),
+        14: (_L, _T),
+    }
+    # Rows/cols for each point type
+    rows = [top_r, bot_r, lft_r, rgt_r]
+    cols = [top_c, bot_c, lft_c, rgt_c]
+
+    for case_val, (fp, tp) in single.items():
+        idx = np.where(sc == case_val)[0]
+        for i in idx:
+            segments.append(((rows[fp][i], cols[fp][i]), (rows[tp][i], cols[tp][i])))
+
+    # Ambiguous cases 6 and 9 (two segments each)
+    if vertex_connect_high:
+        pairs_6 = [(_L, _T), (_R, _B)]
+        pairs_9 = [(_T, _R), (_B, _L)]
+    else:
+        pairs_6 = [(_R, _T), (_L, _B)]
+        pairs_9 = [(_T, _L), (_B, _R)]
+
+    for case_val, pairs in [(6, pairs_6), (9, pairs_9)]:
+        idx = np.where(sc == case_val)[0]
+        for i in idx:
+            for fp, tp in pairs:
+                segments.append(((rows[fp][i], cols[fp][i]), (rows[tp][i], cols[tp][i])))
 
     return segments

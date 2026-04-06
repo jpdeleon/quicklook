@@ -7,7 +7,8 @@ from pathlib import Path
 
 # import logging
 import matplotlib.pyplot as pl
-from quicklook.tql import TessQuickLook, get_available_sectors
+from quicklook.tql import TessQuickLook
+from quicklook.utils import get_available_sectors
 from quicklook.plot import dss_description
 
 

@@ -18,13 +18,67 @@ TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # Kepler_pix_scale = 3.98 * u.arcsec  # /pix
 
 __all__ = [
+    "get_available_sectors",
     "get_exofop_json",
     "get_params_from_exofop",
     "parse_aperture_mask",
     "compute_secthresh",
+    "mag_to_flux",
     "is_point_inside_mask",
     "PadWithZeros",
 ]
+
+
+def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
+    """Query available sectors for target+pipeline.
+
+    Parameters
+    ----------
+    target_name : str
+        Target name (e.g., "TOI-1234" or "TIC123456")
+    pipeline : str
+        Pipeline name (e.g., "SPOC", "QLP", "TGLC")
+    tic_id : int, optional
+        Pre-resolved TIC ID to skip the ExoFOP lookup.
+
+    Returns
+    -------
+    list
+        Sorted list of unique sector numbers available for the target and pipeline.
+    """
+    import lightkurve as lk
+
+    # Resolve to TIC ID via ExoFOP, matching TessQuickLook behavior
+    if tic_id is not None:
+        query_name = f"TIC{tic_id}"
+    else:
+        try:
+            tic_id = get_tic_id(target_name)
+            query_name = f"TIC{tic_id}"
+        except Exception:
+            query_name = target_name
+
+    search = lk.search_lightcurve(query_name)
+    if len(search) == 0:
+        return []
+
+    df = search.table.to_pandas()
+
+    if pipeline.upper() == "SPOC":
+        sectors = []
+        for mission in df["mission"].tolist():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+        return sorted(set(sectors))
+
+    sectors = []
+    for mission, author in zip(df["mission"].tolist(), df["provenance_name"].tolist()):
+        if author.lower() == pipeline.lower():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+    return sorted(set(sectors))
 
 
 def get_tois(

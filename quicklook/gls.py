@@ -10,9 +10,10 @@ Note : The software is also available as part of the PyAstronomy package.
        See: http://www.hs.uni-hamburg.de/DE/Ins/Per/Czesla/index.html
             https://github.com/sczesla/PyAstronomy/blob/master/src/pyTiming/pyPeriod/gls.py
 """
+
 from __future__ import print_function, division
 import numpy as np
-from numpy import sum, pi, cos, sin, arctan2, exp, log, sqrt, dot, arange
+from numpy import sum, pi, cos, sin, arctan2, exp, log, sqrt, arange
 
 __version__ = "2019-12-18"
 __author__ = "Mathias Zechmeister, Stefan Czesla"
@@ -269,7 +270,6 @@ class Gls:
         self.M = (self.fend - self.fbeg) * self.tbase
 
     def _calcPeriodogram(self):
-
         if self.e_y is None:
             w = np.ones(self.N)
         else:
@@ -277,41 +277,37 @@ class Gls:
         self.wsum = w.sum()
         w /= self.wsum
 
-        self._Y = dot(w, self.y)  # Eq. (7)
+        self._Y = np.sum(w * self.y)  # Eq. (7)
         wy = self.y - self._Y  # Subtract weighted mean
-        self._YY = dot(w, wy**2)  # Eq. (10), weighted variance with offset only
+        self._YY = np.sum(w * wy**2)  # Eq. (10), weighted variance with offset only
         wy *= w  # attach errors
 
-        C, S, YC, YS, CC, CS = np.zeros((6, self.nf))
+        th = self.th
+        nf = self.nf
 
-        if self.fast:
-            # Prepare trigonometric recurrences.
-            eid = exp(2j * pi * self.fstep * self.th)  # cos(dx)+i sin(dx)
+        # Vectorized: process frequencies in chunks to balance speed vs memory
+        chunk = max(1, min(nf, int(5e7) // max(self.N, 1)))
+        C = np.empty(nf)
+        S = np.empty(nf)
+        YC = np.empty(nf)
+        YS = np.empty(nf)
+        CC = np.empty(nf)
+        CS = np.empty(nf)
 
-        for k, omega in enumerate(2.0 * pi * self.f):
-            # Circular frequencies.
-            if self.fast:
-                if k % 1000 == 0:
-                    # init/refresh recurrences to stop error propagation
-                    eix = exp(1j * omega * self.th)  # exp(ix) = cos(x) + i*sin(x)
-                cosx = eix.real
-                sinx = eix.imag
-            else:
-                x = omega * self.th
-                cosx = cos(x)
-                sinx = sin(x)
+        for i0 in range(0, nf, chunk):
+            i1 = min(i0 + chunk, nf)
+            # x shape: (chunk_size, N)
+            x = (2.0 * pi * self.f[i0:i1, None]) * th[None, :]
+            cosx = np.cos(x)
+            sinx = np.sin(x)
 
-            C[k] = dot(w, cosx)  # Eq. (8)
-            S[k] = dot(w, sinx)  # Eq. (9)
-
-            YC[k] = dot(wy, cosx)  # Eq. (11)
-            YS[k] = dot(wy, sinx)  # Eq. (12)
-            wcosx = w * cosx
-            CC[k] = dot(wcosx, cosx)  # Eq. (13)
-            CS[k] = dot(wcosx, sinx)  # Eq. (15)
-
-            if self.fast:
-                eix *= eid  # increase freq for next loop
+            C[i0:i1] = cosx @ w  # Eq. (8)
+            S[i0:i1] = sinx @ w  # Eq. (9)
+            YC[i0:i1] = cosx @ wy  # Eq. (11)
+            YS[i0:i1] = sinx @ wy  # Eq. (12)
+            wcosx = cosx * w[None, :]
+            CC[i0:i1] = np.sum(wcosx * cosx, axis=1)  # Eq. (13)
+            CS[i0:i1] = np.sum(wcosx * sinx, axis=1)  # Eq. (15)
 
         SS = 1.0 - CC
         if not self.ls:
@@ -324,26 +320,12 @@ class Gls:
         self._b = (YS * CC - YC * CS) / D
         self._off = -self._a * C - self._b * S
 
-        # power
-        self.p = (SS * YC * YC + CC * YS * YS - 2.0 * CS * YC * YS) / (
-            self._YY * D
-        )  # Eq. (5) in ZK09
+        self.p = (SS * YC * YC + CC * YS * YS - 2.0 * CS * YC * YS) / (self._YY * D)
 
     def _normcheck(self, norm):
-        """
-        Check normalization
-
-        Parameters
-        ----------
-        norm : string
-            Normalization string
-
-        """
         if norm not in self.norms:
-            raise (
-                ValueError(
-                    "Unknown norm: %s. " % norm + "Use either of %s." % ", ".join(self.norms)
-                )
+            raise ValueError(
+                "Unknown norm: %s. " % norm + "Use either of %s." % ", ".join(self.norms)
             )
 
     def pnorm(self, norm="ZK"):
@@ -423,7 +405,7 @@ class Gls:
             xh = (self.f[k - 1 : k + 2] - self.f[k]) ** 2
             yh = self.p[k - 1 : k + 2] - pmax
             # Calculate the curvature (final equation from least square)
-            aa = dot(yh, xh) / dot(xh, xh)
+            aa = np.dot(yh, xh) / np.dot(xh, xh)
             p["e_f"] = e_f = sqrt(-2.0 / self.N / aa * (1.0 - self.pmax))
             p["e_P"] = e_f / fbest**2
         else:
@@ -936,7 +918,6 @@ def example():
 
 
 if __name__ == "__main__":
-
     import argparse
 
     parser = argparse.ArgumentParser(

@@ -32,7 +32,7 @@ import astropy.units as u
 from astroquery.simbad import Simbad
 from astroquery.mast import Catalogs
 import lightkurve as lk
-import flammkuchen as fk
+from quicklook import h5io
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -61,47 +61,7 @@ DATA_PATH = get_data_path("quicklook")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
 
-__all__ = ["TessQuickLook", "get_available_sectors"]
-
-
-def get_available_sectors(target_name, pipeline="SPOC"):
-    """Query available sectors for target+pipeline.
-
-    Parameters
-    ----------
-    target_name : str
-        Target name (e.g., "TOI-1234" or "TIC123456")
-    pipeline : str
-        Pipeline name (e.g., "SPOC", "QLP", "TGLC")
-
-    Returns
-    -------
-    list
-        Sorted list of unique sector numbers available for the target and pipeline.
-    """
-    import lightkurve as lk
-
-    search = lk.search_lightcurve(target_name)
-    if len(search) == 0:
-        return []
-
-    df = search.table.to_pandas()
-
-    if pipeline.upper() == "SPOC":
-        sectors = []
-        for mission in df["mission"].tolist():
-            x = mission.split()
-            if len(x) == 3:
-                sectors.append(int(x[-1]))
-        return sorted(set(sectors))
-
-    sectors = []
-    for mission, author in zip(df["mission"].tolist(), df["provenance_name"].tolist()):
-        if author.lower() == pipeline.lower():
-            x = mission.split()
-            if len(x) == 3:
-                sectors.append(int(x[-1]))
-    return sorted(set(sectors))
+__all__ = ["TessQuickLook"]
 
 
 class TessQuickLook:
@@ -191,8 +151,11 @@ class TessQuickLook:
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
         self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
+        flat_time = self.flat_lc.time.value
+        self._flat_time_min = flat_time.min()
+        self._flat_time_max = flat_time.max()
         self.Porb_max = (
-            (max(self.flat_lc.time.value) - min(self.flat_lc.time.value)) / 2
+            (self._flat_time_max - self._flat_time_min) / 2
             if Porb_limits is None
             else Porb_limits[1]
         )
@@ -439,7 +402,7 @@ class TessQuickLook:
                 logger.error("Error: Supply exptime.")
                 sys.exit()
 
-        # Search for light curves related to the target
+        # Single MAST search, then filter locally
         search_result_all_lcs = lk.search_lightcurve(self.query_name)
         err_msg = f"Search using '{self.query_name}' did not yield any lightcurve results."
         if len(search_result_all_lcs) == 0:
@@ -476,8 +439,23 @@ class TessQuickLook:
         self.pipeline = kwargs["author"].lower()
         self.all_pipelines = all_authors
 
-        # Search for specific light curve with given parameters
-        search_result = lk.search_lightcurve(self.query_name, **kwargs)
+        # Filter locally instead of a second MAST query
+        mask = np.ones(len(search_result_all_lcs), dtype=bool)
+        tbl = search_result_all_lcs.table
+        if kwargs.get("author"):
+            mask &= np.array(
+                [a.upper() == kwargs["author"].upper() for a in tbl["provenance_name"]]
+            )
+        if kwargs.get("sector") is not None:
+            mask &= np.array(
+                [
+                    len(m.split()) == 3 and int(m.split()[-1]) == kwargs["sector"]
+                    for m in tbl["mission"]
+                ]
+            )
+        if kwargs.get("exptime") is not None:
+            mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
+        search_result = search_result_all_lcs[mask]
         err_msg = f"Search using '{self.query_name}' "
         err_msg += f"{kwargs} did not yield any lightcurve results."
         if len(search_result) == 0:
@@ -563,14 +541,9 @@ class TessQuickLook:
             return lc.normalize()
 
     def get_unique_sectors(self, search_result):
-        all_sectors = []
-        for i in search_result.table["mission"].tolist():
-            x = i.split()
-            if len(x) == 3:
-                s = int(x[-1])
-                all_sectors.append(s)
-        unique_sectors = sorted(set(all_sectors))
-        return unique_sectors
+        missions = search_result.table["mission"].tolist()
+        all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
+        return sorted(set(all_sectors))
 
     def get_tpf(self, **kwargs: dict) -> lk.targetpixelfile.TargetPixelFile:
         """
@@ -770,12 +743,11 @@ class TessQuickLook:
         )
 
     def init_gls(self):
+        masked_lc = self.raw_lc[~self.tmask]
         if self.pipeline == "pathos":
-            # pathos do not have flux_err
-            cols = ["time", "flux"]
+            data = np.vstack([masked_lc.time.value, masked_lc.flux.value])
         else:
-            cols = ["time", "flux", "flux_err"]
-        data = self.raw_lc.to_pandas().reset_index()[cols][~self.tmask].values.T
+            data = np.vstack([masked_lc.time.value, masked_lc.flux.value, masked_lc.flux_err.value])
         if self.verbose:
             msg = "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram..."
             logger.info(msg)
@@ -859,27 +831,24 @@ class TessQuickLook:
         )
 
         if self.sigma_clip_flat is not None:
-            # Apply sigma clipping to the flattened light curve
             msg = "Applying sigma clip on flattened lc with "
             msg += f"(lower,upper)=({self.sigma_clip_flat})"
             if self.verbose:
                 logger.info(msg)
             idx = sigma_clip(
                 wflat_lc,
-                # The lower and upper sigma limits
                 sigma_lower=self.sigma_clip_flat[0],
                 sigma_upper=self.sigma_clip_flat[1],
             ).mask
         else:
-            # No sigma clipping
             idx = np.zeros_like(wflat_lc, dtype=bool)
-        # Get the flattened and trend light curves
+
+        valid_mask = ~idx
         flat_lc, trend_lc = self.raw_lc.flatten(return_trend=True)
-        # Replace flux values with that from wotan
-        flat_lc = flat_lc[~idx]
-        trend_lc = trend_lc[~idx]
-        trend_lc.flux = wtrend_lc[~idx]
-        flat_lc.flux = wflat_lc[~idx]
+        flat_lc = flat_lc[valid_mask]
+        trend_lc = trend_lc[valid_mask]
+        trend_lc.flux = wtrend_lc[valid_mask]
+        flat_lc.flux = wflat_lc[valid_mask]
         return flat_lc, trend_lc
 
     def get_transit_mask(self):
@@ -1176,7 +1145,6 @@ class TessQuickLook:
                 verbose=self.verbose,
                 ax=ax,
             )
-            pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
             self.Prot_ls = self.gls.best["P"]
             if math.isnan(self.gls.power.max()):
                 logger.error("GLS power is NaN, switching to astropy's Lomb-Scargle...")
@@ -1190,6 +1158,8 @@ class TessQuickLook:
                     ax=ax,
                 )
                 self.Prot_ls = pg.period_at_max_power.value
+            else:
+                pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
         else:
             self.gls = None
             pg = plot_periodogram(
@@ -1390,7 +1360,7 @@ class TessQuickLook:
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
-            fk.save(h5_file, self.tls_results)
+            h5io.save(h5_file, self.tls_results)
             logger.info(f"Saved: {h5_file}")
 
         self.timer_end = timer()
