@@ -35,6 +35,21 @@ Gaia.ROW_LIMIT = -1
 Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"  # TODO: dr3 MJD = 2457388.5, TBJD = 388.5
 
 
+def _gaia_async_query(query_str, max_retries=3, timeout=120):
+    """Run a Gaia TAP async query with retries and a timeout."""
+    for attempt in range(max_retries):
+        try:
+            job = Gaia.launch_job_async(query_str)
+            results = job.get_results()
+            return results
+        except Exception as e:
+            logger.warning(f"Gaia async query failed (attempt {attempt + 1}/{max_retries}): {e}")
+            if attempt < max_retries - 1:
+                time.sleep(10)
+            else:
+                raise
+
+
 def convert_gaia_id(catalogdata_tic):
     query = """
             SELECT dr2_source_id, dr3_source_id
@@ -43,32 +58,40 @@ def convert_gaia_id(catalogdata_tic):
             """
     gaia_array = np.array([str(item) for item in catalogdata_tic["GAIA"]], dtype=object)
     gaia_array = gaia_array[gaia_array != "None"]
-    # np.save('gaia_array.npy', gaia_array)
-    segment = (len(gaia_array) - 1) // 10000
-    gaia_tuple = tuple(gaia_array[:10000])
-    results = Gaia.launch_job_async(query.format(gaia_ids=gaia_tuple)).get_results()
-    # np.save('result.npy', np.array(results))
-    for i in range(segment):
-        gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
-        gaia_tuple_cut = tuple(gaia_array_cut)
-        results = vstack(
-            [
-                results,
-                Gaia.launch_job_async(query.format(gaia_ids=gaia_tuple_cut)).get_results(),
-            ]
-        )
-    tic_ids = []
-    for j in range(len(results)):
-        tic_ids.append(
-            int(
-                catalogdata_tic["ID"][
-                    np.where(catalogdata_tic["GAIA"] == str(results["dr2_source_id"][j]))
-                ][0]
+    if len(gaia_array) == 0:
+        logger.warning("No Gaia DR2 IDs found in TIC catalog; skipping DR2->DR3 conversion.")
+        return Table()
+    logger.info(f"Converting {len(gaia_array)} Gaia DR2 IDs to DR3 via TAP...")
+    try:
+        segment = (len(gaia_array) - 1) // 10000
+        gaia_tuple = tuple(gaia_array[:10000])
+        results = _gaia_async_query(query.format(gaia_ids=gaia_tuple))
+        for i in range(segment):
+            gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
+            gaia_tuple_cut = tuple(gaia_array_cut)
+            results = vstack(
+                [
+                    results,
+                    _gaia_async_query(query.format(gaia_ids=gaia_tuple_cut)),
+                ]
             )
+        tic_ids = []
+        for j in range(len(results)):
+            tic_ids.append(
+                int(
+                    catalogdata_tic["ID"][
+                        np.where(catalogdata_tic["GAIA"] == str(results["dr2_source_id"][j]))
+                    ][0]
+                )
+            )
+        tic_ids = Column(np.array(tic_ids), name="TIC")
+        results.add_column(tic_ids)
+        return results
+    except Exception as e:
+        logger.warning(
+            f"Gaia DR2->DR3 conversion failed ({e}); continuing without TIC cross-match."
         )
-    tic_ids = Column(np.array(tic_ids), name="TIC")
-    results.add_column(tic_ids)
-    return results
+        return Table()
 
 
 def mast_query(request):
@@ -276,20 +299,21 @@ class Source(object):
         attempt = 0
         while attempt < 5:
             try:
-                catalogdata = Gaia.cone_search(
+                catalogdata = Catalogs.query_region(
                     coord,
                     radius=radius,
-                    columns=[
-                        "DESIGNATION",
-                        "phot_g_mean_mag",
-                        "phot_bp_mean_mag",
-                        "phot_rp_mean_mag",
-                        "ra",
-                        "dec",
-                        "pmra",
-                        "pmdec",
-                    ],
-                ).get_results()
+                    catalog="gaiadr3",
+                )
+                catalogdata = catalogdata[
+                    "designation",
+                    "phot_g_mean_mag",
+                    "phot_bp_mean_mag",
+                    "phot_rp_mean_mag",
+                    "ra",
+                    "dec",
+                    "pmra",
+                    "pmdec",
+                ]
                 return catalogdata
             except Exception as e:
                 logger.warning(f"Gaia search failed: {e}")
@@ -328,6 +352,10 @@ class Source_cut(object):
             cadence = []
         if size < 25:
             logger.warning("FFI cut size too small, try at least 25*25")
+        # Remove space in TIC identifiers (e.g. "TIC 89071445" -> "TIC89071445")
+        # so that MAST catalog queries resolve correctly.
+        if name.upper().startswith("TIC "):
+            name = "TIC" + name[4:]
         self.name = name
         self.size = size
         self.sector = 0
@@ -359,20 +387,21 @@ class Source_cut(object):
         attempt = 0
         while attempt < 5:
             try:
-                catalogdata = Gaia.cone_search(
+                catalogdata = Catalogs.query_region(
                     coord,
                     radius=radius,
-                    columns=[
-                        "DESIGNATION",
-                        "phot_g_mean_mag",
-                        "phot_bp_mean_mag",
-                        "phot_rp_mean_mag",
-                        "ra",
-                        "dec",
-                        "pmra",
-                        "pmdec",
-                    ],
-                ).get_results()
+                    catalog="gaiadr3",
+                )
+                catalogdata = catalogdata[
+                    "designation",
+                    "phot_g_mean_mag",
+                    "phot_bp_mean_mag",
+                    "phot_rp_mean_mag",
+                    "ra",
+                    "dec",
+                    "pmra",
+                    "pmdec",
+                ]
                 break
             except Exception as e:
                 logger.warning(f"Gaia search failed: {e}")
@@ -393,27 +422,41 @@ class Source_cut(object):
         )
         logger.info(f"Found {len(catalogdata_tic)} TIC objects.")
         self.tic = convert_gaia_id(catalogdata_tic)
+        logger.info("Querying TESScut sector table...")
         sector_table = Tesscut.get_sectors(coordinates=coord)
         if len(sector_table) == 0:
             logger.warning("TESS has not observed this position yet.")
-        if sector is None:
-            hdulist = Tesscut.get_cutouts(coordinates=coord, size=self.size)
-        elif sector == "first":
-            hdulist = Tesscut.get_cutouts(
-                coordinates=coord,
-                size=self.size,
-                sector=sector_table["sector"][0],
-            )
+        if sector == "first":
             sector = sector_table["sector"][0]
         elif sector == "last":
-            hdulist = Tesscut.get_cutouts(
-                coordinates=coord,
-                size=self.size,
-                sector=sector_table["sector"][-1],
-            )
             sector = sector_table["sector"][-1]
-        else:
-            hdulist = Tesscut.get_cutouts(coordinates=coord, size=self.size, sector=sector)
+
+        cut_kwargs = {"coordinates": coord, "size": self.size}
+        if sector is not None:
+            cut_kwargs["sector"] = sector
+
+        logger.info(
+            f"Downloading TESScut FFI cutout ({self.size}x{self.size} px"
+            f"{f', sector {sector}' if sector is not None else ', all sectors'})..."
+        )
+        hdulist = None
+        for attempt in range(3):
+            try:
+                hdulist = Tesscut.get_cutouts(**cut_kwargs)
+                break
+            except Exception as e:
+                logger.warning(f"TESScut download failed (attempt {attempt + 1}/3): {e}")
+                if attempt < 2:
+                    # Retry with a smaller cutout on timeout
+                    if "imeout" in str(e) and cut_kwargs["size"] > 15:
+                        cut_kwargs["size"] = max(15, cut_kwargs["size"] // 2)
+                        self.size = cut_kwargs["size"]
+                        logger.info(
+                            f"Retrying with reduced cutout size {self.size}x{self.size} px..."
+                        )
+                    time.sleep(5)
+                else:
+                    raise
         self.catalogdata = catalogdata
         self.sector_table = sector_table
         self.camera = int(sector_table[0]["camera"])
@@ -1768,7 +1811,7 @@ def epsf(
                     )
 
 
-def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
+def get_tglc_lc(target_name, sector=None, size=25, limit_mag=16, verbose=True):
     """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
 
     This function downloads an FFI cutout via TESScut, runs the TGLC effective
@@ -1782,7 +1825,7 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
     sector : int or None
         TESS sector.  ``None`` uses the first available sector.
     size : int
-        Side length in pixels of the TESScut FFI cutout (default 50).
+        Side length in pixels of the TESScut FFI cutout (default 25).
     limit_mag : float
         Faintest TESS magnitude to include in the PSF model (default 16).
     verbose : bool

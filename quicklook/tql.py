@@ -1359,7 +1359,7 @@ class TessQuickLook:
         )
 
         if self.verbose:
-            logger.info("Plotting summary panel...")
+            logger.info("Creating summary panel...")
         ax = axes.flatten()[8]
         ax.axis([0, 10, 0, 10])
         msg = self.make_summary_info()

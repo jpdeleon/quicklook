@@ -42,7 +42,7 @@ def main():
                 "Prot_gls": data.get("Prot_gls")[0] if data.get("Prot_gls") else None,
                 "amp_gls": data.get("amp_gls")[0] if data.get("amp_gls") else None,
                 "depth": (1 - data.get("depth")) * 1e3 if data.get("depth") is not None else None,
-                "per_transit_count": tuple(data.get("per_transit_count")),
+                "per_transit_count": tuple(int(x) for x in data.get("per_transit_count")),
                 "exptime": data.get("exptime"),
                 "pipeline": data.get("pipeline"),  # data.get("meta")['AUTHOR'],
                 "flux_type": data.get("flux_type"),  # data.get("meta")["FLUX_ORIGIN"],

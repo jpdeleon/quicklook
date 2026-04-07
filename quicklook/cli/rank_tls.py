@@ -60,8 +60,26 @@ def apply_filters(
     not_TOI = df2["TOI"].isna() | (df2["TOI"] == "")
 
     # Condition 6: In transit data is not sparse
-    exp = df2.get("exptime", 9999)
-    count = df2.get("per_transit_count", 0)
+    exp = pd.to_numeric(
+        df2.get("exptime", pd.Series(9999, index=df2.index)), errors="coerce"
+    ).fillna(9999)
+    count = df2.get("per_transit_count", pd.Series(0, index=df2.index))
+    # per_transit_count is a tuple stored as string in CSV; extract the minimum count
+    if count.dtype == object:
+        import ast
+
+        def _min_count(val):
+            if pd.isna(val) or val == "" or val == "0":
+                return 0
+            try:
+                parsed = ast.literal_eval(str(val))
+                if isinstance(parsed, (tuple, list)) and len(parsed) > 0:
+                    return min(int(x) for x in parsed)
+                return int(parsed)
+            except (ValueError, SyntaxError):
+                return 0
+
+        count = count.apply(_min_count)
 
     # Define the two valid "not sparse" conditions
     short_exp_valid = (exp <= 120) & (count > 10)
