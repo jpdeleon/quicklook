@@ -14,10 +14,14 @@ local_scheme = "no-local-version"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["quicklook*"]
-exclude = ["quicklook/app*", "static*", "notebook*", "tests*"]
+exclude = ["static*", "notebook*", "tests*"]
 
 [tool.setuptools.package-data]
-"quicklook" = ["data/*.csv"]
+"quicklook" = ["data/*.csv", "*.mplstyle"]
+"quicklook.app" = ["templates/*.html"]
+
+[tool.setuptools.exclude-package-data]
+"quicklook.app" = ["static/outputs/*", "static/outputs/**/*"]
 
 [project]
 name = "quicklook-package"
@@ -40,7 +44,6 @@ dependencies = [
     "reproject>=0.13",
     "astroplan>=0.10",
     "loguru",
-    "importlib_resources>=5.0.0",
     "flask"
 ]
 
