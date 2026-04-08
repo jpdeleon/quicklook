@@ -35,6 +35,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Astronomy",
 ]
 dependencies = [
+    "setuptools",
     "matplotlib",
     "lightkurve>=2.5",
     "numpy>=2.0",
