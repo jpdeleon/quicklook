@@ -294,8 +294,14 @@
           <div class="validation-msg" id="nameValidation">Enter a target name (TOI, TIC, or common name)</div>
         </div>
         <div>
-          <label for="sector">Sector</label>
+          <div class="label-row">
+            <label for="sector">Sector</label>
+            <span class="help-tip" title="-1 = latest sector. Ignored when 'Each Sector' is checked.">?</span>
+          </div>
           <input type="number" name="sector" id="sector" value="-1">
+          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
+            <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
+          </label>
         </div>
         <div>
           <label for="pipeline">Pipeline</label>
@@ -620,11 +626,11 @@ function notifyBrowser(title, body) {
    ========================================================================= */
 const FORM_STORAGE_KEY = 'ql-form-state';
 const PERSIST_FIELDS = [
-  'sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
+  'name','sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
   'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector'];
 
 function saveFormState() {
   const state = {};
@@ -654,6 +660,7 @@ function resetFormDefaults() {
   form.elements['flatten_method'].value = 'biweight';
   form.elements['save'].checked = true;
   form.elements['verbose'].checked = true;
+  form.elements['each_sector'].checked = false;
   showToast('Form reset to defaults', 'info');
 }
 
@@ -783,6 +790,53 @@ form.addEventListener('submit', async (e) => {
   submitBtn.textContent = 'Submitting...';
   resultSection.classList.remove('visible');
 
+  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+
+  if (eachSector) {
+    // Each-sector mode: query available sectors, then submit one job per sector
+    try {
+      const fd = new FormData(form);
+      const params = {};
+      for (const [key, val] of fd.entries()) {
+        if (key !== 'name' && key !== 'each_sector') params[key] = val;
+      }
+      const pipeline = params.pipeline || 'spoc';
+      submitBtn.textContent = 'Querying sectors...';
+      const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+      const secData = await res.json();
+      if (!secData.ok || !secData.sectors || secData.sectors.length === 0) {
+        showToast(secData.reason || 'No sectors found for ' + name, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run QuickLook';
+        return;
+      }
+      const sectors = secData.sectors;
+      showToast('Found ' + sectors.length + ' sectors: ' + sectors.join(', '), 'info', 6000);
+      submitBtn.textContent = 'Submitting ' + sectors.length + ' jobs...';
+
+      const batchRes = await fetch('/each-sector-submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: name, sectors: sectors, params: params }),
+      });
+      const batchData = await batchRes.json();
+      if (batchData.ok) {
+        const msg = batchData.submitted.length + ' sector jobs submitted';
+        showToast(msg, 'success');
+        refreshQueue();
+        // Watch the first submitted job
+        if (batchData.submitted.length > 0) connectWs(batchData.submitted[0]);
+      } else {
+        showToast(batchData.reason || 'Each-sector submission failed', 'error');
+      }
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Run QuickLook';
+    return;
+  }
+
   try {
     const res = await fetch('/submit', { method: 'POST', body: new FormData(form) });
     const data = await res.json();
@@ -899,7 +953,7 @@ async function refreshQueue() {
       li.className = 'queue-item';
 
       const badgeClass = {
-        running: 'badge-running', done: 'badge-done',
+        queued: 'badge-running', running: 'badge-running', done: 'badge-done',
         error: 'badge-error', cancelled: 'badge-cancelled'
       }[job.status] || 'badge-running';
 
@@ -1003,7 +1057,7 @@ async function autoWatchNext(finishedTarget) {
   try {
     const res = await fetch('/jobs-json');
     const jobs = await res.json();
-    const next = jobs.find(j => j.status === 'running' && j.name !== finishedTarget);
+    const next = jobs.find(j => (j.status === 'running' || j.status === 'queued') && j.name !== finishedTarget);
     if (next) {
       showToast('Watching next job: ' + next.name, 'info');
       connectWs(next.name);
@@ -1121,7 +1175,7 @@ if ('Notification' in window && Notification.permission === 'default') {
   try {
     const res = await fetch('/jobs-json');
     const jobs = await res.json();
-    const running = jobs.find(j => j.status === 'running');
+    const running = jobs.find(j => j.status === 'running' || j.status === 'queued');
     if (running) connectWs(running.name);
   } catch(e) {}
 })();

@@ -1,9 +1,12 @@
+import io
 import json
 import math
 import os
+import queue
 import re
 import sqlite3
 import sys
+import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -14,6 +17,8 @@ from flask_sock import Sock
 from loguru import logger
 from quicklook.tql import TessQuickLook
 from quicklook.cli.ql import sanitize_target_name
+from quicklook.exceptions import QuickLookError
+from quicklook.utils import get_available_sectors
 
 # Directories
 BASE_DIR = Path(__file__).parent.resolve()
@@ -27,6 +32,53 @@ app = Flask(
     __name__, static_folder=str(BASE_DIR / "static"), template_folder=str(BASE_DIR / "templates")
 )
 sock = Sock(app)
+
+# Original stdout/stderr for fallback
+_real_stdout = sys.stdout
+_real_stderr = sys.stderr
+
+
+class _ThreadLocalStream(io.TextIOBase):
+    """A sys.stdout/stderr replacement that routes writes per-thread.
+
+    Each job thread registers its log file via set_stream(). Threads without
+    a registered stream (e.g. the main Flask thread) fall through to the
+    original stream. This avoids the race where concurrent batch jobs stomp
+    on each other's global sys.stdout redirect.
+    """
+
+    def __init__(self, fallback):
+        self._fallback = fallback
+        self._local = threading.local()
+
+    def set_stream(self, stream):
+        self._local.stream = stream
+
+    def clear_stream(self):
+        self._local.stream = None
+
+    @property
+    def _current(self):
+        return getattr(self._local, "stream", None) or self._fallback
+
+    def write(self, s):
+        return self._current.write(s)
+
+    def flush(self):
+        return self._current.flush()
+
+    def fileno(self):
+        return self._current.fileno()
+
+    @property
+    def encoding(self):
+        return getattr(self._current, "encoding", "utf-8")
+
+
+_tls_stdout = _ThreadLocalStream(_real_stdout)
+_tls_stderr = _ThreadLocalStream(_real_stderr)
+sys.stdout = _tls_stdout
+sys.stderr = _tls_stderr
 
 
 # ---------------------------------------------------------------------------
@@ -75,13 +127,15 @@ def _save_job_history(
 
 
 _avg_step_cache = {"data": {}, "ts": 0}
+_avg_step_lock = threading.Lock()
 
 
 def _get_avg_step_times():
     """Return average duration (seconds) per pipeline step from recent successful jobs."""
     now = time.time()
-    if now - _avg_step_cache["ts"] < 60:
-        return _avg_step_cache["data"]
+    with _avg_step_lock:
+        if now - _avg_step_cache["ts"] < 60:
+            return dict(_avg_step_cache["data"])
     conn = sqlite3.connect(str(DB_PATH))
     rows = conn.execute(
         "SELECT step_times FROM job_history WHERE status='done' "
@@ -98,8 +152,9 @@ def _get_avg_step_times():
             totals[step] = totals.get(step, 0) + dur
             counts[step] = counts.get(step, 0) + 1
     result = {step: totals[step] / counts[step] for step in totals}
-    _avg_step_cache["data"] = result
-    _avg_step_cache["ts"] = now
+    with _avg_step_lock:
+        _avg_step_cache["data"] = result
+        _avg_step_cache["ts"] = now
     return result
 
 
@@ -107,6 +162,27 @@ def _get_avg_step_times():
 # Job queue (in-memory for active jobs)
 # ---------------------------------------------------------------------------
 jobs: OrderedDict = OrderedDict()
+jobs_lock = threading.Lock()
+
+# Serial execution queue — lightkurve, astropy, and matplotlib are not
+# thread-safe, so pipeline jobs must run one at a time.
+_job_queue: queue.Queue = queue.Queue()
+
+
+def _job_worker():
+    """Worker that pulls jobs off the queue and runs them one at a time."""
+    while True:
+        name, cancel_event, params = _job_queue.get()
+        try:
+            run_quicklook_background(name=name, cancel_event=cancel_event, **params)
+        except Exception:
+            pass  # run_quicklook_background handles its own errors
+        finally:
+            _job_queue.task_done()
+
+
+_worker_thread = Thread(target=_job_worker, daemon=True)
+_worker_thread.start()
 
 # Pipeline step definitions for progress tracking.
 PIPELINE_STEPS = [
@@ -140,119 +216,148 @@ def _detect_step(log_text):
 # Background job runner
 # ---------------------------------------------------------------------------
 def run_quicklook_background(name, cancel_event, **kwargs):
-    name = sanitize_target_name(name)
+    # Skip if cancelled while waiting in queue.
+    if cancel_event.is_set():
+        return
+
+    # Mark as running now that the worker has picked it up.
+    with jobs_lock:
+        jobs[name]["status"] = "running"
+
+    # Allow overriding the target name passed to the pipeline (e.g. for each-sector jobs
+    # where the job name is "TOI1234_s34" but the pipeline target is "TOI1234")
+    target_name = kwargs.pop("target_name", name)
     log_file = LOG_DIR / f"{name}.log"
     jobs[name]["log_file"] = str(log_file)
+    sink_id = None
+    log_fh = None  # explicit file handle — closed in finally, not via `with`
 
-    # Parse period limits
-    period_min = kwargs.get("period_min")
-    period_max = kwargs.get("period_max")
-    period_limits = None
-    if period_min is not None and period_max is not None:
-        period_limits = (float(period_min), float(period_max))
-    elif period_min is not None:
-        period_limits = (float(period_min), None)
-    elif period_max is not None:
-        period_limits = (None, float(period_max))
+    try:
+        # Parse period limits
+        period_min = kwargs.get("period_min")
+        period_max = kwargs.get("period_max")
+        period_limits = None
+        if period_min is not None and period_max is not None:
+            period_limits = (float(period_min), float(period_max))
+        elif period_min is not None:
+            period_limits = (float(period_min), None)
+        elif period_max is not None:
+            period_limits = (None, float(period_max))
 
-    # Parse sigma clip values
-    def parse_sigma(val, default_lo=10, default_hi=5):
-        if not val or val.strip() == "" or val.strip().lower() == "none":
-            return None
-        parts = val.strip().split()
-        if len(parts) >= 2:
-            return (float(parts[0]), float(parts[1]))
-        elif len(parts) == 1:
-            return (float(parts[0]), default_hi)
-        return (default_lo, default_hi)
+        # Parse sigma clip values
+        def parse_sigma(val, default_lo=10, default_hi=5):
+            if val is None:
+                return None
+            val = str(val).strip()
+            if val == "" or val.lower() == "none":
+                return None
+            parts = val.split()
+            if len(parts) >= 2:
+                return (float(parts[0]), float(parts[1]))
+            elif len(parts) == 1:
+                return (float(parts[0]), default_hi)
+            return (default_lo, default_hi)
 
-    sigma_clip_raw = parse_sigma(kwargs.get("sigma_clip_raw", "10 5"))
-    sigma_clip_flat = parse_sigma(kwargs.get("sigma_clip_flat"))
+        sigma_clip_raw = parse_sigma(kwargs.get("sigma_clip_raw", "10 5"))
+        sigma_clip_flat = parse_sigma(kwargs.get("sigma_clip_flat"))
 
-    # Parse custom ephemeris
-    custom_ephem = kwargs.get("custom_ephem")
-    if custom_ephem and custom_ephem.strip():
-        parts = custom_ephem.strip().split()
-        if len(parts) == 6:
-            custom_ephem = [float(x) for x in parts]
+        # Parse custom ephemeris
+        custom_ephem = kwargs.get("custom_ephem")
+        if custom_ephem and custom_ephem.strip():
+            parts = custom_ephem.strip().split()
+            if len(parts) == 6:
+                custom_ephem = [float(x) for x in parts]
+            else:
+                custom_ephem = None
         else:
             custom_ephem = None
-    else:
-        custom_ephem = None
 
-    # Determine outdir and suffix
-    outdir = kwargs.get("outdir")
-    outdir = str(OUTPUT_DIR) if not outdir else outdir
-    suffix = kwargs.get("suffix")
-    suffix = None if not suffix else suffix
+        # Determine outdir and suffix
+        outdir = kwargs.get("outdir")
+        outdir = str(OUTPUT_DIR) if not outdir else outdir
+        suffix = kwargs.get("suffix")
+        suffix = None if not suffix else suffix
 
-    # Add loguru sink to capture logger output into the log file
-    sink_id = logger.add(str(log_file), format="{message}", level="DEBUG", filter="quicklook")
+        # Open the log file and set up streams — file stays open until the
+        # outermost finally block so no concurrent write hits a closed FD.
+        log_fh = open(log_file, "w", buffering=1, encoding="utf-8")
+        _tls_stdout.set_stream(log_fh)
+        _tls_stderr.set_stream(log_fh)
 
-    with open(log_file, "w", buffering=1) as f:
-        sys_stdout = sys.stdout
-        sys_stderr = sys.stderr
-        sys.stdout = f
-        sys.stderr = f
-        try:
-            if cancel_event.is_set():
-                raise InterruptedError("Job cancelled before start")
-            tql = TessQuickLook(
-                target_name=name,
-                sector=int(kwargs.get("sector", -1)),
-                pipeline=kwargs.get("pipeline", "spoc"),
-                flux_type=kwargs.get("fluxtype", "pdcsap"),
-                exptime=kwargs.get("exptime"),
-                quality_bitmask=kwargs.get("quality_bitmask", "default"),
-                flatten_method=kwargs.get("flatten_method", "biweight"),
-                gp_kernel=kwargs.get("gp_kernel", "periodic_auto"),
-                window_length=kwargs.get("window_length"),
-                pg_method=kwargs.get("pg_method", "gls"),
-                edge_cutoff=kwargs.get("edge_cutoff", 0.1),
-                sigma_clip_raw=sigma_clip_raw,
-                sigma_clip_flat=sigma_clip_flat,
-                Porb_limits=period_limits,
-                mask_ephem=kwargs.get("mask_ephem", False),
-                custom_ephem=custom_ephem,
-                archival_survey=kwargs.get("survey", "dss1"),
-                savefig=kwargs.get("save", False),
-                savetls=kwargs.get("save", False),
-                verbose=kwargs.get("verbose", True),
-                overwrite=kwargs.get("overwrite", False),
-                outdir=outdir,
-                suffix=suffix,
-            )
-            if cancel_event.is_set():
-                raise InterruptedError("Job cancelled")
-            tql.plot_tql(return_fig_and_paths=True)
-            if cancel_event.is_set():
-                jobs[name]["status"] = "cancelled"
-            else:
-                jobs[name]["status"] = "done"
-        except InterruptedError:
+        # Add loguru sink (uses its own FD to the same path in append mode)
+        sink_id = logger.add(
+            str(log_file),
+            format="{message}",
+            level="DEBUG",
+            filter="quicklook",
+            mode="a",
+            encoding="utf-8",
+        )
+
+        if cancel_event.is_set():
+            raise InterruptedError("Job cancelled before start")
+        tql = TessQuickLook(
+            target_name=target_name,
+            sector=int(kwargs.get("sector", -1)),
+            pipeline=kwargs.get("pipeline", "spoc"),
+            flux_type=kwargs.get("fluxtype", "pdcsap"),
+            exptime=kwargs.get("exptime"),
+            quality_bitmask=kwargs.get("quality_bitmask", "default"),
+            flatten_method=kwargs.get("flatten_method", "biweight"),
+            gp_kernel=kwargs.get("gp_kernel", "periodic_auto"),
+            window_length=kwargs.get("window_length"),
+            pg_method=kwargs.get("pg_method", "gls"),
+            edge_cutoff=kwargs.get("edge_cutoff", 0.1),
+            sigma_clip_raw=sigma_clip_raw,
+            sigma_clip_flat=sigma_clip_flat,
+            Porb_limits=period_limits,
+            mask_ephem=kwargs.get("mask_ephem", False),
+            custom_ephem=custom_ephem,
+            archival_survey=kwargs.get("survey", "dss1"),
+            savefig=kwargs.get("save", False),
+            savetls=kwargs.get("save", False),
+            verbose=kwargs.get("verbose", True),
+            overwrite=kwargs.get("overwrite", False),
+            outdir=outdir,
+            suffix=suffix,
+        )
+        if cancel_event.is_set():
+            raise InterruptedError("Job cancelled")
+        tql.plot_tql(return_fig_and_paths=True)
+        if cancel_event.is_set():
             jobs[name]["status"] = "cancelled"
-        except SystemExit as e:
-            jobs[name]["status"] = "error"
-            jobs[name]["error"] = f"Pipeline exited (code {e.code})"
-        except Exception as e:
-            jobs[name]["status"] = "error"
-            jobs[name]["error"] = str(e)
-            logger.error(f"Job failed: {e}")
-        finally:
-            sys.stdout = sys_stdout
-            sys.stderr = sys_stderr
+        else:
+            jobs[name]["status"] = "done"
+
+    except InterruptedError:
+        jobs[name]["status"] = "cancelled"
+    except QuickLookError as e:
+        jobs[name]["status"] = "error"
+        jobs[name]["error"] = str(e)
+        logger.warning(f"Job failed: {e}")
+    except Exception as e:
+        jobs[name]["status"] = "error"
+        jobs[name]["error"] = str(e)
+        logger.error(f"Job '{name}' failed unexpectedly: {e}")
+    finally:
+        # Tear down in safe order: streams first, then loguru sink, then file
+        _tls_stdout.clear_stream()
+        _tls_stderr.clear_stream()
+        if sink_id is not None:
             logger.remove(sink_id)
-            # Persist to SQLite
-            jobs[name]["finished_at"] = time.time()
-            _save_job_history(
-                name=name,
-                status=jobs[name]["status"],
-                error=jobs[name].get("error", ""),
-                params=jobs[name].get("params"),
-                submitted_at=jobs[name].get("submitted_at"),
-                finished_at=jobs[name]["finished_at"],
-                step_times=jobs[name].get("step_times", {}),
-            )
+        if log_fh is not None:
+            log_fh.close()
+        # Persist to SQLite
+        jobs[name]["finished_at"] = time.time()
+        _save_job_history(
+            name=name,
+            status=jobs[name]["status"],
+            error=jobs[name].get("error", ""),
+            params=jobs[name].get("params"),
+            submitted_at=jobs[name].get("submitted_at"),
+            finished_at=jobs[name]["finished_at"],
+            step_times=jobs[name].get("step_times", {}),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -317,27 +422,21 @@ def _parse_params(form):
 
 
 def _submit_job(name, params):
-    """Create and start a background job. Returns the sanitized name."""
-    name = sanitize_target_name(name)
+    """Enqueue a job for serial execution. Returns the job name."""
     cancel_event = Event()
-    jobs[name] = {
-        "status": "running",
-        "log_file": "",
-        "error": "",
-        "cancel_event": cancel_event,
-        "submitted_at": time.time(),
-        "params": params,
-        "step_times": {},
-    }
-    jobs.move_to_end(name)
+    with jobs_lock:
+        jobs[name] = {
+            "status": "queued",
+            "log_file": "",
+            "error": "",
+            "cancel_event": cancel_event,
+            "submitted_at": time.time(),
+            "params": params,
+            "step_times": {},
+        }
+        jobs.move_to_end(name)
 
-    thread = Thread(
-        target=run_quicklook_background,
-        kwargs={"name": name, "cancel_event": cancel_event, **params},
-        daemon=True,
-    )
-    jobs[name]["thread"] = thread
-    thread.start()
+    _job_queue.put((name, cancel_event, params))
     return name
 
 
@@ -361,8 +460,9 @@ def submit_job():
     name = sanitize_target_name(name)
     params = _parse_params(form)
 
-    if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
-        return jsonify({"ok": False, "reason": f"Job '{name}' is already running"}), 409
+    with jobs_lock:
+        if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
+            return jsonify({"ok": False, "reason": f"Job '{name}' is already running"}), 409
 
     _submit_job(name, params)
     return jsonify({"ok": True, "name": name})
@@ -373,7 +473,7 @@ def batch_submit():
     """Submit multiple targets sharing the same pipeline parameters."""
     data = request.json or {}
     targets = data.get("targets", [])
-    params_template = data.get("params", {})
+    params_template = _parse_params(data.get("params", {}))
 
     if not targets:
         return jsonify({"ok": False, "reason": "No targets provided"}), 400
@@ -385,11 +485,60 @@ def batch_submit():
         if not raw_name:
             continue
         name = sanitize_target_name(raw_name)
-        if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
-            skipped.append(name)
-            continue
+        with jobs_lock:
+            if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
+                skipped.append(name)
+                continue
         _submit_job(name, dict(params_template))
         submitted.append(name)
+
+    return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
+
+
+@app.route("/available-sectors")
+def available_sectors():
+    """Return the list of available sectors for a target + pipeline."""
+    name = request.args.get("name", "").strip()
+    pipeline = request.args.get("pipeline", "spoc").strip()
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    name = sanitize_target_name(name)
+    try:
+        sectors = get_available_sectors(name, pipeline=pipeline)
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)}), 500
+    if not sectors:
+        return jsonify({"ok": False, "reason": f"No sectors found for {name} with {pipeline}"}), 404
+    return jsonify({"ok": True, "sectors": sectors})
+
+
+@app.route("/each-sector-submit", methods=["POST"])
+def each_sector_submit():
+    """Submit one job per sector for a single target (--each-sector equivalent)."""
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    sectors = data.get("sectors", [])
+    params_template = _parse_params(data.get("params", {}))
+
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    if not sectors:
+        return jsonify({"ok": False, "reason": "No sectors provided"}), 400
+
+    name = sanitize_target_name(name)
+    submitted = []
+    skipped = []
+    for sector in sectors:
+        job_name = f"{name}_s{int(sector)}"
+        params = dict(params_template)
+        params["sector"] = int(sector)
+        params["target_name"] = name  # pass original target name to the pipeline
+        with jobs_lock:
+            if job_name in jobs and jobs[job_name]["status"] not in ("done", "error", "cancelled"):
+                skipped.append(job_name)
+                continue
+        _submit_job(job_name, params)
+        submitted.append(job_name)
 
     return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
 
@@ -398,15 +547,16 @@ def batch_submit():
 def jobs_json():
     """Return status of all jobs (for queue display)."""
     result = []
-    for name, info in jobs.items():
-        result.append(
-            {
-                "name": name,
-                "status": info["status"],
-                "error": info.get("error", ""),
-                "submitted_at": info.get("submitted_at"),
-            }
-        )
+    with jobs_lock:
+        for name, info in jobs.items():
+            result.append(
+                {
+                    "name": name,
+                    "status": info["status"],
+                    "error": info.get("error", ""),
+                    "submitted_at": info.get("submitted_at"),
+                }
+            )
     return jsonify(result)
 
 
@@ -414,7 +564,7 @@ def jobs_json():
 def cancel(target):
     """Cancel a running job."""
     info = jobs.get(target)
-    if info and info["status"] == "running":
+    if info and info["status"] in ("running", "queued"):
         info["cancel_event"].set()
         info["status"] = "cancelled"
         return jsonify({"ok": True})
@@ -471,8 +621,10 @@ def bulk_delete():
 @app.route("/results-json/<target>")
 def results_json(target):
     """Return paths to output PNG and H5 files for a completed job."""
-    images = sorted(OUTPUT_DIR.glob(f"*{target}*.png"), key=os.path.getmtime, reverse=True)
-    h5s = sorted(OUTPUT_DIR.glob(f"*{target}*_tls.h5"), key=os.path.getmtime, reverse=True)
+    # Output files use names without hyphens (e.g. TOI4152 not TOI-4152)
+    search_name = target.replace("-", "")
+    images = sorted(OUTPUT_DIR.glob(f"*{search_name}*.png"), key=os.path.getmtime, reverse=True)
+    h5s = sorted(OUTPUT_DIR.glob(f"*{search_name}*_tls.h5"), key=os.path.getmtime, reverse=True)
     return jsonify(
         {
             "image": f"/static/outputs/{images[0].name}" if images else None,
@@ -495,7 +647,6 @@ def ws_log(ws, target):
         ws.send(json.dumps({"type": "finish", "status": "unknown"}))
         return
 
-    log_path = Path(info["log_file"]) if info.get("log_file") else None
     last_size = 0
     last_step_idx = -1
     step_start_time = time.time()
@@ -511,16 +662,15 @@ def ws_log(ws, target):
                     if evt:
                         evt.set()
                     info["status"] = "cancelled"
-        except (json.JSONDecodeError, TypeError):
-            pass
-        except Exception:
+        except (json.JSONDecodeError, TypeError, OSError):
             pass
 
         status = info.get("status", "unknown")
 
-        # Read new log content
+        # Read new log content (re-read path each iteration in case job thread hasn't set it yet)
         new_lines = ""
         full_log = ""
+        log_path = Path(info["log_file"]) if info.get("log_file") else None
         if log_path and log_path.exists():
             content = log_path.read_text()
             full_log = content
@@ -555,7 +705,7 @@ def ws_log(ws, target):
                 remaining += max(0, avg_current - elapsed_in_step)
                 eta_seconds = max(0, int(remaining))
         else:
-            step_label = "Starting"
+            step_label = "Queued" if status == "queued" else "Starting"
             pct = 0
 
         # Send update
@@ -570,7 +720,7 @@ def ws_log(ws, target):
             if eta_seconds is not None:
                 payload["eta"] = eta_seconds
             ws.send(json.dumps(payload))
-        except Exception:
+        except (OSError, ConnectionError, BrokenPipeError):
             break  # Client disconnected
 
         if status in ("done", "error", "cancelled"):
@@ -589,7 +739,7 @@ def ws_log(ws, target):
                         }
                     )
                 )
-            except Exception:
+            except (OSError, ConnectionError, BrokenPipeError):
                 pass
             break
 
