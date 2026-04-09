@@ -1,174 +1,164 @@
 # QuickLook
-`quicklook` is a Python program that runs a simple pipeline to search for transit signal in TESS (and Kepler soon) light curves. This program can be run in a jupyter notebook, from the terminal using the `ql` script, or via an optional **web GUI**.
 
-## Use case
-Given target name, run periodograms on a TESS or Kepler lightcurve (if it exists) to measure the stellar rotation period of the star and the orbital period of a potential companion i.e. planet, brown dwarf, or star.
-Although `quicklook` is optimized to find transiting exoplanets, this tool can also find eclipsing binaries and many other periodic signals.
+[![Documentation](https://readthedocs.org/projects/quicklook/badge/?version=latest)](https://quicklook.readthedocs.io/en/latest/)
+[![CI](https://github.com/jpdeleon/quicklook/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jpdeleon/quicklook/actions/workflows/build-and-test.yml)
+[![PyPI](https://img.shields.io/pypi/v/quicklook-package)](https://pypi.org/project/quicklook-package/)
+[![Python](https://img.shields.io/pypi/pyversions/quicklook-package)](https://pypi.org/project/quicklook-package/)
+
+`quicklook` is a Python pipeline that searches for transit signals in [TESS](https://tess.mit.edu/) light curves. Given a target name, it downloads the light curve, estimates the stellar rotation period, searches for transiting companions using the [Transit Least Squares](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..39H/abstract) (TLS) algorithm, and produces a publication-ready 9-panel diagnostic figure.
+
+Although `quicklook` is optimized to find transiting exoplanets, it can also detect eclipsing binaries, variable stars, and other periodic signals.
+
+## Features
+
+- **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC
+- **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods
+- **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
+- **Transit detection** -- Transit Least Squares (TLS) periodogram
+- **Neighbor check** -- Gaia source overlay on archival sky images
+- **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
+- **Web GUI** -- Flask-based interface with live progress, job queue, and gallery
+- **HDF5 output** -- full TLS results saved for downstream filtering
 
 ## Installation
-Create a conda environment called, say `my_env`, and install there the latest version of `quicklook-package`:
+
+Create a conda environment and install from PyPI:
 
 ```bash
-$ conda create -n my_env python=3.12
-$ conda activate my_env
-(my_env) $ pip install -U quicklook-package
+conda create -n quicklook python=3.12
+conda activate quicklook
+pip install -U quicklook-package
 ```
 
-If you want to run `quicklook` locally in a notebook, you also need to install jupyter
-```
-(my_env) $ pip install jupyter notebook
-```
-See [example notebook](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb).
+### Optional extras
 
-## Try it on Google colab
+```bash
+# Web GUI
+pip install -U "quicklook-package[gui]"
+
+# Jupyter notebooks
+pip install -U "quicklook-package[notebooks]"
+
+# Development (testing, linting, formatting)
+pip install -U "quicklook-package[dev]"
+```
+
+## Try it on Google Colab
 
 <a href="https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
-## Optional: Install with Web GUI
-QuickLook also provides a simple web interface (Flask-based) under the app/ directory.
-This is not installed by default to keep dependencies minimal.
+## Usage
 
-To install with GUI support:
-```bash
-(my_env) $ pip install -U "quicklook-package[gui]"
-```
-
-## Running the Web GUI
-
-After installing the gui, you can launch the Flask app locally:
+### Command line
 
 ```bash
-(my_env) $ ql-gui
+# Basic run on the latest TESS sector
+ql --name WASP-21 -save -verbose
+
+# Specific sector and pipeline
+ql --name TOI-125.01 --sector 2 --pipeline qlp
+
+# Custom detrending
+ql --name TOI-125.01 --flatten_method cosine --window_length 0.3
+
+# Restrict TLS period search range
+ql --name TOI-125.01 --period_limits 1 5
+
+# Run on every available sector
+ql --name TOI-125.01 --each-sector -save
+
+# Run all sectors with 4 parallel workers
+ql --name TOI-125.01 --each-sector -j 4 -save
 ```
 
-This will start a local server at http://127.0.0.1:5000.
-Open it in your browser, enter the target information (name, sector, pipeline, flux type), and QuickLook will generate the analysis figure.
+### Python API
 
-Results are saved under app/static/outputs/ and re-used if they already exist.
+```python
+from quicklook import TessQuickLook
 
-## Command line script
+ql = TessQuickLook(
+    target_name="WASP-21",
+    sector=56,
+    pipeline="SPOC",
+    flux_type="pdcsap",
+    verbose=True,
+)
+
+fig = ql.plot_tql()
+
+# Access results
+print(f"Rotation period: {ql.Prot_ls:.2f} days")
+print(f"TLS period: {ql.tls_results.period:.4f} days")
+print(f"TLS SDE: {ql.tls_results.SDE:.1f}")
+```
+
+### Web GUI
+
 ```bash
-(my_env) $ ql
-usage: ql [-h] [--name NAME] [--sector SECTOR] [--fluxtype {pdcsap,sap}] [--pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}] [--exptime EXPTIME] [--quality_bitmask {none,default,hard,hardest}]
-          [--flatten_method FLATTEN_METHOD] [--pg_method {gls,ls,bls}] [--window_length WINDOW_LENGTH] [--edge_cutoff EDGE_CUTOFF] [--sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW]
-          [--sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT] [--period_limits PERIOD_LIMITS PERIOD_LIMITS]
-          [--survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}]
-          [--custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM] [--outdir OUTDIR] [-save] [-verbose] [-overwrite] [-mask_ephem] [--suffix SUFFIX]
-
-Run a quick look analysis of a TESS lightcurve.
-Notes:
-* use single hyphen (-flag) if no value is needed.
-* use double hyphen (--flag value) if value is needed.
-
-Example: ql --name WASP-21 -save -verbose
-
-options:
-  -h, --help            show this help message and exit
-  --name NAME           target name
-  --sector SECTOR       TESS sector (default=-1 (last available sector))
-  --fluxtype {pdcsap,sap}
-                        type of lightcurve
-  --pipeline {spoc,tess-spoc,tasoc,cdips,pathos,qlp,tglc}
-                        lightcurve produced from which pipeline (default=SPOC)
-  --exptime EXPTIME     exposure time (default is whatever is used in available sector)
-  --quality_bitmask {none,default,hard,hardest}
-                        remove specific data points identified in TESS data release notes
-  --flatten_method FLATTEN_METHOD
-                        wotan flatten method (default=biweight)
-  --pg_method {gls,ls,bls}
-                        periodogram method (default=gls)
-  --window_length WINDOW_LENGTH
-                        flatten method window length (default=0.5 days); window length is optimized when set to 0
-  --edge_cutoff EDGE_CUTOFF
-                        cut each edges (default=0.1 days)
-  --sigma_clip_raw SIGMA_CLIP_RAW SIGMA_CLIP_RAW
-                        (sigma_lo,sigma_hi) for outlier rejection of raw lc before flattening/detrending
-  --sigma_clip_flat SIGMA_CLIP_FLAT SIGMA_CLIP_FLAT
-                        (sigma_lo,sigma_hi) for outlier rejection of flattened/detrended lc
-  --period_limits PERIOD_LIMITS PERIOD_LIMITS
-                        period limits in TLS search; default=(0.5, baseline/2) d
-  --survey {dss1,poss2ukstu_red,poss2ukstu_ir,poss2ukstu_blue,poss1_blue,poss1_red,all,quickv,phase2_gsc2,phase2_gsc1}
-                        archival image survey name if using img option (default=dss1)
-  --custom_ephem CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM CUSTOM_EPHEM
-                        custom ephemeris in days. Example: --custom_ephem Tc Tcerr P Perr Tdur Tdurerr
-  --outdir OUTDIR       output directory
-  -save                 save figure and tls
-  -verbose              show details
-  -overwrite            overwrite files
-  -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
-  --suffix SUFFIX       add suffix to filename if -save flag is used
-  --each-sector         run on each available sector for the given pipeline individually
-  -j, --jobs JOBS       number of parallel jobs when using --each-sector (default=1)
+ql-gui
 ```
 
-## Examples
+Open http://127.0.0.1:5000 in your browser. Enter a target, adjust parameters, and click **Run QuickLook**. Progress is streamed live via WebSocket. Supports single targets, batch submission, and each-sector mode.
 
-1. Run `quicklook` on the most recent TESS lightcurve of TOI-5071 (aka K2-100).
+![QuickLook Web GUI](docs/img/ql-gui.png)
 
-```shell
-(my_env) $ ql --name WASP-21
-```
-![img](tests/WASP-21_s83_pdcsap_sc.png)
+## Output figure
 
-The figure above shows 9 panels. Let's break them down.
-* top row
-  - left (panel 1): raw lightcurve (blue marker) and trend (red line)
-  - middle (panel 2): [Lomb-Scargle periodogram](https://docs.astropy.org/en/stable/timeseries/lombscargle.html) used to estimate the star's rotation period; this is useful to find active and variable stars
-  - right (panel 3): raw lightcurve phase-folded at the computed peak of Lomb-Scargle periodogram (corresponding to the stellar rotation period) from panel 1;
-* middle row
-  - left (panel 4): raw lightcurve divided by the trend line (aka flattened lightcurve) in panel 1 and the detected transits (red markers; determined from the TLS periodogram in panel 5)
-  - middle (panel 5): periodogram using the [transit least squares](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..39H/abstract) (TLS) algorithm
-  - right (panel 6): TESS aperture (blue polygon) centered on the target and the positions of nearby sources from the Gaia survey (orange and red markers) overlaid on the archival [DSS](https://archive.stsci.edu/cgi-bin/dss_form) image; this is useful to see if there are other stars that can be the source of the signal aside from the target
-* bottom row
-  - left (panel 7): phase-folded lightcurve at the derived peak of TLS periodogram (corresponding to the orbital period); odd (red markers) and even (blue markers) transits and best-fit transit model (black line) are also shown
-  - middle (panel 8): phase-folded lightcurve zoomed at phase=0.5 to check for a secondary eclipse which is a strong indicator of a self-luminous companion such as an eclipsing binary or a high-albedo brown dwarf; the computed transit depth (horizontal dashed line) and transit duration (vertical dashed line) are shown for reference
-  - right (panel 9): summary info about the star and potential companion (e.g. planet candidate)
-
-Try changing the parameters:
-```shell
-(my_env) $ ql --name TIC-52368076 -verbose -save | tee output.log
-(my_env) $ ql --name TOI-125.01 --pipeline qlp #specific pipeline
-(my_env) $ ql --name TOI-125.01 --sector 2 #specific TESS sector
-(my_env) $ ql --name TOI-125.01 --flatten_method cosine #specific function to detrend baseline
-(my_env) $ ql --name TOI-125.01 --period_limits 1 5 #limit search between 1-5 days
-(my_env) $ ql --name TOI-125.01 --each-sector -save #run on every available sector
-(my_env) $ ql --name TOI-125.01 --each-sector -j 4 -save #same but 4 sectors in parallel
+```bash
+ql --name WASP-21 -save -verbose
 ```
 
-## Advanced usage (batch processing)
+![Example output](tests/WASP-21_s83_pdcsap_sc.png)
 
-If you would like to run `ql` on a list of TIC IDs (saved as `tic_ids.txt`), then you can make a batch script named `run_ql_given_tic.batch`. The output files containing the logs (*.log), plots (*.png), and periodogram results (*_tls.h5) will be saved in `tic_dir` directory:
+The 9-panel figure shows:
 
-```shell
-(my_env) $ cat tic_ids.txt | while read tic; do echo ql --name TIC$tic -save --outdir tic_dir | tee TIC$tic.log; done > run_ql_given_tic.batch
+| Panel | Content |
+|-------|---------|
+| 1 | Raw light curve + trend line |
+| 2 | GLS periodogram (stellar rotation period) |
+| 3 | Phase-folded light curve at rotation period |
+| 4 | Flattened light curve + detected transits |
+| 5 | TLS periodogram (orbital period) |
+| 6 | TESS aperture + Gaia sources on archival image |
+| 7 | Phase-folded transit (odd/even comparison) |
+| 8 | Secondary eclipse check at phase 0.5 |
+| 9 | Summary of stellar and companion parameters |
+
+## CLI tools
+
+| Command | Description |
+|---------|-------------|
+| `ql` | Run the full QuickLook pipeline on a target |
+| `read_tls` | Extract TLS results from a directory of `.h5` files into a CSV |
+| `rank_tls` | Filter and rank candidates by SDE from the CSV output |
+| `ql-gui` | Launch the web GUI (requires `[gui]` extra) |
+
+## Batch processing
+
+Process a list of TIC IDs:
+
+```bash
+# Generate batch script
+cat tic_ids.txt | while read tic; do
+  echo "ql --name TIC$tic -save --outdir results | tee TIC$tic.log"
+done > run_batch.sh
+
+# Run in parallel with GNU parallel
+cat run_batch.sh | parallel -j 4
+
+# Extract and rank results
+read_tls results/
+rank_tls results/ --output_dir ranked
+
+# Combine ranked plots into a PDF
+pip install img2pdf
+img2pdf ranked/*.png --output ranked.pdf
 ```
 
-To test the Nth line of the batch script,
+## Documentation
 
-```shell
-(my_env) $ cat run_ql_given_tic.batch | sed -n Np | sh
-```
+Full documentation is available at [quicklook.readthedocs.io](https://quicklook.readthedocs.io/en/latest/).
 
-To run all the lines in parallel using [GNU `parallel`](https://www.gnu.org/software/parallel/) with N cores,
+## License
 
-```shell
-(my_env) $ cat run_ql_given_tic.batch | parallel -j N
-```
-
-After the batch script is done running, we can rank `ql` output in terms of Signal Detection Efficiency (SDE, See [Hippke et al. 2019](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..39H/abstract)) using `read_tls` script:
-
-```shell
-(my_env) $ read_tls tic_dir
-```
-
-Then, you can run the `rank_tls` script to rank the candidates after applying filters based on the `tic_dir_tls.csv` output:
-```shell
-(my_env) $ rank_tls tic_dir --output_dir ranked
-```
-This copies the filtered candidates plots into the new "ranked" directory.
-
-Finally, you can run the [`img2pdf`](https://pypi.org/project/img2pdf/) so it's easier to visually examine all the ranked candidates in one pdf file:
-```shell
-(my_env) $ apt install img2pdf
-(my_env) $ img2pdf ranked/*.png --output ranked.pdf
-```
+See [LICENSE](LICENSE) for details.
