@@ -1,211 +1,1186 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
   <style>
+    /* --- Theme variables --- */
+    :root {
+      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
+      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
+      --input-border: #ccc; --hover-bg: #f5f6fa;
+      --primary: #4a6cf7; --primary-hover: #3451d1;
+      --green: #22c55e; --green-hover: #16a34a;
+      --red: #ef4444; --red-hover: #dc2626;
+      --log-bg: #1a1a2e; --log-text: #e0e0e0;
+      --badge-run-bg: #dbeafe; --badge-run-fg: #1d4ed8;
+      --badge-done-bg: #dcfce7; --badge-done-fg: #15803d;
+      --badge-err-bg: #fee2e2; --badge-err-fg: #b91c1c;
+      --badge-cancel-bg: #f3f4f6; --badge-cancel-fg: #6b7280;
+      --status-run-bg: #eff6ff; --status-run-border: #bfdbfe; --status-run-fg: #1d4ed8;
+      --status-done-bg: #f0fdf4; --status-done-border: #bbf7d0; --status-done-fg: #15803d;
+      --status-err-bg: #fef2f2; --status-err-border: #fecaca; --status-err-fg: #b91c1c;
+      --progress-bg: #e5e7eb;
+      --toast-bg: #333; --toast-fg: #fff;
+    }
+    [data-theme="dark"] {
+      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
+      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
+      --input-border: #3a3a4e; --hover-bg: #222236;
+      --primary: #5b7cf9; --primary-hover: #7b96ff;
+      --green: #34d874; --green-hover: #22c55e;
+      --red: #f87171; --red-hover: #ef4444;
+      --log-bg: #0a0a14; --log-text: #c0c0c0;
+      --badge-run-bg: #1e3a5f; --badge-run-fg: #93c5fd;
+      --badge-done-bg: #14532d; --badge-done-fg: #86efac;
+      --badge-err-bg: #7f1d1d; --badge-err-fg: #fca5a5;
+      --badge-cancel-bg: #1f2937; --badge-cancel-fg: #9ca3af;
+      --status-run-bg: #1e3a5f; --status-run-border: #1d4ed8; --status-run-fg: #93c5fd;
+      --status-done-bg: #14532d; --status-done-border: #15803d; --status-done-fg: #86efac;
+      --status-err-bg: #7f1d1d; --status-err-border: #b91c1c; --status-err-fg: #fca5a5;
+      --progress-bg: #2a2a3e;
+      --toast-bg: #e0e0e0; --toast-fg: #1a1a2e;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
     body {
-      font-family: Arial, sans-serif;
-      max-width: 1000px;
-      margin: 20px auto;
-      padding: 0 20px;
-      line-height: 1.6;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 960px; margin: 0 auto; padding: 24px 20px;
+      color: var(--text); background: var(--bg); line-height: 1.5;
+      transition: background-color 0.3s, color 0.3s;
     }
-    h1, h2 { text-align: center; }
-    form {
-      margin-bottom: 30px;
-      padding: 15px;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      background: #f9f9f9;
+    a { color: var(--primary); }
+
+    /* --- Header --- */
+    .header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; position: relative; }
+    h1 { text-align: center; font-size: 1.6rem; margin: 0; }
+    .subtitle { text-align: center; color: var(--text-sec); font-size: 0.9rem; margin-bottom: 24px; }
+    .theme-toggle {
+      position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
+      color: var(--text); transition: background-color 0.2s;
     }
-    label { display: block; margin-top: 10px; font-weight: bold; }
-    input[type="text"], input[type="number"], select {
-      width: 100%;
-      padding: 6px;
-      margin-top: 4px;
-      border-radius: 4px;
-      border: 1px solid #ccc;
-      box-sizing: border-box;
+    .theme-toggle:hover { background: var(--hover-bg); }
+
+    /* --- Card --- */
+    .card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      padding: 20px 24px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
-    button {
-      margin-top: 15px;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      background-color: #007BFF;
-      color: white;
-      cursor: pointer;
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; }
+    .form-grid .full-width { grid-column: 1 / -1; }
+    label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 3px; color: var(--text); }
+    .label-row { display: flex; align-items: center; gap: 6px; }
+    .help-tip {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 16px; height: 16px; border-radius: 50%; font-size: 0.65rem; font-weight: 700;
+      background: var(--border); color: var(--text-sec); cursor: help; flex-shrink: 0;
     }
-    button:hover { background-color: #0056b3; }
-    img {
-      display: block;
-      margin: 20px auto;
-      max-width: 100%;
-      height: auto;
-      border: 1px solid #ccc;
-      border-radius: 8px;
+    input[type="text"], input[type="number"], select, textarea {
+      width: 100%; padding: 7px 10px; border: 1px solid var(--input-border); border-radius: 5px;
+      font-size: 0.9rem; background: var(--input-bg); color: var(--text);
+      transition: border-color 0.2s, background-color 0.2s;
     }
-    .download-link { text-align: center; margin-top: 15px; }
-    .download-link a { text-decoration: none; color: #007BFF; font-weight: bold; }
-    .download-link a:hover { text-decoration: underline; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--card-bg); }
+    input.invalid { border-color: var(--red); }
+    .validation-msg { color: var(--red); font-size: 0.78rem; margin-top: 2px; display: none; }
+    .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
+    .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
+
+    /* --- Buttons --- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 10px 24px; font-size: 0.95rem; font-weight: 600; border: none; border-radius: 6px;
+      cursor: pointer; transition: background-color 0.2s, opacity 0.2s; text-decoration: none; color: #fff;
+    }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-green { background: var(--green); }
+    .btn-green:hover { background: var(--green-hover); }
+    .btn-red { background: var(--red); }
+    .btn-red:hover { background: var(--red-hover); }
+    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+    /* --- Batch mode --- */
+    .batch-toggle { font-size: 0.85rem; color: var(--primary); cursor: pointer; font-weight: 600; background: none; border: none; padding: 0; }
+    .batch-section { display: none; margin-top: 10px; }
+    .batch-section.visible { display: block; }
+    .batch-section textarea { min-height: 80px; font-family: monospace; font-size: 0.85rem; resize: vertical; }
+    .batch-hint { font-size: 0.78rem; color: var(--text-sec); margin-top: 4px; }
+
+    /* --- Job queue --- */
+    .queue-section { margin-bottom: 16px; }
+    .queue-section h2 { font-size: 1rem; margin-bottom: 8px; }
+    .queue-list { list-style: none; padding: 0; margin: 0; }
+    .queue-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 6px; margin-bottom: 6px; font-size: 0.85rem;
+    }
+    .queue-item .job-name { font-weight: 600; flex: 1; }
+    .queue-item .job-time { font-size: 0.72rem; color: var(--text-sec); }
+    .queue-item .job-error { font-size: 0.72rem; color: var(--red); max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .badge-running { background: var(--badge-run-bg); color: var(--badge-run-fg); }
+    .badge-done { background: var(--badge-done-bg); color: var(--badge-done-fg); }
+    .badge-error { background: var(--badge-err-bg); color: var(--badge-err-fg); }
+    .badge-cancelled { background: var(--badge-cancel-bg); color: var(--badge-cancel-fg); }
+
+    /* --- Status bar --- */
+    .status-bar {
+      display: none; align-items: center; gap: 10px; padding: 10px 16px;
+      border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;
+    }
+    .status-bar.running { display: flex; background: var(--status-run-bg); border: 1px solid var(--status-run-border); color: var(--status-run-fg); }
+    .status-bar.done { display: flex; background: var(--status-done-bg); border: 1px solid var(--status-done-border); color: var(--status-done-fg); }
+    .status-bar.error, .status-bar.cancelled {
+      display: flex; background: var(--status-err-bg); border: 1px solid var(--status-err-border); color: var(--status-err-fg);
+    }
+    .spinner {
+      width: 18px; height: 18px; border: 3px solid currentColor; border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-bar .btn { margin-left: auto; }
+
+    /* --- Progress --- */
+    .progress-section { display: none; margin-bottom: 16px; }
+    .progress-section.visible { display: block; }
+    .progress-bar-wrap { background: var(--progress-bg); border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 6px; }
+    .progress-bar-fill { height: 100%; background: var(--primary); border-radius: 6px; transition: width 0.5s ease; width: 0%; }
+    .progress-bar-wrap.done .progress-bar-fill { background: var(--green); }
+    .progress-bar-wrap.error .progress-bar-fill, .progress-bar-wrap.cancelled .progress-bar-fill { background: var(--red); }
+    .progress-label { font-size: 0.82rem; color: var(--text-sec); }
+
+    /* --- Log --- */
+    .log-section { display: none; }
+    .log-section.visible { display: block; }
+    .log-toggle {
+      display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+      font-size: 0.85rem; font-weight: 600; color: var(--primary); margin-bottom: 6px;
+      user-select: none; border: none; background: none; padding: 0;
+    }
+    .log-toggle .arrow { transition: transform 0.2s; }
+    .log-toggle.open .arrow { transform: rotate(90deg); }
     pre {
-      background:#f0f0f0;
-      padding:10px;
-      border:1px solid #ccc;
-      max-height:400px;
-      overflow:auto;
-      white-space: pre-wrap;
+      background: var(--log-bg); color: var(--log-text); padding: 14px; border-radius: 8px;
+      max-height: 300px; overflow: auto; white-space: pre-wrap; font-size: 0.78rem;
+      line-height: 1.6; margin-top: 0;
     }
-    #loader {
-      display: none;
-      border: 8px solid #f3f3f3;
-      border-top: 8px solid #007BFF;
-      border-radius: 50%;
-      width: 50px;
-      height: 50px;
-      animation: spin 1s linear infinite;
-      margin: 20px auto;
+
+    /* --- Result --- */
+    .result-section { display: none; }
+    .result-section.visible { display: block; }
+    .result-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
+    .result-section img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .result-actions { display: flex; gap: 12px; margin-top: 12px; justify-content: center; }
+
+    /* --- Recent results --- */
+    .recent-section { margin-top: 28px; }
+    .recent-section h2 { font-size: 1.1rem; margin-bottom: 12px; }
+    .recent-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px;
     }
-    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .gallery-button {
-      display: block;
-      margin: 20px auto;
-      padding: 10px 20px;
-      font-size: 16px;
-      border: none;
-      border-radius: 6px;
-      background-color: #28a745;
-      color: white;
-      cursor: pointer;
-      text-align: center;
-      text-decoration: none;
+    .recent-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      overflow: hidden; transition: box-shadow 0.2s, transform 0.15s; position: relative;
     }
-    .gallery-button:hover { background-color: #218838; }
+    .recent-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
+    .recent-card img { width: 100%; height: auto; display: block; cursor: pointer; }
+    .recent-card .card-footer {
+      display: flex; align-items: center; padding: 4px 8px;
+      border-top: 1px solid var(--border-light); gap: 4px;
+    }
+    .recent-card .card-label {
+      flex: 1; font-size: 0.72rem; color: var(--text-sec);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .delete-btn {
+      background: none; border: none; cursor: pointer; color: var(--text-sec); font-size: 1rem;
+      padding: 2px 4px; line-height: 1; transition: color 0.15s;
+    }
+    .delete-btn:hover { color: var(--red); }
+
+    .footer-nav { text-align: center; margin-top: 20px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+    /* --- Collapsible sections --- */
+    .collapsible {
+      background: var(--hover-bg); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 12px; overflow: hidden;
+    }
+    .collapsible-header {
+      display: flex; align-items: center; justify-content: space-between; width: 100%;
+      padding: 12px 16px; background: var(--card-bg); border: none; cursor: pointer;
+      font-size: 0.95rem; font-weight: 600; color: var(--text); text-align: left;
+      transition: background-color 0.15s;
+    }
+    .collapsible-header:hover { background: var(--hover-bg); }
+    .collapsible-header .arrow { transition: transform 0.2s; font-size: 0.75rem; color: var(--text-sec); }
+    .collapsible.open .collapsible-header .arrow { transform: rotate(90deg); }
+    .collapsible-content {
+      display: none; padding: 0 16px 16px; border-top: 1px solid var(--border-light);
+    }
+    .collapsible.open .collapsible-content { display: block; }
+
+    /* --- Toast notifications --- */
+    .toast-container {
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto; padding: 10px 16px; border-radius: 8px;
+      font-size: 0.85rem; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      animation: toast-in 0.3s ease; max-width: 340px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .toast.info { background: var(--status-run-bg); color: var(--status-run-fg); border: 1px solid var(--status-run-border); }
+    .toast.success { background: var(--status-done-bg); color: var(--status-done-fg); border: 1px solid var(--status-done-border); }
+    .toast.error { background: var(--status-err-bg); color: var(--status-err-fg); border: 1px solid var(--status-err-border); }
+    .toast.leaving { animation: toast-out 0.3s ease forwards; }
+    @keyframes toast-in { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+    @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateX(40px); } }
+    .toast-close { background: none; border: none; cursor: pointer; font-size: 1rem; color: inherit; opacity: 0.6; padding: 0 0 0 6px; }
+    .toast-close:hover { opacity: 1; }
+
+    /* --- Kbd hint --- */
+    .kbd-hint { font-size: 0.72rem; color: var(--text-sec); margin-left: 8px; }
+    kbd { background: var(--progress-bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 5px; font-size: 0.72rem; font-family: inherit; }
+
+    @media (max-width: 600px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .checkbox-group { flex-wrap: wrap; gap: 10px; }
+      .recent-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+      .theme-toggle { position: static; transform: none; }
+      .header { flex-wrap: wrap; }
+    }
   </style>
 </head>
 <body>
-<h1>TESS QuickLook Pipeline</h1>
 
-<form method="post" id="qlForm">
-  <label for="name">Target Name:</label>
-  <input type="text" name="name" id="name" value="{{ request.form.name or '' }}" required>
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
 
-  <label for="sector">Sector:</label>
-  <input type="number" name="sector" id="sector" value="{{ request.form.sector or -1 }}">
+<div class="header">
+  <h1>TESS QuickLook</h1>
+  <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
+</div>
+<p class="subtitle">Transit search pipeline for TESS light curves</p>
 
-  <label for="pipeline">Pipeline:</label>
-  <select name="pipeline" id="pipeline">
-    {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
-    <option value="{{p}}" {% if request.form.pipeline == p %}selected{% endif %}>{{p}}</option>
-    {% endfor %}
-  </select>
+<form id="qlForm" class="card">
+  <!-- Basic Options -->
+  <div class="collapsible open" data-section="basic">
+    <button type="button" class="collapsible-header" onclick="toggleCollapsible(this)">
+      <span>Basic Options</span>
+      <span class="arrow">&#9654;</span>
+    </button>
+    <div class="collapsible-content">
+      <div class="form-grid">
+        <div class="full-width">
+          <div class="label-row">
+            <label for="name">Target Name</label>
+            <span class="help-tip" title="TOI ID (e.g. TOI-1234), TIC ID (e.g. TIC 12345678), or common name (e.g. WASP-21)">?</span>
+          </div>
+          <input type="text" name="name" id="name" placeholder="e.g. TOI-1234, TIC 12345678" required autofocus>
+          <div class="validation-msg" id="nameValidation">Enter a target name (TOI, TIC, or common name)</div>
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="sector">Sector</label>
+            <span class="help-tip" title="-1 = latest sector. Ignored when 'Each Sector' is checked.">?</span>
+          </div>
+          <input type="number" name="sector" id="sector" value="-1">
+          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
+            <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
+          </label>
+        </div>
+        <div>
+          <label for="pipeline">Pipeline</label>
+          <select name="pipeline" id="pipeline">
+            {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
+            <option value="{{p}}">{{ p | upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="fluxtype">Flux Type</label>
+          <select name="fluxtype" id="fluxtype">
+            {% for f in ['pdcsap','sap'] %}
+            <option value="{{f}}">{{ f | upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="exptime">Exposure Time (s)</label>
+            <span class="help-tip" title="Cadence in seconds: 20 (20s), 120 (2min), 600 (10min), 1800 (30min). Leave blank for auto-detect.">?</span>
+          </div>
+          <input type="number" name="exptime" id="exptime" placeholder="auto">
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <label for="fluxtype">Flux Type:</label>
-  <select name="fluxtype" id="fluxtype">
-    {% for f in ['pdcsap','sap'] %}
-    <option value="{{f}}" {% if request.form.fluxtype == f %}selected{% endif %}>{{f}}</option>
-    {% endfor %}
-  </select>
+  <!-- Detrending -->
+  <div class="collapsible" data-section="detrending">
+    <button type="button" class="collapsible-header" onclick="toggleCollapsible(this)">
+      <span>Detrending</span>
+      <span class="arrow">&#9654;</span>
+    </button>
+    <div class="collapsible-content">
+      <div class="form-grid">
+        <div>
+          <label for="quality_bitmask">Quality Bitmask</label>
+          <select name="quality_bitmask" id="quality_bitmask">
+            {% for q in ['none','default','hard','hardest'] %}
+            <option value="{{q}}" {% if q == 'default' %}selected{% endif %}>{{ q | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="edge_cutoff">Edge Cutoff (days)</label>
+          <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="0.1">
+        </div>
+        <div class="full-width">
+          <div class="label-row">
+            <label for="sigma_clip_raw">Sigma Clip Raw (lo hi)</label>
+            <span class="help-tip" title="Two values: lower and upper sigma bounds for raw light curve clipping. E.g. '10 5' clips below 10-sigma and above 5-sigma.">?</span>
+          </div>
+          <input type="text" name="sigma_clip_raw" id="sigma_clip_raw" placeholder="10 5" value="10 5">
+        </div>
+        <div>
+          <label for="flatten_method">Flatten Method</label>
+          <input type="text" name="flatten_method" id="flatten_method" value="biweight">
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="window_length">Window Length (days)</label>
+            <span class="help-tip" title="Window size for detrending in days. Leave blank for automatic selection based on the detected period.">?</span>
+          </div>
+          <input type="number" step="0.01" name="window_length" id="window_length" placeholder="auto">
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="gp_kernel">GP Kernel</label>
+            <span class="help-tip" title="Gaussian Process kernel for GP-based flattening. Options: periodic_auto, matern32, matern52, exp_sq.">?</span>
+          </div>
+          <input type="text" name="gp_kernel" id="gp_kernel" value="periodic_auto">
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="sigma_clip_flat">Sigma Clip Flat (lo hi)</label>
+            <span class="help-tip" title="Same format as raw. Applied after flattening. Leave blank to skip.">?</span>
+          </div>
+          <input type="text" name="sigma_clip_flat" id="sigma_clip_flat" placeholder="none">
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <label for="exptime">Exposure Time (optional):</label>
-  <input type="number" name="exptime" id="exptime" value="{{ request.form.exptime or '' }}">
+  <!-- Period Search -->
+  <div class="collapsible" data-section="period">
+    <button type="button" class="collapsible-header" onclick="toggleCollapsible(this)">
+      <span>Period Search</span>
+      <span class="arrow">&#9654;</span>
+    </button>
+    <div class="collapsible-content">
+      <div class="form-grid">
+        <div>
+          <label for="pg_method">Periodogram Method</label>
+          <select name="pg_method" id="pg_method">
+            {% for pg in ['gls','ls','bls'] %}
+            <option value="{{pg}}">{{ pg | upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="period_min">Period Min (days)</label>
+          <input type="number" step="0.01" name="period_min" id="period_min" placeholder="0.1">
+        </div>
+        <div>
+          <label for="period_max">Period Max (days)</label>
+          <input type="number" step="0.01" name="period_max" id="period_max" placeholder="baseline/2">
+        </div>
+        <div class="full-width checkbox-group" style="margin-top: 4px;">
+          <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
+        </div>
+        <div class="full-width">
+          <div class="label-row">
+            <label for="custom_ephem">Custom Ephemeris</label>
+            <span class="help-tip" title="Six space-separated values: Tc Tc_err Period Period_err Tdur Tdur_err (all in days, BJD for Tc).">?</span>
+          </div>
+          <input type="text" name="custom_ephem" id="custom_ephem" placeholder="Tc Tcerr P Perr Tdur Tdurerr">
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <label for="quality_bitmask">Quality Bitmask:</label>
-  <select name="quality_bitmask" id="quality_bitmask">
-    {% for q in ['none','default','hard','hardest'] %}
-    <option value="{{q}}" {% if request.form.quality_bitmask == q %}selected{% endif %}>{{q}}</option>
-    {% endfor %}
-  </select>
+  <!-- Output -->
+  <div class="collapsible" data-section="output">
+    <button type="button" class="collapsible-header" onclick="toggleCollapsible(this)">
+      <span>Output</span>
+      <span class="arrow">&#9654;</span>
+    </button>
+    <div class="collapsible-content">
+      <div class="form-grid">
+        <div>
+          <label for="survey">Archival Survey</label>
+          <select name="survey" id="survey">
+            {% for s in ['dss1','dss2','dss3','dss4','2mass','sdss','panstarrs'] %}
+            <option value="{{s}}">{{ s | upper }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="suffix">Filename Suffix</label>
+          <input type="text" name="suffix" id="suffix" placeholder="optional">
+        </div>
+        <div class="full-width">
+          <label for="outdir">Output Directory</label>
+          <input type="text" name="outdir" id="outdir" placeholder="default: app outputs">
+        </div>
+        <div class="full-width checkbox-group">
+          <label><input type="checkbox" name="save" checked> Save outputs</label>
+          <label><input type="checkbox" name="verbose" checked> Verbose</label>
+          <label><input type="checkbox" name="overwrite"> Overwrite</label>
+        </div>
+      </div>
+    </div>
+  </div>
 
-  <label for="flatten_method">Flatten Method:</label>
-  <input type="text" name="flatten_method" id="flatten_method" value="{{ request.form.flatten_method or 'biweight' }}">
-
-  <label for="pg_method">Periodogram Method:</label>
-  <select name="pg_method" id="pg_method">
-    {% for pg in ['gls','ls','bls'] %}
-    <option value="{{pg}}" {% if request.form.pg_method == pg %}selected{% endif %}>{{pg}}</option>
-    {% endfor %}
-  </select>
-
-  <label for="edge_cutoff">Edge Cutoff (days):</label>
-  <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="{{ request.form.edge_cutoff or 0.1 }}">
-
-  <label>
-    <input type="checkbox" name="save" {% if 'save' in request.form %}checked{% endif %}> Save Figure & TLS
-  </label>
-  <label>
-    <input type="checkbox" name="verbose" {% if 'verbose' in request.form %}checked{% endif %}> Verbose
-  </label>
-  <label>
-    <input type="checkbox" name="overwrite" {% if 'overwrite' in request.form %}checked{% endif %}> Overwrite
-  </label>
-
-  <button type="submit">Run QuickLook</button>
+  <div class="btn-row">
+    <button type="submit" class="btn btn-primary" id="submitBtn">Run QuickLook</button>
+    <button type="button" class="btn btn-outline btn-sm" id="resetBtn">Reset to Defaults</button>
+    <button type="button" class="batch-toggle" id="batchToggleBtn">Batch mode</button>
+    <span class="kbd-hint"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> to submit</span>
+  </div>
 </form>
 
-<!-- Loader -->
-<div id="loader"></div>
+<!-- Batch submission -->
+<div class="batch-section card" id="batchSection">
+  <h2 style="font-size: 1rem; margin-top: 0; margin-bottom: 8px;">Batch Submission</h2>
+  <p class="batch-hint">Enter one target per line, or comma-separated. All targets use the pipeline settings from the form above.</p>
+  <textarea id="batchTargets" name="batch_targets" placeholder="TOI-1234&#10;TOI-5678&#10;TIC 98765432"></textarea>
+  <div class="btn-row" style="margin-top: 8px;">
+    <button type="button" class="btn btn-primary btn-sm" id="batchSubmitBtn">Submit Batch</button>
+    <span id="batchStatus" style="font-size: 0.82rem; color: var(--text-sec);"></span>
+  </div>
+</div>
 
-<!-- Live Log -->
-<h2>Live Output Log:</h2>
-<pre id="log"></pre>
+<!-- Job queue -->
+<div id="queueSection" class="queue-section" style="display:none;">
+  <h2>Job Queue</h2>
+  <ul class="queue-list" id="queueList"></ul>
+</div>
+
+<!-- Status bar -->
+<div id="statusBar" class="status-bar">
+  <div class="spinner" id="statusSpinner"></div>
+  <span id="statusText"></span>
+  <button class="btn btn-red btn-sm" id="cancelBtn" style="display:none;" type="button">Cancel</button>
+</div>
+
+<!-- Progress -->
+<div id="progressSection" class="progress-section">
+  <div class="progress-bar-wrap" id="progressWrap">
+    <div class="progress-bar-fill" id="progressFill"></div>
+  </div>
+  <div class="progress-label" id="progressLabel"></div>
+</div>
+
+<!-- Log -->
+<div id="logSection" class="log-section">
+  <button class="log-toggle" id="logToggle" type="button">
+    <span class="arrow">&#9654;</span> Output Log
+  </button>
+  <pre id="log" style="display:none;"></pre>
+</div>
 
 <!-- Result -->
-{% if image_file %}
-  <h2>Result:</h2>
-  <img src="{{ image_file }}" alt="QuickLook result">
-{% endif %}
-
-{% if h5_file %}
-  <div class="download-link">
-    <a href="{{ h5_file }}" download>Download TLS results (.h5)</a>
+<div id="resultSection" class="result-section">
+  <h2>Result</h2>
+  <img id="resultImage" src="" alt="QuickLook result">
+  <div class="result-actions">
+    <a id="downloadH5" class="btn btn-green" download>Download TLS (.h5)</a>
+    <a id="downloadImg" class="btn btn-outline" download>Download Image</a>
   </div>
-{% endif %}
+</div>
 
-<!-- Gallery Button -->
-<a href="{{ url_for('gallery') }}" class="gallery-button">View All Outputs</a>
+<!-- Recent results -->
+<div id="recentSection" class="recent-section" {% if not recent_results %}style="display:none;"{% endif %}>
+  <h2>Recent Results</h2>
+  <div class="recent-grid" id="recentGrid">
+    {% for item in recent_results %}
+    <div class="recent-card" data-filename="{{ item.name }}">
+      <img src="{{ item.path }}" alt="{{ item.name }}" loading="lazy"
+           onclick="window.open('{{ item.path }}', '_blank')">
+      <div class="card-footer">
+        <span class="card-label" title="{{ item.name }}">{{ item.name }}</span>
+        <button class="delete-btn" title="Delete" onclick="deleteOutput('{{ item.name }}', this)">&times;</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="footer-nav">
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse All Results</a>
+  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare Results</a>
+</div>
 
 <script>
-const form = document.getElementById('qlForm');
-const loader = document.getElementById('loader');
+/* =========================================================================
+   DOM refs
+   ========================================================================= */
+const $ = id => document.getElementById(id);
+const form = $('qlForm');
+const submitBtn = $('submitBtn');
+const resetBtn = $('resetBtn');
+const statusBar = $('statusBar');
+const statusSpinner = $('statusSpinner');
+const statusText = $('statusText');
+const cancelBtn = $('cancelBtn');
+const progressSection = $('progressSection');
+const progressWrap = $('progressWrap');
+const progressFill = $('progressFill');
+const progressLabel = $('progressLabel');
+const logSection = $('logSection');
+const logToggle = $('logToggle');
+const logElem = $('log');
+const resultSection = $('resultSection');
+const resultImage = $('resultImage');
+const downloadH5 = $('downloadH5');
+const downloadImg = $('downloadImg');
+const queueSection = $('queueSection');
+const queueList = $('queueList');
+const batchSection = $('batchSection');
+const batchTargets = $('batchTargets');
+const batchSubmitBtn = $('batchSubmitBtn');
+const batchStatus = $('batchStatus');
+const nameInput = $('name');
+const nameValidation = $('nameValidation');
+const toastContainer = $('toastContainer');
 
-form.addEventListener('submit', () => {
-  loader.style.display = 'block';
-  form.querySelector('button[type="submit"]').disabled = true;
+let activeWs = null;
+let activeTarget = null;
+let jobRunning = false;
+
+/* =========================================================================
+   Dark mode
+   ========================================================================= */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  $('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
+  localStorage.setItem('ql-theme', theme);
+}
+(function initTheme() {
+  const saved = localStorage.getItem('ql-theme');
+  if (saved) { applyTheme(saved); return; }
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
+})();
+$('themeToggle').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
 });
 
-// Live log and spinner update
-async function updateLog(target) {
-  const logElem = document.getElementById("log");
-  if (!target) return;
+/* =========================================================================
+   Toast notifications
+   ========================================================================= */
+function showToast(message, type, duration) {
+  type = type || 'info';
+  duration = duration || 4000;
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  toast.innerHTML = '<span>' + message + '</span><button class="toast-close">&times;</button>';
+  toastContainer.appendChild(toast);
+  const close = () => {
+    toast.classList.add('leaving');
+    setTimeout(() => toast.remove(), 300);
+  };
+  toast.querySelector('.toast-close').onclick = close;
+  setTimeout(close, duration);
+}
 
-  try {
-    const response = await fetch("/log/" + target);
-    const statusRes = await fetch("/status-json/" + target);
-    const status = await statusRes.json();
-
-    if (response.ok) {
-      logElem.textContent = await response.text();
-      logElem.scrollTop = logElem.scrollHeight;
-    }
-
-    if (status.status === "running") {
-      loader.style.display = 'block';
-      setTimeout(() => updateLog(target), 1000);
-    } else {
-      loader.style.display = 'none';
-    }
-  } catch(err) {
-    console.error(err);
-    setTimeout(() => updateLog(target), 2000);
+function notifyBrowser(title, body) {
+  if (!('Notification' in window)) return;
+  if (Notification.permission === 'granted') {
+    new Notification(title, { body: body, icon: '/static/favicon.ico' });
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') new Notification(title, { body: body });
+    });
   }
 }
 
-{% if target %}
-updateLog("{{ target }}");
-{% endif %}
+/* =========================================================================
+   Form state persistence (localStorage)
+   ========================================================================= */
+const FORM_STORAGE_KEY = 'ql-form-state';
+const PERSIST_FIELDS = [
+  'name','sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
+  'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
+  'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
+];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector'];
+
+function saveFormState() {
+  const state = {};
+  PERSIST_FIELDS.forEach(f => { const el = form.elements[f]; if (el) state[f] = el.value; });
+  PERSIST_CHECKS.forEach(f => { const el = form.elements[f]; if (el) state['chk_' + f] = el.checked; });
+  localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadFormState() {
+  const raw = localStorage.getItem(FORM_STORAGE_KEY);
+  if (!raw) return;
+  try {
+    const state = JSON.parse(raw);
+    PERSIST_FIELDS.forEach(f => { const el = form.elements[f]; if (el && state[f] !== undefined) el.value = state[f]; });
+    PERSIST_CHECKS.forEach(f => { const el = form.elements[f]; if (el && state['chk_' + f] !== undefined) el.checked = state['chk_' + f]; });
+  } catch(e) {}
+}
+
+function resetFormDefaults() {
+  localStorage.removeItem(FORM_STORAGE_KEY);
+  form.reset();
+  // Re-apply defaults
+  form.elements['sector'].value = '-1';
+  form.elements['edge_cutoff'].value = '0.1';
+  form.elements['sigma_clip_raw'].value = '10 5';
+  form.elements['gp_kernel'].value = 'periodic_auto';
+  form.elements['flatten_method'].value = 'biweight';
+  form.elements['save'].checked = true;
+  form.elements['verbose'].checked = true;
+  form.elements['each_sector'].checked = false;
+  showToast('Form reset to defaults', 'info');
+}
+
+loadFormState();
+resetBtn.addEventListener('click', resetFormDefaults);
+
+// Save state on any input change
+form.addEventListener('input', saveFormState);
+form.addEventListener('change', saveFormState);
+
+/* =========================================================================
+   Collapsible sections (state in localStorage)
+   ========================================================================= */
+const COLLAPSE_KEY = 'ql-collapse-state';
+
+function getCollapseState() {
+  try { return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}'); } catch(e) { return {}; }
+}
+
+function saveCollapseState() {
+  const state = {};
+  document.querySelectorAll('.collapsible[data-section]').forEach(el => {
+    state[el.dataset.section] = el.classList.contains('open');
+  });
+  localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state));
+}
+
+function restoreCollapseState() {
+  const state = getCollapseState();
+  document.querySelectorAll('.collapsible[data-section]').forEach(el => {
+    const key = el.dataset.section;
+    if (key in state) {
+      el.classList.toggle('open', state[key]);
+    }
+  });
+}
+
+function toggleCollapsible(btn) {
+  btn.closest('.collapsible').classList.toggle('open');
+  saveCollapseState();
+}
+// Make toggleCollapsible available globally for onclick
+window.toggleCollapsible = toggleCollapsible;
+
+restoreCollapseState();
+
+/* =========================================================================
+   Inline validation
+   ========================================================================= */
+nameInput.addEventListener('input', () => {
+  const val = nameInput.value.trim();
+  if (val.length === 0) {
+    nameInput.classList.remove('invalid');
+    nameValidation.style.display = 'none';
+    return;
+  }
+  // Accept TOI-*, TIC *, or general names (at least 2 chars)
+  const ok = val.length >= 2;
+  nameInput.classList.toggle('invalid', !ok);
+  nameValidation.style.display = ok ? 'none' : 'block';
+});
+
+/* =========================================================================
+   Log toggle
+   ========================================================================= */
+logToggle.addEventListener('click', () => {
+  const open = logElem.style.display !== 'none';
+  logElem.style.display = open ? 'none' : 'block';
+  logToggle.classList.toggle('open', !open);
+});
+
+/* =========================================================================
+   Status & progress helpers
+   ========================================================================= */
+function setStatus(state, message) {
+  statusBar.className = 'status-bar ' + state;
+  statusSpinner.style.display = state === 'running' ? 'block' : 'none';
+  statusText.textContent = message;
+  cancelBtn.style.display = state === 'running' ? '' : 'none';
+}
+
+function formatETA(seconds) {
+  if (seconds == null || seconds <= 0) return '';
+  if (seconds < 60) return '~' + seconds + 's remaining';
+  var m = Math.floor(seconds / 60);
+  var s = seconds % 60;
+  return '~' + m + 'm ' + s + 's remaining';
+}
+
+function setProgress(pct, label, state, eta) {
+  progressSection.classList.add('visible');
+  progressFill.style.width = pct + '%';
+  var text = label;
+  if (state === 'running') {
+    text += ' (' + pct + '%)';
+    var etaStr = formatETA(eta);
+    if (etaStr) text += ' \u2014 ' + etaStr;
+  }
+  progressLabel.textContent = text;
+  progressWrap.className = 'progress-bar-wrap' + (state !== 'running' ? ' ' + state : '');
+}
+
+/* =========================================================================
+   Cancel
+   ========================================================================= */
+cancelBtn.addEventListener('click', () => {
+  if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+    activeWs.send(JSON.stringify({action: 'cancel'}));
+  }
+  if (activeTarget) fetch('/cancel/' + activeTarget, {method: 'POST'});
+});
+
+/* =========================================================================
+   AJAX form submission
+   ========================================================================= */
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = nameInput.value.trim();
+  if (!name || name.length < 2) {
+    nameInput.classList.add('invalid');
+    nameValidation.style.display = 'block';
+    nameInput.focus();
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = 'Submitting...';
+  resultSection.classList.remove('visible');
+
+  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+
+  if (eachSector) {
+    // Each-sector mode: query available sectors, then submit one job per sector
+    try {
+      const fd = new FormData(form);
+      const params = {};
+      for (const [key, val] of fd.entries()) {
+        if (key !== 'name' && key !== 'each_sector') params[key] = val;
+      }
+      const pipeline = params.pipeline || 'spoc';
+      submitBtn.textContent = 'Querying sectors...';
+      const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+      const secData = await res.json();
+      if (!secData.ok || !secData.sectors || secData.sectors.length === 0) {
+        showToast(secData.reason || 'No sectors found for ' + name, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run QuickLook';
+        return;
+      }
+      const sectors = secData.sectors;
+      showToast('Found ' + sectors.length + ' sectors: ' + sectors.join(', '), 'info', 6000);
+      submitBtn.textContent = 'Submitting ' + sectors.length + ' jobs...';
+
+      const batchRes = await fetch('/each-sector-submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: name, sectors: sectors, params: params }),
+      });
+      const batchData = await batchRes.json();
+      if (batchData.ok) {
+        const msg = batchData.submitted.length + ' sector jobs submitted';
+        showToast(msg, 'success');
+        refreshQueue();
+        // Watch the first submitted job
+        if (batchData.submitted.length > 0) connectWs(batchData.submitted[0]);
+      } else {
+        showToast(batchData.reason || 'Each-sector submission failed', 'error');
+      }
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Run QuickLook';
+    return;
+  }
+
+  try {
+    const res = await fetch('/submit', { method: 'POST', body: new FormData(form) });
+    const data = await res.json();
+    if (data.ok) {
+      showToast('Job submitted: ' + data.name, 'info');
+      connectWs(data.name);
+    } else {
+      showToast(data.reason || 'Submission failed', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Run QuickLook';
+    }
+  } catch (err) {
+    showToast('Network error: ' + err.message, 'error');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Run QuickLook';
+  }
+});
+
+/* =========================================================================
+   Batch submission
+   ========================================================================= */
+$('batchToggleBtn').addEventListener('click', () => {
+  batchSection.classList.toggle('visible');
+  $('batchToggleBtn').textContent = batchSection.classList.contains('visible') ? 'Hide batch mode' : 'Batch mode';
+});
+
+batchSubmitBtn.addEventListener('click', async () => {
+  const raw = batchTargets.value.trim();
+  if (!raw) { showToast('Enter at least one target', 'error'); return; }
+
+  // Split by newlines or commas
+  const targets = raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+  if (targets.length === 0) { showToast('No valid targets found', 'error'); return; }
+
+  // Collect params from form (excluding name)
+  const fd = new FormData(form);
+  const params = {};
+  for (const [key, val] of fd.entries()) {
+    if (key !== 'name') params[key] = val;
+  }
+
+  batchSubmitBtn.disabled = true;
+  batchStatus.textContent = 'Submitting ' + targets.length + ' targets...';
+
+  try {
+    const res = await fetch('/batch-submit', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ targets: targets, params: params }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const msg = data.submitted.length + ' submitted' + (data.skipped.length ? ', ' + data.skipped.length + ' skipped (already running)' : '');
+      batchStatus.textContent = msg;
+      showToast('Batch: ' + msg, 'success');
+      refreshQueue();
+      // Auto-watch first submitted job
+      if (data.submitted.length > 0) connectWs(data.submitted[0]);
+    } else {
+      showToast(data.reason || 'Batch failed', 'error');
+      batchStatus.textContent = 'Failed';
+    }
+  } catch (err) {
+    showToast('Network error: ' + err.message, 'error');
+    batchStatus.textContent = 'Error';
+  }
+  batchSubmitBtn.disabled = false;
+});
+
+/* =========================================================================
+   Results display
+   ========================================================================= */
+async function showResults(target) {
+  try {
+    const res = await fetch('/results-json/' + target);
+    const data = await res.json();
+    if (data.image) {
+      resultImage.src = data.image;
+      downloadImg.href = data.image;
+      downloadImg.download = data.image.split('/').pop();
+      if (data.h5) {
+        downloadH5.href = data.h5;
+        downloadH5.download = data.h5.split('/').pop();
+        downloadH5.style.display = '';
+      } else {
+        downloadH5.style.display = 'none';
+      }
+      resultSection.classList.add('visible');
+    }
+  } catch (e) {
+    console.error('Failed to load results:', e);
+  }
+}
+
+/* =========================================================================
+   Job queue polling
+   ========================================================================= */
+function formatTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+async function refreshQueue() {
+  try {
+    const res = await fetch('/jobs-json');
+    const jobs = await res.json();
+    if (jobs.length === 0) { queueSection.style.display = 'none'; return; }
+
+    queueSection.style.display = '';
+    queueList.innerHTML = '';
+    for (const job of jobs) {
+      const li = document.createElement('li');
+      li.className = 'queue-item';
+
+      const badgeClass = {
+        queued: 'badge-running', running: 'badge-running', done: 'badge-done',
+        error: 'badge-error', cancelled: 'badge-cancelled'
+      }[job.status] || 'badge-running';
+
+      let html = '<span class="job-name">' + job.name + '</span>';
+      if (job.submitted_at) html += '<span class="job-time">' + formatTime(job.submitted_at) + '</span>';
+      if (job.error && job.status === 'error') html += '<span class="job-error" title="' + job.error.replace(/"/g, '&quot;') + '">' + job.error + '</span>';
+      html += '<span class="badge ' + badgeClass + '">' + job.status + '</span>';
+      li.innerHTML = html;
+
+      if (job.status === 'running' && job.name !== activeTarget) {
+        const watchBtn = document.createElement('button');
+        watchBtn.className = 'btn btn-outline btn-sm';
+        watchBtn.textContent = 'Watch';
+        watchBtn.onclick = () => connectWs(job.name);
+        li.appendChild(watchBtn);
+      }
+
+      queueList.appendChild(li);
+    }
+  } catch (e) {
+    console.error('Queue refresh failed:', e);
+  }
+}
+
+/* =========================================================================
+   WebSocket connection
+   ========================================================================= */
+function connectWs(target) {
+  if (activeWs) activeWs.close();
+  activeTarget = target;
+  jobRunning = true;
+
+  // Persist so we can reconnect after page navigation
+  sessionStorage.setItem('ql-active-target', target);
+
+  logSection.classList.add('visible');
+  logElem.style.display = 'block';
+  logToggle.classList.add('open');
+  logElem.textContent = '';
+  setStatus('running', 'Running analysis for ' + target + '...');
+  setProgress(0, 'Starting', 'running', null);
+
+  // Scroll the status bar into view so the user sees it
+  statusBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(proto + '//' + location.host + '/ws/' + target);
+  activeWs = ws;
+
+  ws.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+
+    if (msg.type === 'update') {
+      if (msg.log) {
+        logElem.textContent += msg.log;
+        logElem.scrollTop = logElem.scrollHeight;
+      }
+      setProgress(msg.progress, msg.step, msg.status, msg.eta);
+      if (msg.status === 'running') {
+        setStatus('running', 'Running analysis for ' + target + '...');
+      }
+    } else if (msg.type === 'finish') {
+      jobRunning = false;
+      sessionStorage.removeItem('ql-active-target');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Run QuickLook';
+      if (msg.status === 'done') {
+        setStatus('done', 'Analysis complete for ' + target);
+        setProgress(100, 'Done', 'done', null);
+        showResults(target);
+        showToast('Done: ' + target, 'success', 6000);
+        notifyBrowser('TESS QuickLook', 'Analysis complete for ' + target);
+      } else if (msg.status === 'cancelled') {
+        setStatus('cancelled', 'Cancelled ' + target);
+        setProgress(100, 'Cancelled', 'cancelled', null);
+        showToast('Cancelled: ' + target, 'info');
+      } else if (msg.status === 'unknown') {
+        // Job not found on server (expired or wrong name)
+        setStatus('error', 'Job not found: ' + target);
+        setProgress(0, '', 'error', null);
+      } else {
+        setStatus('error', 'Error: ' + (msg.error || 'Check the log below'));
+        setProgress(100, 'Failed', 'error', null);
+        showToast('Error: ' + (msg.error || target + ' failed'), 'error', 8000);
+        notifyBrowser('TESS QuickLook', 'Error for ' + target);
+      }
+      refreshQueue();
+      // Auto-watch next running job in the queue
+      autoWatchNext(target);
+      ws.close();
+    }
+  };
+
+  ws.onerror = function() { console.error('WebSocket error'); };
+  ws.onclose = function() { activeWs = null; };
+  refreshQueue();
+}
+
+// After a job finishes, automatically watch the next running job (for batch)
+async function autoWatchNext(finishedTarget) {
+  try {
+    const res = await fetch('/jobs-json');
+    const jobs = await res.json();
+    const next = jobs.find(j => (j.status === 'running' || j.status === 'queued') && j.name !== finishedTarget);
+    if (next) {
+      showToast('Watching next job: ' + next.name, 'info');
+      connectWs(next.name);
+    }
+  } catch(e) {}
+}
+
+/* =========================================================================
+   Delete output
+   ========================================================================= */
+async function deleteOutput(filename, btnElem) {
+  if (!confirm('Delete ' + filename + ' and its associated files?')) return;
+  try {
+    const res = await fetch('/delete-output', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({filename: filename}),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      const card = btnElem.closest('.recent-card');
+      if (card) card.remove();
+      if ($('recentGrid') && $('recentGrid').children.length === 0) {
+        $('recentSection').style.display = 'none';
+      }
+      showToast('Deleted ' + filename, 'info');
+    } else {
+      showToast('Delete failed: ' + (data.reason || 'unknown'), 'error');
+    }
+  } catch (e) {
+    showToast('Delete failed: ' + e.message, 'error');
+  }
+}
+window.deleteOutput = deleteOutput;
+
+/* =========================================================================
+   Keyboard shortcuts
+   ========================================================================= */
+document.addEventListener('keydown', (e) => {
+  // Ctrl+Enter or Cmd+Enter to submit
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    e.preventDefault();
+    if (!submitBtn.disabled) form.requestSubmit();
+  }
+  // Escape to close modals/log
+  if (e.key === 'Escape') {
+    if (logElem.style.display !== 'none') {
+      logElem.style.display = 'none';
+      logToggle.classList.remove('open');
+    }
+  }
+});
+
+/* =========================================================================
+   Prevent accidental navigation while a job is running
+   ========================================================================= */
+window.addEventListener('beforeunload', (e) => {
+  if (jobRunning) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+/* =========================================================================
+   Request notification permission early
+   ========================================================================= */
+if ('Notification' in window && Notification.permission === 'default') {
+  // Request on first user interaction
+  document.addEventListener('click', function askPerm() {
+    Notification.requestPermission();
+    document.removeEventListener('click', askPerm);
+  }, { once: true });
+}
+
+/* =========================================================================
+   Init: reconnect to running job after page navigation
+   ========================================================================= */
+(async function init() {
+  await refreshQueue();
+
+  // 1. Check for ?watch= query param (from gallery/compare links)
+  const urlParams = new URLSearchParams(window.location.search);
+  const watchParam = urlParams.get('watch');
+  if (watchParam) {
+    // Clean the URL so refresh doesn't re-trigger
+    history.replaceState(null, '', '/');
+    try {
+      const res = await fetch('/jobs-json');
+      const jobs = await res.json();
+      const job = jobs.find(j => j.name === watchParam);
+      if (job && job.status === 'running') {
+        connectWs(watchParam);
+        return;
+      }
+    } catch(e) {}
+  }
+
+  // 2. Reconnect to the job we were watching before navigating away
+  const savedTarget = sessionStorage.getItem('ql-active-target');
+  if (savedTarget) {
+    try {
+      const res = await fetch('/jobs-json');
+      const jobs = await res.json();
+      const job = jobs.find(j => j.name === savedTarget);
+      if (job && job.status === 'running') {
+        connectWs(savedTarget);
+        return;
+      } else {
+        sessionStorage.removeItem('ql-active-target');
+      }
+    } catch(e) {}
+  }
+
+  // 3. Otherwise, auto-watch first running job if any
+  try {
+    const res = await fetch('/jobs-json');
+    const jobs = await res.json();
+    const running = jobs.find(j => j.status === 'running' || j.status === 'queued');
+    if (running) connectWs(running.name);
+  } catch(e) {}
+})();
+
+setInterval(refreshQueue, 5000);
 </script>
 </body>
 </html>

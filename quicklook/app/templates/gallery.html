@@ -1,112 +1,459 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook Gallery</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
   <style>
-    body { font-family: Arial, sans-serif; max-width: 1000px; margin: 20px auto; }
-    h1 { text-align: center; }
-    form { margin-bottom: 20px; text-align: center; }
-    input[type="text"] { padding: 6px; width: 200px; }
-    button { padding: 6px 12px; }
-    .gallery { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; }
-    .gallery img { width: 200px; height: auto; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; transition: transform 0.2s; }
-    .gallery img:hover { transform: scale(1.05); }
-    .back-button { display: block; margin: 10px auto; padding: 10px 20px; background-color: #007BFF; color: white; border-radius: 6px; text-decoration: none; text-align: center; }
-    .back-button:hover { background-color: #0056b3; }
+    :root {
+      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
+      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
+      --input-border: #ccc; --hover-bg: #f5f6fa;
+      --primary: #4a6cf7; --primary-hover: #3451d1;
+      --green: #22c55e; --green-hover: #16a34a;
+      --red: #ef4444; --red-hover: #dc2626;
+    }
+    [data-theme="dark"] {
+      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
+      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
+      --input-border: #3a3a4e; --hover-bg: #222236;
+      --primary: #5b7cf9; --primary-hover: #7b96ff;
+      --green: #34d874; --green-hover: #22c55e;
+      --red: #f87171; --red-hover: #ef4444;
+    }
 
-    /* Modal styles */
-    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto;
-             background-color: rgba(0,0,0,0.8); }
-    .modal-content { margin: 5% auto; display: block; max-width: 90%; max-height: 90%; }
-    .modal-caption { text-align: center; color: white; margin: 10px 0; }
-    .close { position: absolute; top: 20px; right: 35px; color: white; font-size: 40px; font-weight: bold; cursor: pointer; }
-    .download-btn { display: block; margin: 10px auto; padding: 8px 12px; background: #28a745; color: white; border-radius: 6px; text-decoration: none; width: fit-content; }
-    .download-btn:hover { background: #218838; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 1100px; margin: 0 auto; padding: 24px 20px;
+      color: var(--text); background: var(--bg); line-height: 1.5;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    a { color: var(--primary); }
+    h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
+
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+    }
+    .top-bar-left { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
+      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
+      transition: background-color 0.2s;
+    }
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-green { background: var(--green); }
+    .btn-green:hover { background: var(--green-hover); }
+    .btn-red { background: var(--red); }
+    .btn-red:hover { background: var(--red-hover); }
+    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .theme-toggle {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
+      color: var(--text); transition: background-color 0.2s;
+    }
+    .theme-toggle:hover { background: var(--hover-bg); }
+
+    .controls {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    }
+    .search-form { display: flex; gap: 6px; }
+    .search-form input {
+      padding: 7px 12px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 0.9rem; width: 200px; background: var(--input-bg); color: var(--text);
+    }
+    .search-form input:focus { outline: none; border-color: var(--primary); }
+
+    select.sort-select {
+      padding: 7px 10px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 0.85rem; background: var(--input-bg); color: var(--text); cursor: pointer;
+    }
+
+    /* Bulk controls */
+    .bulk-bar {
+      display: none; align-items: center; gap: 10px; padding: 8px 12px;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 16px; font-size: 0.85rem;
+    }
+    .bulk-bar.visible { display: flex; }
+    .bulk-bar .count { font-weight: 600; }
+
+    .gallery {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px;
+    }
+    .gallery-card {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      overflow: hidden; transition: box-shadow 0.2s, transform 0.15s; position: relative;
+    }
+    .gallery-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-2px); }
+    .gallery-card.selected { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+    .gallery-card img { width: 100%; height: auto; display: block; cursor: pointer; }
+    .card-footer {
+      display: flex; align-items: center; padding: 6px 10px;
+      border-top: 1px solid var(--border-light); gap: 6px;
+    }
+    .card-check { flex-shrink: 0; cursor: pointer; width: 16px; height: 16px; }
+    .card-label {
+      flex: 1; font-size: 0.78rem; color: var(--text-sec);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .delete-btn {
+      background: none; border: none; cursor: pointer; color: var(--text-sec);
+      font-size: 1.1rem; padding: 2px 4px; line-height: 1; transition: color 0.15s;
+    }
+    .delete-btn:hover { color: var(--red); }
+    .empty-msg {
+      grid-column: 1 / -1; text-align: center; color: var(--text-sec); padding: 40px 0; font-size: 1rem;
+    }
+    .gallery-info {
+      text-align: center; font-size: 0.82rem; color: var(--text-sec); margin-bottom: 16px;
+    }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: center; align-items: center; gap: 6px;
+      margin-top: 24px; flex-wrap: wrap;
+    }
+    .pagination a, .pagination span {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 36px; height: 36px; padding: 0 10px;
+      border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem;
+      text-decoration: none; color: var(--text); background: var(--card-bg);
+      transition: background-color 0.15s;
+    }
+    .pagination a:hover { background: var(--hover-bg); }
+    .pagination .current {
+      background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600;
+    }
+    .pagination .disabled { opacity: 0.4; pointer-events: none; }
+
+    /* Modal */
+    .modal {
+      display: none; position: fixed; z-index: 1000; inset: 0;
+      background: rgba(0,0,0,0.85); align-items: center; justify-content: center; flex-direction: column;
+    }
+    .modal.open { display: flex; }
+    .modal-close {
+      position: absolute; top: 16px; right: 24px; color: #fff;
+      font-size: 2rem; cursor: pointer; line-height: 1; opacity: 0.8; transition: opacity 0.2s;
+    }
+    .modal-close:hover { opacity: 1; }
+    .modal img { max-width: 92%; max-height: 80vh; border-radius: 6px; cursor: grab; }
+    .modal-caption { color: #ccc; margin-top: 10px; font-size: 0.85rem; }
+    .modal-actions { margin-top: 10px; display: flex; gap: 8px; }
+    .modal-actions .btn { font-size: 0.85rem; }
+
+    /* Running-jobs banner */
+    .running-banner {
+      display: none; align-items: center; gap: 10px; padding: 10px 16px;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 16px; font-size: 0.85rem;
+    }
+    .running-banner.visible { display: flex; flex-wrap: wrap; }
+    .running-banner .spinner {
+      width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
+    .running-banner a:hover { text-decoration: underline; }
+    .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    @media (max-width: 600px) {
+      .top-bar { flex-direction: column; align-items: stretch; }
+      .search-form input { width: 100%; }
+      .gallery { grid-template-columns: 1fr; }
+      .controls { flex-direction: column; align-items: stretch; }
+    }
   </style>
 </head>
 <body>
-  <h1>TESS QuickLook Output Gallery</h1>
+  <!-- Running jobs banner -->
+  <div class="running-banner" id="runningBanner">
+    <div class="spinner"></div>
+    <span>Running:</span>
+    <div class="job-list" id="runningJobList"></div>
+  </div>
 
-  <!-- Back button -->
-  <a href="{{ url_for('index') }}" class="back-button">← Back to QuickLook</a>
+  <h1>Output Gallery</h1>
 
-  <!-- Search form -->
-  <form method="post">
-    <input type="text" name="search" placeholder="Search by name" value="{{ search_name or '' }}">
-    <button type="submit">Search</button>
-  </form>
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
+      <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
+      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
+    </div>
+    <div class="controls">
+      <form class="search-form" method="get" action="{{ url_for('gallery') }}">
+        <input type="hidden" name="sort" value="{{ sort_by }}">
+        <input type="text" name="search" placeholder="Filter by target name" value="{{ search_name or '' }}">
+        <button type="submit" class="btn btn-primary btn-sm">Search</button>
+      </form>
+      <select class="sort-select" id="sortSelect" onchange="applySort(this.value)">
+        <option value="date_desc" {% if sort_by == 'date_desc' %}selected{% endif %}>Newest first</option>
+        <option value="date_asc" {% if sort_by == 'date_asc' %}selected{% endif %}>Oldest first</option>
+        <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name A-Z</option>
+        <option value="name_desc" {% if sort_by == 'name_desc' %}selected{% endif %}>Name Z-A</option>
+      </select>
+    </div>
+  </div>
 
-  <div class="gallery">
-    {% for img in images %}
-      <img src="{{ img }}" alt="{{ img }}" onclick="openModal(this)">
+  <div class="gallery-info">
+    Showing {{ images|length }} of {{ total }} results
+    {% if search_name %} matching "{{ search_name }}"{% endif %}
+    (page {{ page }} of {{ total_pages }})
+  </div>
+
+  <!-- Bulk action bar -->
+  <div class="bulk-bar" id="bulkBar">
+    <span class="count"><span id="bulkCount">0</span> selected</span>
+    <button class="btn btn-red btn-sm" id="bulkDeleteBtn">Delete selected</button>
+    <button class="btn btn-outline btn-sm" id="bulkClearBtn">Clear selection</button>
+  </div>
+
+  <div class="gallery" id="galleryGrid">
+    {% for item in images %}
+      <div class="gallery-card" data-filename="{{ item.name }}">
+        <img src="{{ item.path }}" alt="{{ item.name }}" loading="lazy"
+             onclick="openModal('{{ item.path }}', '{{ item.name }}')">
+        <div class="card-footer">
+          <input type="checkbox" class="card-check" data-name="{{ item.name }}" onchange="updateBulk()">
+          <span class="card-label" title="{{ item.name }}">{{ item.name }}</span>
+          <button class="delete-btn" title="Delete"
+                  onclick="event.stopPropagation(); deleteOutput('{{ item.name }}', this)">&times;</button>
+        </div>
+      </div>
     {% endfor %}
-    {% if images|length == 0 %}
-      <p style="text-align:center;">No matching images found.</p>
+    {% if images | length == 0 %}
+      <p class="empty-msg">No images found{% if search_name %} matching "{{ search_name }}"{% endif %}.</p>
     {% endif %}
   </div>
 
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="pagination">
+    {% if page > 1 %}
+      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page-1) }}">&laquo; Prev</a>
+    {% else %}
+      <span class="disabled">&laquo; Prev</span>
+    {% endif %}
+
+    {% for p in range(1, total_pages + 1) %}
+      {% if p == page %}
+        <span class="current">{{ p }}</span>
+      {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
+        <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=p) }}">{{ p }}</a>
+      {% elif p == 4 or p == total_pages - 3 %}
+        <span>&hellip;</span>
+      {% endif %}
+    {% endfor %}
+
+    {% if page < total_pages %}
+      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page+1) }}">Next &raquo;</a>
+    {% else %}
+      <span class="disabled">Next &raquo;</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- Modal -->
-  <div id="imageModal" class="modal">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <img class="modal-content" id="modalImage">
+  <div id="modal" class="modal" onclick="if(event.target===this)closeModal()">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <img id="modalImage" src="" alt="">
     <div class="modal-caption" id="modalCaption"></div>
-    <a id="downloadBtn" class="download-btn" download>Download Image</a>
+    <div class="modal-actions">
+      <a id="modalDownload" class="btn btn-green" download>Download</a>
+      <button id="modalDelete" class="btn btn-red btn-sm">Delete</button>
+    </div>
   </div>
 
   <script>
-    const modal = document.getElementById("imageModal");
-    const modalImg = document.getElementById("modalImage");
-    const captionText = document.getElementById("modalCaption");
-    const downloadBtn = document.getElementById("downloadBtn");
+    /* --- Theme --- */
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
+      localStorage.setItem('ql-theme', theme);
+    }
+    (function() {
+      const saved = localStorage.getItem('ql-theme');
+      if (saved) { applyTheme(saved); return; }
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
+    })();
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
 
-    function openModal(imgElement) {
-      modal.style.display = "block";
-      modalImg.src = imgElement.src;
-      captionText.innerText = imgElement.alt.split('/').pop(); // just filename
-      downloadBtn.href = imgElement.src;
-      downloadBtn.download = imgElement.alt.split('/').pop();
+    /* --- Sort --- */
+    function applySort(value) {
+      const url = new URL(window.location);
+      url.searchParams.set('sort', value);
+      url.searchParams.set('page', '1');
+      window.location = url;
+    }
+
+    /* --- Modal --- */
+    const modal = document.getElementById('modal');
+    const modalImg = document.getElementById('modalImage');
+    const modalCaption = document.getElementById('modalCaption');
+    const modalDownload = document.getElementById('modalDownload');
+    const modalDeleteBtn = document.getElementById('modalDelete');
+    let currentModalFilename = '';
+    let scale = 1, posX = 0, posY = 0, isDragging = false, startX, startY;
+
+    function openModal(src, name) {
+      modal.classList.add('open');
+      modalImg.src = src;
+      modalImg.style.transform = '';
+      modalCaption.textContent = name;
+      modalDownload.href = src;
+      modalDownload.download = name;
+      currentModalFilename = name;
+      scale = 1; posX = 0; posY = 0;
+      document.body.style.overflow = 'hidden';
     }
 
     function closeModal() {
-      modal.style.display = "none";
+      modal.classList.remove('open');
+      document.body.style.overflow = '';
     }
 
-    // Close modal if click outside image
-    modal.addEventListener('click', (e) => {
-      if(e.target === modal) closeModal();
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    modalDeleteBtn.addEventListener('click', async () => {
+      if (!currentModalFilename) return;
+      if (!confirm('Delete ' + currentModalFilename + ' and its associated files?')) return;
+      const ok = await doDelete(currentModalFilename);
+      if (ok) {
+        closeModal();
+        const card = document.querySelector('.gallery-card[data-filename="' + currentModalFilename + '"]');
+        if (card) card.remove();
+      }
     });
 
-    // Optional: zoom/pan with wheel and drag
-    let scale = 1;
-    let posX = 0, posY = 0;
-    let isDragging = false, startX, startY;
+    /* --- Delete --- */
+    async function doDelete(filename) {
+      try {
+        const res = await fetch('/delete-output', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filename: filename}),
+        });
+        const data = await res.json();
+        if (data.ok) return true;
+        alert('Delete failed: ' + (data.reason || 'unknown'));
+        return false;
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+        return false;
+      }
+    }
 
+    async function deleteOutput(filename, btnElem) {
+      if (!confirm('Delete ' + filename + ' and its associated files?')) return;
+      const ok = await doDelete(filename);
+      if (ok) {
+        const card = btnElem.closest('.gallery-card');
+        if (card) card.remove();
+      }
+    }
+
+    /* --- Bulk selection --- */
+    const bulkBar = document.getElementById('bulkBar');
+    const bulkCount = document.getElementById('bulkCount');
+
+    function getSelectedFiles() {
+      return Array.from(document.querySelectorAll('.card-check:checked')).map(cb => cb.dataset.name);
+    }
+
+    function updateBulk() {
+      const sel = getSelectedFiles();
+      bulkCount.textContent = sel.length;
+      bulkBar.classList.toggle('visible', sel.length > 0);
+      document.querySelectorAll('.gallery-card').forEach(card => {
+        const cb = card.querySelector('.card-check');
+        card.classList.toggle('selected', cb && cb.checked);
+      });
+    }
+
+    document.getElementById('bulkClearBtn').addEventListener('click', () => {
+      document.querySelectorAll('.card-check:checked').forEach(cb => { cb.checked = false; });
+      updateBulk();
+    });
+
+    document.getElementById('bulkDeleteBtn').addEventListener('click', async () => {
+      const files = getSelectedFiles();
+      if (files.length === 0) return;
+      if (!confirm('Delete ' + files.length + ' selected files and their associated data?')) return;
+
+      try {
+        const res = await fetch('/bulk-delete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filenames: files}),
+        });
+        const data = await res.json();
+        if (data.ok) {
+          files.forEach(f => {
+            const card = document.querySelector('.gallery-card[data-filename="' + f + '"]');
+            if (card) card.remove();
+          });
+          updateBulk();
+        } else {
+          alert('Bulk delete failed: ' + (data.reason || 'unknown'));
+        }
+      } catch (e) {
+        alert('Bulk delete failed: ' + e.message);
+      }
+    });
+
+    /* --- Zoom/pan in modal --- */
     modalImg.addEventListener('wheel', (e) => {
       e.preventDefault();
-      scale += e.deltaY * -0.001;
-      scale = Math.min(Math.max(.5, scale), 5);
-      modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
+      scale = Math.min(Math.max(0.5, scale + e.deltaY * -0.002), 5);
+      modalImg.style.transform = 'scale(' + scale + ') translate(' + posX + 'px, ' + posY + 'px)';
     });
-
     modalImg.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      startX = e.clientX - posX;
-      startY = e.clientY - posY;
+      isDragging = true; startX = e.clientX - posX; startY = e.clientY - posY;
       modalImg.style.cursor = 'grabbing';
     });
-
     modalImg.addEventListener('mouseup', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
     modalImg.addEventListener('mouseleave', () => { isDragging = false; modalImg.style.cursor = 'grab'; });
     modalImg.addEventListener('mousemove', (e) => {
-      if(!isDragging) return;
-      posX = e.clientX - startX;
-      posY = e.clientY - startY;
-      modalImg.style.transform = `scale(${scale}) translate(${posX}px, ${posY}px)`;
+      if (!isDragging) return;
+      posX = e.clientX - startX; posY = e.clientY - startY;
+      modalImg.style.transform = 'scale(' + scale + ') translate(' + posX + 'px, ' + posY + 'px)';
     });
 
-    // Initial cursor style
-    modalImg.style.cursor = 'grab';
+    /* --- Running-jobs banner --- */
+    const runningBanner = document.getElementById('runningBanner');
+    const runningJobList = document.getElementById('runningJobList');
+
+    async function pollRunningJobs() {
+      try {
+        const res = await fetch('/jobs-json');
+        const jobs = await res.json();
+        const running = jobs.filter(j => j.status === 'running');
+        if (running.length === 0) {
+          runningBanner.classList.remove('visible');
+          return;
+        }
+        runningBanner.classList.add('visible');
+        runningJobList.innerHTML = running.map(j =>
+          '<a href="/?watch=' + encodeURIComponent(j.name) + '">' + j.name + '</a>'
+        ).join(', ');
+      } catch(e) {}
+    }
+    pollRunningJobs();
+    setInterval(pollRunningJobs, 5000);
   </script>
 </body>
 </html>

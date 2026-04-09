@@ -1,11 +1,68 @@
 #!/usr/bin/env python
 import sys
 import argparse
+import subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from pathlib import Path
 
 # import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
+from quicklook.utils import get_available_sectors
 from quicklook.plot import dss_description
+
+
+def run_ql_for_sector(
+    name,
+    sector,
+    pipeline,
+    fluxtype,
+    quality_bitmask,
+    flatten_method,
+    gp_kernel,
+    pg_method,
+    edge_cutoff,
+    outdir,
+    exptime,
+    save,
+    overwrite,
+    verbose,
+    mask_ephem,
+    suffix,
+    period_limits,
+):
+    """Run ql for a single sector. Used by --each-sector."""
+    ql = TessQuickLook(
+        target_name=name,
+        sector=sector,
+        pipeline=pipeline,
+        exptime=exptime,
+        flux_type=fluxtype,
+        pg_method=pg_method,
+        custom_ephem=None,
+        mask_ephem=mask_ephem,
+        quality_bitmask=quality_bitmask,
+        flatten_method=flatten_method,
+        gp_kernel=gp_kernel,
+        gp_kernel_size=5,
+        window_length=None,
+        sigma_clip_raw=(10, 5),
+        sigma_clip_flat=None,
+        Porb_limits=period_limits,
+        edge_cutoff=edge_cutoff,
+        archival_survey="dss1",
+        savefig=save,
+        savetls=save,
+        outdir=outdir,
+        verbose=verbose,
+        overwrite=overwrite,
+        suffix=suffix,
+    )
+    ql.plot_tql()
+    if not save:
+        pl.show()
+    pl.close()
+
 
 long_decription = """Run a quick look analysis of a TESS lightcurve.
 Notes:
@@ -48,6 +105,19 @@ def main():
         # type=int,
         help="TESS sector (default=-1 (last available sector))",
         default=-1,
+    )
+    parser.add_argument(
+        "--each-sector",
+        action="store_true",
+        help="run on each available sector for the given pipeline individually",
+        default=False,
+    )
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=1,
+        help="number of parallel jobs (default=1)",
     )
     # parser.add_argument(
     #     "-c",
@@ -239,6 +309,55 @@ def main():
     args = parser.parse_args(None if sys.argv[1:] else ["-h"])
 
     target_name = sanitize_target_name(args.name)
+
+    if args.each_sector:
+        sectors = get_available_sectors(target_name, pipeline=args.pipeline)
+        if not sectors:
+            print(f"No sectors found for {target_name} with pipeline {args.pipeline}")
+            sys.exit(1)
+
+        print(f"Found {len(sectors)} sectors for {target_name}: {sectors}")
+        print(f"Running with {args.jobs} parallel job(s)...")
+
+        failed = 0
+        with ProcessPoolExecutor(max_workers=args.jobs) as executor:
+            futures = {}
+            for sector in sectors:
+                future = executor.submit(
+                    run_ql_for_sector,
+                    target_name,
+                    sector,
+                    args.pipeline,
+                    args.fluxtype,
+                    args.quality_bitmask,
+                    args.flatten_method,
+                    args.gp_kernel,
+                    args.pg_method,
+                    args.edge_cutoff,
+                    args.outdir,
+                    args.exptime,
+                    args.save,
+                    args.overwrite,
+                    args.verbose,
+                    args.mask_ephem,
+                    args.suffix,
+                    args.period_limits,
+                )
+                futures[future] = sector
+
+            for i, future in enumerate(as_completed(futures), 1):
+                sector = futures[future]
+                try:
+                    future.result()
+                    print(f"[{i}/{len(sectors)}] sector {sector}: done")
+                except Exception as e:
+                    print(f"[{i}/{len(sectors)}] sector {sector}: FAILED - {e}")
+                    failed += 1
+
+        print(f"\nCompleted: {len(sectors) - failed}/{len(sectors)} sectors successful")
+        if failed:
+            sys.exit(1)
+        sys.exit(0)
 
     ql = TessQuickLook(
         # gaia2id=args.gaia2id,

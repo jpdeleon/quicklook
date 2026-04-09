@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TESS QuickLook - Compare</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <style>
+    :root {
+      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
+      --border: #e0e0e0; --input-bg: #fafafa; --input-border: #ccc; --hover-bg: #f5f6fa;
+      --primary: #4a6cf7; --primary-hover: #3451d1;
+    }
+    [data-theme="dark"] {
+      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
+      --border: #2a2a3e; --input-bg: #252538; --input-border: #3a3a4e; --hover-bg: #222236;
+      --primary: #5b7cf9; --primary-hover: #7b96ff;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 1400px; margin: 0 auto; padding: 24px 20px;
+      color: var(--text); background: var(--bg); line-height: 1.5;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    a { color: var(--primary); }
+    h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
+
+    .top-bar {
+      display: flex; justify-content: space-between; align-items: center;
+      flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
+    }
+    .top-bar-left { display: flex; gap: 8px; align-items: center; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
+      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
+      transition: background-color 0.2s;
+    }
+    .btn-primary { background: var(--primary); }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
+    .theme-toggle {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
+      color: var(--text); transition: background-color 0.2s;
+    }
+    .theme-toggle:hover { background: var(--hover-bg); }
+
+    /* Selectors */
+    .selectors {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+    }
+    .selector-group label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 4px; }
+    .selector-group select {
+      width: 100%; padding: 8px 10px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 0.85rem; background: var(--input-bg); color: var(--text);
+    }
+    .selector-group select:focus { outline: none; border-color: var(--primary); }
+
+    /* Comparison area */
+    .compare-area {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px;
+    }
+    .compare-panel {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      overflow: hidden; min-height: 200px; display: flex; align-items: center; justify-content: center;
+    }
+    .compare-panel img { width: 100%; height: auto; display: block; }
+    .compare-panel .placeholder { color: var(--text-sec); font-size: 0.9rem; padding: 40px; text-align: center; }
+    .panel-label {
+      text-align: center; font-size: 0.78rem; color: var(--text-sec); margin-top: 4px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Overlay mode */
+    .overlay-controls {
+      display: flex; justify-content: center; align-items: center; gap: 16px; margin-bottom: 16px;
+    }
+    .overlay-controls label { font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+    .overlay-area {
+      display: none; position: relative; background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 8px; overflow: hidden; margin-bottom: 20px;
+    }
+    .overlay-area.visible { display: block; }
+    .overlay-area img {
+      width: 100%; height: auto; display: block;
+    }
+    .overlay-area .overlay-img {
+      position: absolute; top: 0; left: 0; width: 100%; height: auto;
+      mix-blend-mode: difference;
+    }
+    .opacity-slider { width: 200px; }
+
+    /* Swap button */
+    .swap-btn { font-size: 1.2rem; padding: 4px 12px; }
+
+    /* Running-jobs banner */
+    .running-banner {
+      display: none; align-items: center; gap: 10px; padding: 10px 16px;
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 16px; font-size: 0.85rem;
+    }
+    .running-banner.visible { display: flex; flex-wrap: wrap; }
+    .running-banner .spinner {
+      width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
+    .running-banner a:hover { text-decoration: underline; }
+    .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    @media (max-width: 768px) {
+      .selectors { grid-template-columns: 1fr; }
+      .compare-area { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <!-- Running jobs banner -->
+  <div class="running-banner" id="runningBanner">
+    <div class="spinner"></div>
+    <span>Running:</span>
+    <div class="job-list" id="runningJobList"></div>
+  </div>
+
+  <h1>Compare Results</h1>
+
+  <div class="top-bar">
+    <div class="top-bar-left">
+      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
+      <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
+      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
+    </div>
+  </div>
+
+  <!-- Image selectors -->
+  <div class="selectors">
+    <div class="selector-group">
+      <label for="leftSelect">Left image</label>
+      <select id="leftSelect">
+        <option value="">-- Select --</option>
+        {% for item in images %}
+        <option value="{{ item.path }}" data-name="{{ item.name }}" {% if left == item.name %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="selector-group">
+      <label for="rightSelect">Right image</label>
+      <select id="rightSelect">
+        <option value="">-- Select --</option>
+        {% for item in images %}
+        <option value="{{ item.path }}" data-name="{{ item.name }}" {% if right == item.name %}selected{% endif %}>{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div style="text-align: center; margin-bottom: 12px;">
+    <button class="btn btn-outline btn-sm swap-btn" id="swapBtn" title="Swap left and right">&#8646; Swap</button>
+  </div>
+
+  <!-- Side by side -->
+  <div class="compare-area" id="compareArea">
+    <div>
+      <div class="compare-panel" id="leftPanel">
+        <div class="placeholder">Select a left image</div>
+      </div>
+      <div class="panel-label" id="leftLabel"></div>
+    </div>
+    <div>
+      <div class="compare-panel" id="rightPanel">
+        <div class="placeholder">Select a right image</div>
+      </div>
+      <div class="panel-label" id="rightLabel"></div>
+    </div>
+  </div>
+
+  <!-- Overlay controls -->
+  <div class="overlay-controls">
+    <label>
+      <input type="checkbox" id="overlayToggle"> Overlay mode (difference blend)
+    </label>
+    <label>
+      Opacity: <input type="range" class="opacity-slider" id="opacitySlider" min="0" max="100" value="50">
+    </label>
+  </div>
+
+  <!-- Overlay area -->
+  <div class="overlay-area" id="overlayArea">
+    <img id="overlayBase" src="" alt="Base">
+    <img id="overlayTop" class="overlay-img" src="" alt="Overlay">
+  </div>
+
+  <script>
+    /* --- Theme --- */
+    function applyTheme(theme) {
+      document.documentElement.setAttribute('data-theme', theme);
+      document.getElementById('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
+      localStorage.setItem('ql-theme', theme);
+    }
+    (function() {
+      const saved = localStorage.getItem('ql-theme');
+      if (saved) { applyTheme(saved); return; }
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
+    })();
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      applyTheme(cur === 'dark' ? 'light' : 'dark');
+    });
+
+    /* --- Elements --- */
+    const leftSelect = document.getElementById('leftSelect');
+    const rightSelect = document.getElementById('rightSelect');
+    const leftPanel = document.getElementById('leftPanel');
+    const rightPanel = document.getElementById('rightPanel');
+    const leftLabel = document.getElementById('leftLabel');
+    const rightLabel = document.getElementById('rightLabel');
+    const overlayToggle = document.getElementById('overlayToggle');
+    const overlayArea = document.getElementById('overlayArea');
+    const overlayBase = document.getElementById('overlayBase');
+    const overlayTop = document.getElementById('overlayTop');
+    const opacitySlider = document.getElementById('opacitySlider');
+    const compareArea = document.getElementById('compareArea');
+
+    function updatePanel(selectEl, panelEl, labelEl) {
+      const opt = selectEl.options[selectEl.selectedIndex];
+      const src = selectEl.value;
+      const name = opt ? opt.dataset.name || '' : '';
+      if (src) {
+        panelEl.innerHTML = '<img src="' + src + '" alt="' + name + '" onclick="window.open(\'' + src + '\', \'_blank\')">';
+        labelEl.textContent = name;
+      } else {
+        panelEl.innerHTML = '<div class="placeholder">Select an image</div>';
+        labelEl.textContent = '';
+      }
+      updateOverlay();
+    }
+
+    function updateOverlay() {
+      const lsrc = leftSelect.value;
+      const rsrc = rightSelect.value;
+      if (overlayToggle.checked && lsrc && rsrc) {
+        overlayArea.classList.add('visible');
+        compareArea.style.display = 'none';
+        overlayBase.src = lsrc;
+        overlayTop.src = rsrc;
+        overlayTop.style.opacity = opacitySlider.value / 100;
+      } else {
+        overlayArea.classList.remove('visible');
+        compareArea.style.display = '';
+      }
+    }
+
+    leftSelect.addEventListener('change', () => updatePanel(leftSelect, leftPanel, leftLabel));
+    rightSelect.addEventListener('change', () => updatePanel(rightSelect, rightPanel, rightLabel));
+    overlayToggle.addEventListener('change', updateOverlay);
+    opacitySlider.addEventListener('input', () => {
+      overlayTop.style.opacity = opacitySlider.value / 100;
+    });
+
+    document.getElementById('swapBtn').addEventListener('click', () => {
+      const lv = leftSelect.value;
+      const rv = rightSelect.value;
+      leftSelect.value = rv;
+      rightSelect.value = lv;
+      updatePanel(leftSelect, leftPanel, leftLabel);
+      updatePanel(rightSelect, rightPanel, rightLabel);
+    });
+
+    // Init with preselected values
+    if (leftSelect.value) updatePanel(leftSelect, leftPanel, leftLabel);
+    if (rightSelect.value) updatePanel(rightSelect, rightPanel, rightLabel);
+
+    /* --- Running-jobs banner --- */
+    const runningBanner = document.getElementById('runningBanner');
+    const runningJobList = document.getElementById('runningJobList');
+
+    async function pollRunningJobs() {
+      try {
+        const res = await fetch('/jobs-json');
+        const jobs = await res.json();
+        const running = jobs.filter(j => j.status === 'running');
+        if (running.length === 0) {
+          runningBanner.classList.remove('visible');
+          return;
+        }
+        runningBanner.classList.add('visible');
+        runningJobList.innerHTML = running.map(j =>
+          '<a href="/?watch=' + encodeURIComponent(j.name) + '">' + j.name + '</a>'
+        ).join(', ');
+      } catch(e) {}
+    }
+    pollRunningJobs();
+    setInterval(pollRunningJobs, 5000);
+  </script>
+</body>
+</html>

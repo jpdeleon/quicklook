@@ -58,25 +58,38 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
     if ax is None:
         _, ax = pl.subplots()
     yline = tls_results.depth
-    fold_lc.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
-    fold_lc[fold_lc.even_mask].bin(time_bin_size=bin_mins * u.minute).errorbar(
-        label="even transit",
-        c="#1f77b4",
-        marker="o",
-        lw=2,
-        markersize=markersize,
-        ax=ax,
-        zorder=2,
-    )
-    fold_lc[fold_lc.odd_mask].bin(time_bin_size=bin_mins * u.minute).errorbar(
-        label="odd transit",
-        c="#d62728",
-        marker="o",
-        lw=2,
-        markersize=markersize,
-        ax=ax,
-        zorder=2,
-    )
+    t14 = tls_results.duration
+    # Clip to transit window before binning to avoid creating thousands of
+    # empty bins for long-period planets (phase range = period, not just t14).
+    phase_cut = t14 * 2
+    near_transit = (fold_lc.time.value >= -phase_cut) & (fold_lc.time.value <= phase_cut)
+    clipped_lc = fold_lc[near_transit]
+    clipped_lc.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
+
+    even_lc = clipped_lc[clipped_lc.even_mask]
+    odd_lc = clipped_lc[clipped_lc.odd_mask]
+
+    if len(even_lc) > 0:
+        even_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            label="even transit",
+            c="#1f77b4",
+            marker="o",
+            lw=2,
+            markersize=markersize,
+            ax=ax,
+            zorder=2,
+        )
+    if len(odd_lc) > 0:
+        odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            label="odd transit",
+            c="#d62728",
+            marker="o",
+            lw=2,
+            markersize=markersize,
+            ax=ax,
+            zorder=2,
+        )
+
     ax.plot(
         (tls_results.model_folded_phase - 0.5) * tls_results.period,
         tls_results.model_folded_model,
@@ -86,13 +99,10 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
         label="TLS model",
     )
     ax.axhline(yline, 0, 1, lw=2, ls="--", c="k")
-    # transit duration in phase
-    t14 = tls_results.duration
     ax.axvline(-t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.axvline(t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(-t14 * 2, t14 * 2)
-    # y1, y2 = ax.get_ylim()
+    ax.set_xlim(-phase_cut, phase_cut)
     ax.legend()
     return ax
 
@@ -109,8 +119,19 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
     )
     half_phase = 0.5  # tls_results.period/2
     fold_lc2.time = fold_lc2.time + half_phase * u.day
-    fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
     yline = tls_results.depth
+    t14 = tls_results.duration
+    try:
+        secthresh = compute_secthresh(fold_lc2, t14)
+    except Exception as e:
+        print(e)
+        secthresh = np.nan
+    # Clip to eclipse window before binning to avoid thousands of empty bins
+    phase_lo = half_phase - t14 * 2
+    phase_hi = half_phase + t14 * 2
+    near_eclipse = (fold_lc2.time.value >= phase_lo) & (fold_lc2.time.value <= phase_hi)
+    clipped_lc2 = fold_lc2[near_eclipse]
+    clipped_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
     ax.axhline(
         yline,
         0,
@@ -120,28 +141,22 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
         c="k",
         ls="--",
     )
-    t14 = tls_results.duration
     ax.axvline(half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.axvline(half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     try:
-        secthresh = compute_secthresh(fold_lc2, t14)
-    except Exception as e:
-        print(e)
-        secthresh = np.nan
-    fold_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
-    try:
-        fold_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
-            ax=ax,
-            marker="o",
-            markersize=markersize,
-            lw=2,
-            label=f"sec_eclipse_thresh={secthresh*1e3:.2f} ppt",
-            zorder=2,
-        )
+        if len(clipped_lc2) > 0:
+            clipped_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
+                ax=ax,
+                marker="o",
+                markersize=markersize,
+                lw=2,
+                label=f"sec_eclipse_thresh={secthresh*1e3:.2f} ppt",
+                zorder=2,
+            )
     except Exception as e:
         print(e)
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(half_phase - t14 * 2, half_phase + t14 * 2)
+    ax.set_xlim(phase_lo, phase_hi)
     ax.legend()
     return ax
 
@@ -381,7 +396,7 @@ def plot_aperture_outline(
     ny, nx = mask.shape
     contour = np.zeros((ny, nx))
     contour[np.where(mask)] = 1
-    contour = np.lib.pad(contour, 1, PadWithZeros)
+    contour = np.pad(contour, 1, PadWithZeros)
     highres = zoom(contour, 100, order=0, mode="nearest")
     extent = np.array([-1, nx, -1, ny])
 
@@ -652,7 +667,7 @@ def plot_gaia_sources_on_survey(
     # make aperture mask outline
     contour = np.zeros((ny, nx))
     contour[np.where(mask)] = 1
-    contour = np.lib.pad(contour, 1, PadWithZeros)
+    contour = np.pad(contour, 1, PadWithZeros)
     highres = zoom(contour, 100, order=0, mode="nearest")
     extent = np.array([-1, nx, -1, ny])
 

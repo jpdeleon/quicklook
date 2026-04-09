@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import flammkuchen as fk
+from quicklook import h5io
 from glob import glob
 import pandas as pd
 from tqdm import tqdm
@@ -31,7 +31,7 @@ def main():
     print("Reading *.tls files...")
     for file in tqdm(files):
         try:
-            data = fk.load(file)
+            data = h5io.load(file)
             d = {
                 "TOI": data.get("toiid"),
                 "TIC": data.get("ticid"),
@@ -42,7 +42,7 @@ def main():
                 "Prot_gls": data.get("Prot_gls")[0] if data.get("Prot_gls") else None,
                 "amp_gls": data.get("amp_gls")[0] if data.get("amp_gls") else None,
                 "depth": (1 - data.get("depth")) * 1e3 if data.get("depth") is not None else None,
-                "per_transit_count": tuple(data.get("per_transit_count")),
+                "per_transit_count": tuple(int(x) for x in data.get("per_transit_count")),
                 "exptime": data.get("exptime"),
                 "pipeline": data.get("pipeline"),  # data.get("meta")['AUTHOR'],
                 "flux_type": data.get("flux_type"),  # data.get("meta")["FLUX_ORIGIN"],

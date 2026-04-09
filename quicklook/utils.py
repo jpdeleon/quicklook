@@ -6,25 +6,86 @@ from urllib.request import urlopen
 import numpy as np
 import pandas as pd
 import astropy.units as u
+from loguru import logger
 
-# Import the compatibility module
-from quicklook.compat import get_data_path
+from importlib.resources import files
 
-# Ensure 'quicklook' is the top-level package
-DATA_PATH = get_data_path("quicklook")
+DATA_PATH = files("quicklook").joinpath("data")
 TESS_TIME_OFFSET = 2_457_000
 TESS_pix_scale = 21 * u.arcsec  # / u.pixel
 # K2_TIME_OFFSET = 2_454_833  # BKJD
 # Kepler_pix_scale = 3.98 * u.arcsec  # /pix
 
 __all__ = [
+    "get_available_sectors",
     "get_exofop_json",
     "get_params_from_exofop",
     "parse_aperture_mask",
     "compute_secthresh",
+    "mag_to_flux",
     "is_point_inside_mask",
     "PadWithZeros",
 ]
+
+
+def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
+    """Query available sectors for target+pipeline.
+
+    Parameters
+    ----------
+    target_name : str
+        Target name (e.g., "TOI-1234" or "TIC123456")
+    pipeline : str
+        Pipeline name (e.g., "SPOC", "QLP", "TGLC")
+    tic_id : int, optional
+        Pre-resolved TIC ID to skip the ExoFOP lookup.
+
+    Returns
+    -------
+    list
+        Sorted list of unique sector numbers available for the target and pipeline.
+    """
+    import lightkurve as lk
+
+    # Resolve to TIC ID via ExoFOP, matching TessQuickLook behavior
+    if tic_id is not None:
+        query_name = f"TIC{tic_id}"
+    else:
+        try:
+            tic_id = get_tic_id(target_name)
+            query_name = f"TIC{tic_id}"
+        except (ValueError, KeyError, OSError):
+            query_name = target_name
+
+    search = lk.search_lightcurve(query_name)
+    if len(search) == 0:
+        return []
+
+    df = search.table.to_pandas()
+
+    if pipeline.upper() == "SPOC":
+        sectors = []
+        for mission in df["mission"].tolist():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+        return sorted(set(sectors))
+
+    sectors = []
+    for mission, author in zip(df["mission"].tolist(), df["provenance_name"].tolist()):
+        if author.lower() == pipeline.lower():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+
+    # TGLC can run locally on any FFI sector, so fall back to all sectors
+    if not sectors and pipeline.upper() == "TGLC":
+        for mission in df["mission"].tolist():
+            x = mission.split()
+            if len(x) == 3:
+                sectors.append(int(x[-1]))
+
+    return sorted(set(sectors))
 
 
 def get_tois(
@@ -119,31 +180,35 @@ def get_exofop_json(target_name: str) -> dict:
     else:
         query_name = target_name.replace(" ", "")
     url = f"{base_url}/target.php?id={query_name}&json"
-    response = urlopen(url)
-    assert response.code == 200, "Failed to get data from ExoFOP-TESS"
+    response = urlopen(url, timeout=30)
+    if response.code != 200:
+        raise ConnectionError(f"ExoFOP-TESS returned HTTP {response.code} for {target_name}")
     try:
         data_json = json.loads(response.read())
         return data_json
-    except Exception:
-        raise ValueError(f"No TIC data found for {target_name}")
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ValueError(f"No TIC data found for {target_name}") from e
 
 
 def get_params_from_exofop(exofop_info, name="planet_parameters", idx=None):
     params_dict = exofop_info.get(name)
+    if not params_dict:
+        return None
     try:
         if idx is None:
             key = "pdate" if name == "planet_parameters" else "sdate"
             # get the latest parameter based on upload date
-            dates = []
-            for d in params_dict:
-                t = d.get(key)
-                dates.append(t)
+            dates = [d.get(key) for d in params_dict]
             df = pd.DataFrame({"date": dates})
             df["date"] = pd.to_datetime(df["date"], errors="coerce")
-            idx = df["date"].idxmax()
+            if df["date"].isna().all():
+                idx = 0  # no parseable dates; fall back to first entry
+            else:
+                idx = df["date"].idxmax()
         return params_dict[idx]
-    except Exception as e:
-        print("Error: ", e)
+    except (KeyError, TypeError, IndexError, ValueError) as e:
+        logger.warning(f"Could not parse ExoFOP params ({name}): {e}")
+        return None
 
 
 def get_tic_id(target_name: str) -> int:

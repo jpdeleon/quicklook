@@ -9,7 +9,7 @@ Although `quicklook` is optimized to find transiting exoplanets, this tool can a
 Create a conda environment called, say `my_env`, and install there the latest version of `quicklook-package`:
 
 ```bash
-$ conda create -n my_env python=3.10
+$ conda create -n my_env python=3.12
 $ conda activate my_env
 (my_env) $ pip install -U quicklook-package
 ```
@@ -30,12 +30,12 @@ This is not installed by default to keep dependencies minimal.
 
 To install with GUI support:
 ```bash
-(my_env) $ pip install -U "quicklook-package[web]"
+(my_env) $ pip install -U "quicklook-package[gui]"
 ```
 
 ## Running the Web GUI
 
-After installing with [gui], you can launch the Flask app locally:
+After installing the gui, you can launch the Flask app locally:
 
 ```bash
 (my_env) $ ql-gui
@@ -97,6 +97,8 @@ options:
   -overwrite            overwrite files
   -mask_ephem           mask transits either using TFOP or custom ephemerides if available (default=False)
   --suffix SUFFIX       add suffix to filename if -save flag is used
+  --each-sector         run on each available sector for the given pipeline individually
+  -j, --jobs JOBS       number of parallel jobs when using --each-sector (default=1)
 ```
 
 ## Examples
@@ -129,9 +131,11 @@ Try changing the parameters:
 (my_env) $ ql --name TOI-125.01 --sector 2 #specific TESS sector
 (my_env) $ ql --name TOI-125.01 --flatten_method cosine #specific function to detrend baseline
 (my_env) $ ql --name TOI-125.01 --period_limits 1 5 #limit search between 1-5 days
+(my_env) $ ql --name TOI-125.01 --each-sector -save #run on every available sector
+(my_env) $ ql --name TOI-125.01 --each-sector -j 4 -save #same but 4 sectors in parallel
 ```
 
-## Advanced usage
+## Advanced usage (batch processing)
 
 If you would like to run `ql` on a list of TIC IDs (saved as `tic_ids.txt`), then you can make a batch script named `run_ql_given_tic.batch`. The output files containing the logs (*.log), plots (*.png), and periodogram results (*_tls.h5) will be saved in `tic_dir` directory:
 
@@ -145,7 +149,7 @@ To test the Nth line of the batch script,
 (my_env) $ cat run_ql_given_tic.batch | sed -n Np | sh
 ```
 
-To run all the lines in parallel using [GNU parallel](https://www.gnu.org/software/parallel/) with N cores,
+To run all the lines in parallel using [GNU `parallel`](https://www.gnu.org/software/parallel/) with N cores,
 
 ```shell
 (my_env) $ cat run_ql_given_tic.batch | parallel -j N
@@ -155,4 +159,16 @@ After the batch script is done running, we can rank `ql` output in terms of Sign
 
 ```shell
 (my_env) $ read_tls tic_dir
+```
+
+Then, you can run the `rank_tls` script to rank the candidates after applying filters based on the `tic_dir_tls.csv` output:
+```shell
+(my_env) $ rank_tls tic_dir --output_dir ranked
+```
+This copies the filtered candidates plots into the new "ranked" directory.
+
+Finally, you can run the [`img2pdf`](https://pypi.org/project/img2pdf/) so it's easier to visually examine all the ranked candidates in one pdf file:
+```shell
+(my_env) $ apt install img2pdf
+(my_env) $ img2pdf ranked/*.png --output ranked.pdf
 ```

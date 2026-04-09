@@ -11,15 +11,16 @@ http://localhost:9995/lab/workspaces/auto-q/tree/chronos/chronos/target.py
 
 """
 
-import sys
 import math
+import sys
 import traceback
 import textwrap
 import warnings
 from pathlib import Path
 from time import time as timer
 from loguru import logger
-from quicklook.compat import get_data_path
+from importlib.resources import files
+from quicklook.exceptions import NoDataError, InvalidInputError, PipelineError
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
@@ -32,7 +33,7 @@ import astropy.units as u
 from astroquery.simbad import Simbad
 from astroquery.mast import Catalogs
 import lightkurve as lk
-import flammkuchen as fk
+from quicklook import h5io
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -52,12 +53,13 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 from quicklook.inject import InjectionParams, run_grid, select_best_window
+from quicklook.tglc import get_tglc_lc
 
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
-DATA_PATH = get_data_path("quicklook")
+DATA_PATH = files("quicklook").joinpath("data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
 
@@ -138,8 +140,7 @@ class TessQuickLook:
         self.tmask = self.get_transit_mask()
         err_msg = "No masked transits"
         if self.toi_epoch is not None and self.tmask.sum() == 0:
-            logger.error(f"Error: {err_msg}")
-            sys.exit()
+            raise PipelineError(err_msg)
         if self.mask_ephem:
             if self.verbose:
                 logger.info(
@@ -151,8 +152,11 @@ class TessQuickLook:
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
         self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
+        flat_time = self.flat_lc.time.value
+        self._flat_time_min = flat_time.min()
+        self._flat_time_max = flat_time.max()
         self.Porb_max = (
-            (max(self.flat_lc.time.value) - min(self.flat_lc.time.value)) / 2
+            (self._flat_time_max - self._flat_time_min) / 2
             if Porb_limits is None
             else Porb_limits[1]
         )
@@ -198,7 +202,7 @@ class TessQuickLook:
                 if key == "target_coord":
                     # Format the coordinate string
                     coord = self.target_coord.to_string("decimal")
-                    args.append(f"{key}=({coord.replace(' ',',')})")
+                    args.append(f"{key}=({coord.replace(' ', ',')})")
                 elif val is not None:
                     args.append(f"{key}={val}")
         # Join the args with commas
@@ -248,8 +252,7 @@ class TessQuickLook:
             self.ephem_source = "custom"
             err_msg = "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
             if len(self.custom_ephem) != 6:
-                logger.error(f"Error: {err_msg}")
-                sys.exit()
+                raise InvalidInputError(err_msg)
             if self.verbose:
                 msg = f"Using ephemeris mask:\nP={self.custom_ephem[0]}d\n"
                 msg += f"t0={self.custom_ephem[2]}BJD\nt14={self.custom_ephem[4]}d"
@@ -396,15 +399,15 @@ class TessQuickLook:
         if sector_orig == "all":
             # assure data comes from single pipeline
             if kwargs["exptime"] is None:
-                logger.error("Error: Supply exptime.")
-                sys.exit()
+                raise InvalidInputError("Supply exptime when using sector='all'.")
 
-        # Search for light curves related to the target
+        # Single MAST search, then filter locally
         search_result_all_lcs = lk.search_lightcurve(self.query_name)
         err_msg = f"Search using '{self.query_name}' did not yield any lightcurve results."
         if len(search_result_all_lcs) == 0:
-            logger.error(f"Error: {err_msg}")
-            sys.exit()
+            if kwargs.get("author", "").upper() == "TGLC":
+                return self._get_tglc_lc_fallback(kwargs.get("sector"))
+            raise NoDataError(err_msg)
 
         # Extract all available sectors
         self.all_sectors = self.get_unique_sectors(search_result_all_lcs)
@@ -419,30 +422,46 @@ class TessQuickLook:
             if self.verbose:
                 print(f"Available sectors: {self.all_sectors}")
         else:
-            err_msg = f"sector={kwargs.get('sector')} not in {self.all_sectors}"
             if kwargs.get("sector") not in self.all_sectors:
-                logger.error(f"Error: {err_msg}")
-                sys.exit()
+                err_msg = f"sector={kwargs.get('sector')} not in {self.all_sectors}"
+                raise NoDataError(err_msg)
 
         # Validate the requested author
         if kwargs.get("author") is None:
             kwargs["author"] = "SPOC"
         else:
             all_authors = set(search_result_all_lcs.table["provenance_name"].tolist())
-            err_msg = f"author={kwargs.get('author')} not in {all_authors}"
-            if kwargs.get("author").upper() not in all_authors:
-                logger.error(f"Error: {err_msg}")
-                sys.exit()
+            if kwargs["author"].upper() not in all_authors:
+                if kwargs["author"].upper() == "TGLC":
+                    return self._get_tglc_lc_fallback(kwargs.get("sector"))
+                err_msg = f"author={kwargs.get('author')} not in {all_authors}"
+                raise NoDataError(err_msg)
         self.pipeline = kwargs["author"].lower()
         self.all_pipelines = all_authors
 
-        # Search for specific light curve with given parameters
-        search_result = lk.search_lightcurve(self.query_name, **kwargs)
-        err_msg = f"Search using '{self.query_name}' "
-        err_msg += f"{kwargs} did not yield any lightcurve results."
+        # Filter locally instead of a second MAST query
+        mask = np.ones(len(search_result_all_lcs), dtype=bool)
+        tbl = search_result_all_lcs.table
+        if kwargs.get("author"):
+            mask &= np.array(
+                [a.upper() == kwargs["author"].upper() for a in tbl["provenance_name"]]
+            )
+        if kwargs.get("sector") is not None:
+            mask &= np.array(
+                [
+                    len(m.split()) == 3 and int(m.split()[-1]) == kwargs["sector"]
+                    for m in tbl["mission"]
+                ]
+            )
+        if kwargs.get("exptime") is not None:
+            mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
+        search_result = search_result_all_lcs[mask]
         if len(search_result) == 0:
-            logger.error(f"Error: {err_msg}")
-            sys.exit()
+            if kwargs.get("author", "").upper() == "TGLC":
+                return self._get_tglc_lc_fallback(kwargs.get("sector"))
+            err_msg = f"Search using '{self.query_name}' "
+            err_msg += f"{kwargs} did not yield any lightcurve results."
+            raise NoDataError(err_msg)
 
         # Download and return light curve
         if sector_orig == "all":
@@ -454,8 +473,7 @@ class TessQuickLook:
                 logger.info(msg)
             filtered_sectors = self.get_unique_sectors(search_result)
             if len(filtered_sectors) <= 1:
-                logger.error(f"Only {len(filtered_sectors)} sector is available.")
-                sys.exit()
+                raise NoDataError(f"Only {len(filtered_sectors)} sector is available.")
             lc = search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
             self.sector = self.all_sectors
 
@@ -497,9 +515,9 @@ class TessQuickLook:
         if self.exptime is None:
             self.exptime = exptime
         if (self.exptime <= 120) and (self.flatten_method == "gp"):
-            err_msg = "Using flatten_method='GP' for dense data with exp<=120s is not recommended. Exiting."
-            logger.error(err_msg)
-            sys.exit()
+            raise InvalidInputError(
+                "Using flatten_method='GP' for dense data with exp<=120s is not recommended."
+            )
         # assert self.exptime == search_result.exptime[idx].value
         self.cadence = "short" if self.exptime < 1800 else "long"
 
@@ -523,14 +541,31 @@ class TessQuickLook:
             return lc.normalize()
 
     def get_unique_sectors(self, search_result):
-        all_sectors = []
-        for i in search_result.table["mission"].tolist():
-            x = i.split()
-            if len(x) == 3:
-                s = int(x[-1])
-                all_sectors.append(s)
-        unique_sectors = sorted(set(all_sectors))
-        return unique_sectors
+        missions = search_result.table["mission"].tolist()
+        all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
+        return sorted(set(all_sectors))
+
+    def _get_tglc_lc_fallback(self, sector):
+        """Run local TGLC ePSF extraction when MAST has no TGLC products."""
+        logger.info("No TGLC products on MAST; running local ePSF extraction...")
+        self.pipeline = "tglc"
+        self.all_pipelines = {"TGLC"}
+        sector_arg = None if sector in (None, -1) else int(sector)
+        lc = get_tglc_lc(
+            self.query_name,
+            sector=sector_arg,
+            verbose=self.verbose,
+        )
+        self.sector = lc.sector
+        self.all_sectors = [lc.sector]
+        self.exptime = lc.meta.get("EXPOSURE", 1800)
+        self.cadence = "short" if self.exptime < 1800 else "long"
+        if self.sigma_clip_raw is not None:
+            return lc.normalize().remove_outliers(
+                sigma_lower=self.sigma_clip_raw[0],
+                sigma_upper=self.sigma_clip_raw[1],
+            )
+        return lc.normalize()
 
     def get_tpf(self, **kwargs: dict) -> lk.targetpixelfile.TargetPixelFile:
         """
@@ -555,10 +590,8 @@ class TessQuickLook:
 
         # Search for TPF files
         search_result_all_tpfs = lk.search_targetpixelfile(self.query_name)
-        err_msg = "No tpf files found."
         if len(search_result_all_tpfs) == 0:
-            logger.error(f"Error: {err_msg}")
-            sys.exit()
+            raise NoDataError("No TPF files found.")
 
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
@@ -574,11 +607,10 @@ class TessQuickLook:
 
         # Search using the specified author and sector
         search_result = lk.search_targetpixelfile(self.query_name, **kwargs)
-        err_msg = f"Search using '{self.query_name}' {kwargs} "
-        err_msg += "did not yield any TPF results."
         if len(search_result) == 0:
-            logger.error(f"Error: {err_msg}")
-            sys.exit()
+            raise NoDataError(
+                f"Search using '{self.query_name}' {kwargs} did not yield any TPF results."
+            )
         msg = "Downloading TPF..."
         if self.verbose:
             logger.info(msg)
@@ -603,14 +635,12 @@ class TessQuickLook:
             The downloaded TESS postage stamp.
         """
         if self.sector is None:
-            logger.error("Provide sector.")
-            sys.exit()
+            raise InvalidInputError("Provide sector for TESScut download.")
         tpf = lk.search_tesscut(self.query_name, sector=self.sector).download(
             cutout_size=(15, 15), quality_bitmask=self.quality_bitmask
         )
         if tpf is None:
-            logger.error("No results from Tesscut search.")
-            sys.exit()
+            raise NoDataError("No results from Tesscut search.")
         # remove zeros
         zero_mask = (tpf.flux_err == 0).all(axis=(1, 2))
         if zero_mask.sum() > 0:
@@ -627,9 +657,10 @@ class TessQuickLook:
         try:
             # Use TIC latest uploaded ephem as default
             planet_params = get_params_from_exofop(self.exofop_data, "planet_parameters")
-        except Exception as e:
-            logger.error(e)
-            # If latest uploaded ephem is not available, use the first one
+        except (KeyError, TypeError, ValueError, IndexError) as e:
+            logger.warning(f"Latest planet params unavailable ({e}); falling back to idx=1")
+            planet_params = None
+        if planet_params is None:
             planet_params = get_params_from_exofop(self.exofop_data, "planet_parameters", idx=1)
         return planet_params
 
@@ -659,8 +690,10 @@ class TessQuickLook:
             corresponding parameter.
         """
         planet_params = self.get_planet_params()
+        if planet_params is None:
+            return (None, None, None, None)
         if self.verbose:
-            print(f"Parameters for {planet_params['name']}:")
+            print(f"Parameters for {planet_params.get('name', 'unknown')}:")
 
         # Initialize variables
         toi_epoch = None
@@ -730,12 +763,22 @@ class TessQuickLook:
         )
 
     def init_gls(self):
+        masked_lc = self.raw_lc[~self.tmask]
         if self.pipeline == "pathos":
-            # pathos do not have flux_err
-            cols = ["time", "flux"]
+            data = np.array(
+                [
+                    np.asarray(masked_lc.time.value, dtype=float),
+                    np.asarray(masked_lc.flux.value, dtype=float),
+                ]
+            )
         else:
-            cols = ["time", "flux", "flux_err"]
-        data = self.raw_lc.to_pandas().reset_index()[cols][~self.tmask].values.T
+            data = np.array(
+                [
+                    np.asarray(masked_lc.time.value, dtype=float),
+                    np.asarray(masked_lc.flux.value, dtype=float),
+                    np.asarray(masked_lc.flux_err.value, dtype=float),
+                ]
+            )
         if self.verbose:
             msg = "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram..."
             logger.info(msg)
@@ -819,27 +862,24 @@ class TessQuickLook:
         )
 
         if self.sigma_clip_flat is not None:
-            # Apply sigma clipping to the flattened light curve
             msg = "Applying sigma clip on flattened lc with "
             msg += f"(lower,upper)=({self.sigma_clip_flat})"
             if self.verbose:
                 logger.info(msg)
             idx = sigma_clip(
                 wflat_lc,
-                # The lower and upper sigma limits
                 sigma_lower=self.sigma_clip_flat[0],
                 sigma_upper=self.sigma_clip_flat[1],
             ).mask
         else:
-            # No sigma clipping
             idx = np.zeros_like(wflat_lc, dtype=bool)
-        # Get the flattened and trend light curves
+
+        valid_mask = ~idx
         flat_lc, trend_lc = self.raw_lc.flatten(return_trend=True)
-        # Replace flux values with that from wotan
-        flat_lc = flat_lc[~idx]
-        trend_lc = trend_lc[~idx]
-        trend_lc.flux = wtrend_lc[~idx]
-        flat_lc.flux = wflat_lc[~idx]
+        flat_lc = flat_lc[valid_mask]
+        trend_lc = trend_lc[valid_mask]
+        trend_lc.flux = wtrend_lc[valid_mask]
+        flat_lc.flux = wflat_lc[valid_mask]
         return flat_lc, trend_lc
 
     def get_transit_mask(self):
@@ -878,8 +918,8 @@ class TessQuickLook:
         try:
             # Use the TIC stellar parameters as default
             star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters", idx=1)
-        except Exception as e:
-            logger.error(e)
+        except (KeyError, TypeError, ValueError, IndexError) as e:
+            logger.warning(f"Stellar params at idx=1 unavailable ({e}); using latest")
             star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters")
         params = {}
         param_names = ["srad", "mass", "teff", "logg", "dist"]
@@ -891,9 +931,8 @@ class TessQuickLook:
                     if name == "teff"
                     else float(star_params.get(name))
                 )
-            except Exception as e:
-                logger.error(e)
-                # Set to NaN if there's an error
+            except (TypeError, ValueError) as e:
+                logger.debug(f"Could not parse stellar param '{name}': {e}")
                 params[name] = np.nan
             try:
                 # Convert to float or int as needed
@@ -902,9 +941,8 @@ class TessQuickLook:
                     if name == "teff"
                     else float(star_params.get(name + "_e"))
                 )
-            except Exception as e:
-                logger.error(e)
-                # Set to NaN if there's an error
+            except (TypeError, ValueError) as e:
+                logger.debug(f"Could not parse stellar param '{name}_e': {e}")
                 params[name + "_e"] = np.nan
         # Get the meta data
         meta = self.raw_lc.meta
@@ -936,13 +974,13 @@ class TessQuickLook:
             msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
         else:
             msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
-        msg += f"Duration={self.tls_results.duration*24:.2f} hr (TLS)"
+        msg += f"Duration={self.tls_results.duration * 24:.2f} hr (TLS)"
         if self.toi_dur is not None:
-            msg += f", {self.toi_dur[0]*24:.2f}" + r"$\pm$"
-            msg += f"{self.toi_dur[1]*24:.2f} hr ({self.ephem_source})\n"
+            msg += f", {self.toi_dur[0] * 24:.2f}" + r"$\pm$"
+            msg += f"{self.toi_dur[1] * 24:.2f} hr ({self.ephem_source})\n"
         else:
             msg += "\n"
-        msg += f"Depth={(1-self.tls_results.depth)*1e3:.2f} ppt (TLS)"
+        msg += f"Depth={(1 - self.tls_results.depth) * 1e3:.2f} ppt (TLS)"
         if self.toi_depth is not None:
             msg += f", {self.toi_depth[0]:.1f}" + r"$\pm$"
             msg += f"{self.toi_depth[1]:.1f} ppt (TFOP)\n"
@@ -955,7 +993,7 @@ class TessQuickLook:
         ):
             # msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 5
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$ "
-            msg += f"= {Rp_true*u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
+            msg += f"= {Rp_true * u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
         else:
             msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
             msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
@@ -991,7 +1029,7 @@ class TessQuickLook:
         msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
-        msg += f"Vsini={per/t:.2f} km/s\n"
+        msg += f"Vsini={per / t:.2f} km/s\n"
         msg += f"Gaia DR2 ID={self.gaiaid}\n"
         # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
@@ -1136,7 +1174,6 @@ class TessQuickLook:
                 verbose=self.verbose,
                 ax=ax,
             )
-            pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
             self.Prot_ls = self.gls.best["P"]
             if math.isnan(self.gls.power.max()):
                 logger.error("GLS power is NaN, switching to astropy's Lomb-Scargle...")
@@ -1150,6 +1187,8 @@ class TessQuickLook:
                     ax=ax,
                 )
                 self.Prot_ls = pg.period_at_max_power.value
+            else:
+                pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
         else:
             self.gls = None
             pg = plot_periodogram(
@@ -1186,21 +1225,21 @@ class TessQuickLook:
                 show_colorbar=False,
             )
         )
-        _ = (
-            pg.model(self.raw_lc[~self.tmask].time)
-            .fold(
-                self.Prot_ls,
-                normalize_phase=False,
-                wrap_phase=self.Prot_ls / 2,
-            )
-            .plot(
-                label=f"{self.pg_method.upper()} model",
-                color="r",
-                ls="--",
-                lw=2,
-                zorder=1,
-                ax=ax,
-            )
+        model_folded = pg.model(self.raw_lc[~self.tmask].time).fold(
+            self.Prot_ls,
+            normalize_phase=False,
+            wrap_phase=self.Prot_ls / 2,
+        )
+        # Sort by phase so the model renders as a smooth curve, not zigzag lines
+        sort_idx = np.argsort(model_folded.phase.value)
+        ax.plot(
+            model_folded.phase.value[sort_idx],
+            model_folded.flux.value[sort_idx],
+            label=f"{self.pg_method.upper()} model",
+            color="r",
+            ls="--",
+            lw=2,
+            zorder=1,
         )
         ax.set_xlabel("Rotation Phase [days]")
 
@@ -1289,9 +1328,8 @@ class TessQuickLook:
                 verbose=self.verbose,
                 ax=ax,
             )
-        except Exception as e:
-            logger.error(f"Error: {e}")
-            logger.info("Querying archival image failed. Plotting TPF instead.")
+        except (OSError, FileNotFoundError, ValueError) as e:
+            logger.warning(f"Archival image failed ({e}); plotting TPF instead.")
             _ = plot_gaia_sources_on_tpf(
                 tpf=self.tpf,
                 target_gaiaid=self.gaiaid,
@@ -1320,7 +1358,7 @@ class TessQuickLook:
         )
 
         if self.verbose:
-            logger.info("Plotting summary panel...")
+            logger.info("Creating summary panel...")
         ax = axes.flatten()[8]
         ax.axis([0, 10, 0, 10])
         msg = self.make_summary_info()
@@ -1350,7 +1388,7 @@ class TessQuickLook:
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
-            fk.save(h5_file, self.tls_results)
+            h5io.save(h5_file, self.tls_results)
             logger.info(f"Saved: {h5_file}")
 
         self.timer_end = timer()
