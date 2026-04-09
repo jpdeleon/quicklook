@@ -7,7 +7,11 @@ from matplotlib.figure import Figure
 from quicklook.tql import TessQuickLook
 import lightkurve as lk
 import astropy.units as u
+import requests
 from astroquery.exceptions import RemoteServiceError
+
+# Network errors that indicate MAST/remote service issues, not code bugs.
+_NETWORK_ERRORS = (RemoteServiceError, requests.exceptions.HTTPError, ConnectionError, TimeoutError)
 
 
 @pytest.fixture
@@ -69,8 +73,8 @@ def test_tql_planet(planet_inputs):
         # Check that TLS was run
         assert hasattr(ql, "tls_results")
         assert ql.tls_results.period > 0
-    except RemoteServiceError as e:
-        # CI-specific soft failure
+    except _NETWORK_ERRORS as e:
+        # CI-specific soft failure — MAST outages are not code bugs
         if os.getenv("CI", "false") == "true":
             pytest.xfail(f"Network failure (not a bug): {e}")
         else:
@@ -100,8 +104,8 @@ def test_tql_eb(eb_inputs):
         # Check that TLS was run
         assert hasattr(ql, "tls_results")
         assert ql.tls_results.period > 0
-    except RemoteServiceError as e:
-        # CI-specific soft failure
+    except _NETWORK_ERRORS as e:
+        # CI-specific soft failure — MAST outages are not code bugs
         if os.getenv("CI", "false") == "true":
             pytest.xfail(f"Network failure (not a bug): {e}")
         else:
@@ -122,8 +126,8 @@ def test_tql_variable_star(variable_star_inputs):
         assert ql.sector == variable_star_inputs["sector"]
         assert ql.flux_type == variable_star_inputs["flux_type"].lower()
         assert ql.pipeline == variable_star_inputs["pipeline"].lower()
-    except RemoteServiceError as e:
-        # CI-specific soft failure
+    except _NETWORK_ERRORS as e:
+        # CI-specific soft failure — MAST outages are not code bugs
         if os.getenv("CI", "false") == "true":
             pytest.xfail(f"Network failure (not a bug): {e}")
         else:
