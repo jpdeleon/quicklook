@@ -1,0 +1,52 @@
+site_name: QuickLook
+site_description: A Python pipeline for transit signal detection in TESS light curves
+site_url: https://quicklook.readthedocs.io
+repo_url: https://github.com/jpdeleon/quicklook
+repo_name: jpdeleon/quicklook
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - toc.follow
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - attr_list
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Getting Started: getting-started.md
+  - CLI Reference: cli.md
+  - Web GUI: gui.md
+  - Pipeline Overview: pipeline.md
+  - API Reference: api.md
+  - Batch Processing: batch.md
+  - FAQ: faq.md
