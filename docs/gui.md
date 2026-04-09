@@ -2,6 +2,8 @@
 
 QuickLook includes a Flask-based web interface for interactive analysis with live progress streaming.
 
+![QuickLook Web GUI](img/ql-gui.png)
+
 ## Starting the GUI
 
 ```bash
