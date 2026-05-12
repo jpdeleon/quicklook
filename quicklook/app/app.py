@@ -571,6 +571,18 @@ def cancel(target):
     return jsonify({"ok": False, "reason": "not running"}), 400
 
 
+@app.route("/cancel-all", methods=["POST"])
+def cancel_all():
+    """Cancel all pending (queued or running) jobs."""
+    cancelled = []
+    for name, info in jobs.items():
+        if info["status"] in ("running", "queued"):
+            info["cancel_event"].set()
+            info["status"] = "cancelled"
+            cancelled.append(name)
+    return jsonify({"ok": True, "cancelled": cancelled})
+
+
 @app.route("/delete-output", methods=["POST"])
 def delete_output():
     """Delete an output PNG and its associated H5 file."""
