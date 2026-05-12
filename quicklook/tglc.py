@@ -118,7 +118,7 @@ def mast_query(request):
     req_string = json.dumps(request)
     req_string = urlencode(req_string)
     # Perform the HTTP request
-    resp = requests.post(request_url, data="request=" + req_string, headers=headers)
+    resp = requests.post(request_url, data="request=" + req_string, headers=headers, timeout=60)
     # Pull out the headers and response content
     head = resp.headers
     content = resp.content.decode("utf-8")
@@ -226,7 +226,7 @@ class Source(object):
         catalog_3 = self.search_gaia(x, y, co2, co1)
         catalog_4 = self.search_gaia(x, y, co2, co2)
         catalogdata = vstack([catalog_1, catalog_2, catalog_3, catalog_4], join_type="exact")
-        catalogdata = unique(catalogdata, keys="DESIGNATION")
+        catalogdata = unique(catalogdata, keys="designation")
         coord = wcs.pixel_to_world([x + (size - 1) / 2 + 44], [y + (size - 1) / 2])[0].to_string()
         ra = float(coord.split()[0])
         dec = float(coord.split()[1])
@@ -256,10 +256,10 @@ class Source(object):
             if gaia_str != "None":
                 tic_lookup[gaia_str] = catalogdata_tic["ID"][idx_t]
         tic_id = np.zeros(len(catalogdata))
-        for i, designation in enumerate(catalogdata["DESIGNATION"]):
+        for i, designation in enumerate(catalogdata["designation"]):
             try:
                 tic_id[i] = tic_lookup.get(designation.split()[2], np.nan)
-            except Exception as e:
+            except (IndexError, ValueError, TypeError) as e:
                 logger.debug(f"TIC ID lookup failed for {designation}: {e}")
                 tic_id[i] = np.nan
 
@@ -287,8 +287,8 @@ class Source(object):
         t["tess_mag"] = tess_mag[in_frame]
         t["tess_flux"] = tess_flux[in_frame]
         t["tess_flux_ratio"] = tess_flux[in_frame] / np.nanmax(tess_flux[in_frame])
-        t["sector_{self.sector}_x"] = x_gaia[in_frame]
-        t["sector_{self.sector}_y"] = y_gaia[in_frame]
+        t[f"sector_{self.sector}_x"] = x_gaia[in_frame]
+        t[f"sector_{self.sector}_y"] = y_gaia[in_frame]
         catalogdata = hstack([catalogdata[in_frame], t])
         catalogdata.sort("tess_mag")
         self.gaia = catalogdata
@@ -517,7 +517,7 @@ class Source_cut(object):
         self.mask = mask
 
         gaia_targets = self.catalogdata[
-            "DESIGNATION",
+            "designation",
             "phot_g_mean_mag",
             "phot_bp_mean_mag",
             "phot_rp_mean_mag",
@@ -586,12 +586,12 @@ class Source_cut(object):
         t["tess_mag"] = tess_mag[in_frame]
         t["tess_flux"] = tess_flux[in_frame]
         t["tess_flux_ratio"] = tess_flux[in_frame] / np.max(tess_flux[in_frame])
-        t["sector_{self.sector}_x"] = x_gaia[in_frame]
-        t["sector_{self.sector}_y"] = y_gaia[in_frame]
+        t[f"sector_{self.sector}_x"] = x_gaia[in_frame]
+        t[f"sector_{self.sector}_y"] = y_gaia[in_frame]
         gaia_targets = hstack([gaia_targets[in_frame], t])
         if self.transient is not None:
             gaia_targets["tess_flux"][
-                np.where(gaia_targets["DESIGNATION"] == self.transient[0])[0][0]
+                np.where(gaia_targets["designation"] == self.transient[0])[0][0]
             ] = 0
         gaia_targets.sort("tess_mag")
         self.gaia = gaia_targets
@@ -693,7 +693,7 @@ def lc_output(
     :return:
     """
     if transient is None:
-        objid = [int(s) for s in (source.gaia[index]["DESIGNATION"]).split() if s.isdigit()][0]
+        objid = [int(s) for s in (source.gaia[index]["designation"]).split() if s.isdigit()][0]
     else:
         objid = transient[0]
     # source_path = f"{local_directory}hlsp_tglc_tess_ffi_gaiaid-{objid}-s{source.sector:04d}-cam{source.camera}-ccd{source.ccd}_tess_v1_llc.fits"
@@ -727,12 +727,12 @@ def lc_output(
         cal_aper_err = "NaN"
     try:
         ticid = str(source.tic["TIC"][np.where(source.tic["dr3_source_id"] == objid)][0])
-    except Exception as e:
+    except (IndexError, KeyError, TypeError) as e:
         logger.debug(f"TIC ID lookup failed for {objid}: {e}")
         ticid = ""
     try:
         raw_flux = np.nanmedian(source.flux[:, star_y, star_x])
-    except Exception as e:
+    except (IndexError, ValueError) as e:
         logger.debug(f"Raw flux extraction failed: {e}")
         raw_flux = None
     if save_aper:
@@ -774,7 +774,7 @@ def lc_output(
             fits.Card("FILTER", "TESS", "the filter used for the observations"),
             fits.Card(
                 "OBJECT",
-                source.gaia[index]["DESIGNATION"],
+                source.gaia[index]["designation"],
                 "string version of Gaia DR3 ID",
             ),
             fits.Card("GAIADR3", objid, "integer version of Gaia DR3 ID"),
@@ -865,7 +865,7 @@ def lc_output(
     table_hdu.header.append(
         (
             "OBJECT",
-            source.gaia[index]["DESIGNATION"],
+            source.gaia[index]["designation"],
             "string version of Gaia DR3 ID",
         ),
         end=True,
@@ -1003,7 +1003,7 @@ def get_psf(source, factor=2, psf_size=11, edge_compression=1e-4, c=np.array([0,
     coord = np.arange(size**2).reshape(size, size)
     xx, yy = np.meshgrid((np.arange(size) - (size - 1) / 2), (np.arange(size) - (size - 1) / 2))
 
-    if isinstance(Source, source):
+    if isinstance(source, Source):
         bg_dof = 6
         A = np.zeros((size**2, over_size**2 + bg_dof))
         A[:, -1] = np.ones(size**2)
@@ -1166,7 +1166,7 @@ def fit_lc(
     up_11 = np.minimum(size - y + 5, 11)
     coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
     index = coord[down_11:up_11, left_11:right_11]
-    if isinstance(Source, source):
+    if isinstance(source, Source):
         bg_dof = 6
     else:
         bg_dof = 3
@@ -1309,7 +1309,7 @@ def fit_lc_float_field(
     # right_ = right - x[star_num] + 5
     # down_ = down - y[star_num] + 5
     # up_ = up - y[star_num] + 5
-    if isinstance(Source, source):
+    if isinstance(source, Source):
         bg_dof = 6
     else:
         bg_dof = 3
@@ -1640,16 +1640,16 @@ def epsf(
         try:
             start = int(
                 np.where(
-                    source.gaia["DESIGNATION"]
+                    source.gaia["designation"]
                     == "Gaia DR3 "
                     + str(source.tic["dr3_source_id"][np.where(source.tic["TIC"] == name)][0])
                 )[0][0]
             )
             end = start + 1
-        except Exception as e:
-            logger.debug(e)
+        except (IndexError, KeyError, TypeError, ValueError) as e:
+            logger.debug(f"TIC-to-Gaia lookup failed: {e}")
             try:
-                start = int(np.where(source.gaia["DESIGNATION"] == name)[0][0])
+                start = int(np.where(source.gaia["designation"] == name)[0][0])
                 end = start + 1
             except IndexError:
                 logger.warning(
@@ -1664,7 +1664,7 @@ def epsf(
             x_left <= x_round[i] < source.size - x_right
             and y_left <= y_round[i] < source.size - y_right
         ):
-            if isinstance(Source, source):
+            if isinstance(source, Source):
                 x_left = 1.5
                 x_right = 2.5
                 y_left = 1.5
@@ -1747,7 +1747,7 @@ def epsf(
             if np.isnan(aper_lc).all():
                 continue
             else:
-                if isinstance(Source, source):
+                if isinstance(source, Source):
                     # if cut_x >= 7:
                     #     lc_directory = f'{local_directory}lc/{source.camera}-{source.ccd}_extra/'
                     lc_output(
@@ -1811,7 +1811,7 @@ def epsf(
                     )
 
 
-def get_tglc_lc(target_name, sector=None, size=25, limit_mag=16, verbose=True):
+def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
     """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
 
     This function downloads an FFI cutout via TESScut, runs the TGLC effective
@@ -1920,7 +1920,7 @@ def get_tglc_lc(target_name, sector=None, size=25, limit_mag=16, verbose=True):
     )
 
     # 8. Build the TessLightCurve
-    flux = cal_psf_lc
+    flux = cal_psf_lc  # cal_aper_lc
     flux_err = np.full_like(flux, 1.4826 * np.nanmedian(np.abs(flux - np.nanmedian(flux))))
 
     # BTJD times (TESS Barycentric Julian Date, BJD - 2457000)

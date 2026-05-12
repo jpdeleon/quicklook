@@ -28,6 +28,29 @@ __all__ = [
 ]
 
 
+def _get_tglc_sectors_via_tesscut(target_name, tic_id=None):
+    """Enumerate TESS sectors covering a target using the TESScut service.
+
+    Avoids the MAST Observations portal (`/api/v0/invoke`) so it survives
+    outages of that subsystem. TGLC runs locally on FFI cutouts, so sector
+    availability is driven purely by sky coverage, not by any pipeline
+    products existing on MAST.
+    """
+    from astropy.coordinates import SkyCoord
+    from astroquery.mast import Tesscut
+
+    if tic_id is not None:
+        resolve_name = f"TIC {tic_id}"
+    else:
+        resolve_name = target_name.replace("_", " ").replace("-", " ")
+
+    coord = SkyCoord.from_name(resolve_name)
+    sector_table = Tesscut.get_sectors(coordinates=coord)
+    if len(sector_table) == 0:
+        return []
+    return sorted({int(s) for s in sector_table["sector"]})
+
+
 def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
     """Query available sectors for target+pipeline.
 
@@ -46,6 +69,9 @@ def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
         Sorted list of unique sector numbers available for the target and pipeline.
     """
     import lightkurve as lk
+
+    if pipeline.upper() == "TGLC":
+        return _get_tglc_sectors_via_tesscut(target_name, tic_id=tic_id)
 
     # Resolve to TIC ID via ExoFOP, matching TessQuickLook behavior
     if tic_id is not None:
@@ -74,13 +100,6 @@ def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
     sectors = []
     for mission, author in zip(df["mission"].tolist(), df["provenance_name"].tolist()):
         if author.lower() == pipeline.lower():
-            x = mission.split()
-            if len(x) == 3:
-                sectors.append(int(x[-1]))
-
-    # TGLC can run locally on any FFI sector, so fall back to all sectors
-    if not sectors and pipeline.upper() == "TGLC":
-        for mission in df["mission"].tolist():
             x = mission.split()
             if len(x) == 3:
                 sectors.append(int(x[-1]))

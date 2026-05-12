@@ -1,14 +1,8 @@
 """
-1. See:
-* https://ui.adsabs.harvard.edu/abs/2021ascl.soft01011R/abstract
-* https://deep-lightcurve.readthedocs.io/en/latest/notebooks/Quickstart.html
-* https://ui.adsabs.harvard.edu/abs/2022MNRAS.516.4432M/abstract
-2. Add momentum dumps as in TESSLatte:
+TODO:
+* Add momentum dumps as in TESSLatte:
 https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c51/LATTE/LATTEutils.py#L3501C13-L3501C63
-3. Add RUWE in plots
-4. ingest functions from target.py:
-http://localhost:9995/lab/workspaces/auto-q/tree/chronos/chronos/target.py
-
+* Add RUWE in plots
 """
 
 import math
@@ -95,6 +89,7 @@ class TessQuickLook:
         suffix: str = None,
         quality_bitmask: str = "default",
         outdir: str = ".",
+        tls_use_threads: int = None,
     ):
         # start timer
         self.timer_start = timer()
@@ -114,6 +109,7 @@ class TessQuickLook:
         self.sigma_clip_flat = sigma_clip_flat
         self.quality_bitmask = quality_bitmask
         self.flatten_method = flatten_method
+        self.tls_use_threads = tls_use_threads
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
@@ -752,15 +748,18 @@ class TessQuickLook:
         else:
             flux_err = self.flat_lc.flux_err.value
         # Run TLS
+        power_kwargs = {
+            "period_min": self.Porb_min,  # Roche limit default
+            "period_max": self.Porb_max,
+        }
+        if self.tls_use_threads is not None:
+            power_kwargs["use_threads"] = self.tls_use_threads
         self.tls_results = tls(
             self.flat_lc.time.value,
             self.flat_lc.flux.value,
             flux_err,
             verbose=self.verbose,
-        ).power(
-            period_min=self.Porb_min,  # Roche limit default
-            period_max=self.Porb_max,
-        )
+        ).power(**power_kwargs)
 
     def init_gls(self):
         masked_lc = self.raw_lc[~self.tmask]
@@ -1269,13 +1268,13 @@ class TessQuickLook:
             logger.info("Plotting TPF...")
         ax = axes.flatten()[5]
         if self.pipeline in [
-            "cdips",  # TODO: missing flux err raises error in errorbar plot
+            # "cdips",  # TODO: missing flux err raises error in errorbar plot
             "gsfc-eleanor-lite",
         ]:
             err_msg = "Pipeline to be added soon."
             logger.info(err_msg)
             raise NotImplementedError(err_msg)
-        elif self.pipeline in ["qlp", "cdips", "tasoc", "pathos", "tglc"]:
+        elif self.pipeline in ["qlp", "cdips", "tasoc", "pathos", "tglc", "t16"]:
             if self.verbose:
                 logger.info("Getting TPF with tesscut...")
             self.tpf = self.get_tpf_tesscut()

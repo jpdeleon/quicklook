@@ -189,19 +189,20 @@ class Gls:
             try:
                 self.df = lc
                 lc = np.genfromtxt(lc, unpack=True)[0:3]
-            except Exception as e:
-                print("An error occurred while trying to read data file:")
-                print("  ", e)
+            except (OSError, ValueError) as e:
+                raise OSError(f"Failed to read data file '{lc}': {e}") from e
 
         if isinstance(lc, (tuple, list, np.ndarray)):
             # t, y[, e_y] were given as list or tuple.
+            # Ensure plain numpy arrays (not astropy MaskedNDArray) to avoid
+            # broadcast failures in np.dot during peak fitting.
             if len(lc) in (2, 3):
-                self.t = np.ravel(lc[0])
-                self.y = np.ravel(lc[1])
+                self.t = np.asarray(np.ravel(lc[0]), dtype=float)
+                self.y = np.asarray(np.ravel(lc[1]), dtype=float)
                 self.e_y = None
                 if len(lc) == 3 and lc[2] is not None:
                     # Error has been specified.
-                    self.e_y = np.ravel(lc[2])
+                    self.e_y = np.asarray(np.ravel(lc[2]), dtype=float)
             else:
                 raise (
                     ValueError(
@@ -442,12 +443,8 @@ class Gls:
         if t is None:
             t = self.t
 
-        try:
-            p = self.best
-            return p["amp"] * sin(2 * np.pi * p["f"] * (t - p["T0"])) + p["offset"]
-        except Exception as e:
-            print("Failed to calcuate best-fit sine curve.")
-            raise (e)
+        p = self.best
+        return p["amp"] * sin(2 * np.pi * p["f"] * (t - p["T0"])) + p["offset"]
 
     def info(self, stdout=True):
         """
