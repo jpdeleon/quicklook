@@ -78,6 +78,39 @@
       display: inline-flex; align-items: center; justify-content: center;
       width: 16px; height: 16px; border-radius: 50%; font-size: 0.65rem; font-weight: 700;
       background: var(--border); color: var(--text-sec); cursor: help; flex-shrink: 0;
+      position: relative; user-select: none;
+    }
+    .help-tip:hover { background: var(--primary); color: #fff; }
+    .help-tip::after {
+      content: attr(data-tip);
+      position: absolute;
+      bottom: calc(100% + 6px); left: 50%;
+      transform: translateX(calc(-50% + var(--tip-shift, 0px)));
+      background: var(--text); color: var(--card-bg);
+      padding: 6px 10px; border-radius: 6px;
+      font-size: 0.75rem; font-weight: normal;
+      white-space: normal; width: max-content; max-width: 260px;
+      text-align: left; line-height: 1.4;
+      letter-spacing: normal; text-transform: none;
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.15s, visibility 0.15s;
+      pointer-events: none; z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .help-tip::before {
+      content: ''; position: absolute;
+      bottom: calc(100% + 1px); left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--text);
+      opacity: 0; visibility: hidden;
+      transition: opacity 0.15s, visibility 0.15s;
+      pointer-events: none; z-index: 100;
+    }
+    .help-tip:hover::after, .help-tip:hover::before,
+    .help-tip.active::after, .help-tip.active::before,
+    .help-tip:focus::after, .help-tip:focus::before {
+      opacity: 1; visibility: visible;
     }
     input[type="text"], input[type="number"], select, textarea {
       width: 100%; padding: 7px 10px; border: 1px solid var(--input-border); border-radius: 5px;
@@ -117,8 +150,21 @@
 
     /* --- Job queue --- */
     .queue-section { margin-bottom: 16px; }
-    .queue-section h2 { font-size: 1rem; margin-bottom: 8px; }
+    .queue-section h2 { font-size: 1rem; margin-bottom: 0; }
+    .queue-header {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap;
+    }
+    .queue-count { font-size: 0.78rem; color: var(--text-sec); font-weight: 500; }
+    .queue-toggle {
+      margin-left: auto; font-size: 0.8rem; color: var(--primary); cursor: pointer;
+      background: none; border: none; padding: 0; font-weight: 600;
+    }
+    .queue-toggle:hover { text-decoration: underline; }
     .queue-list { list-style: none; padding: 0; margin: 0; }
+    .queue-list.collapsed { display: none; }
+    .queue-hidden-hint {
+      font-size: 0.78rem; color: var(--text-sec); padding: 6px 12px; font-style: italic;
+    }
     .queue-item {
       display: flex; align-items: center; gap: 10px;
       padding: 8px 12px; background: var(--card-bg); border: 1px solid var(--border);
@@ -216,8 +262,10 @@
     /* --- Collapsible sections --- */
     .collapsible {
       background: var(--hover-bg); border: 1px solid var(--border); border-radius: 8px;
-      margin-bottom: 12px; overflow: hidden;
+      margin-bottom: 12px;
     }
+    .collapsible-header { border-radius: 8px; }
+    .collapsible.open .collapsible-header { border-radius: 8px 8px 0 0; }
     .collapsible-header {
       display: flex; align-items: center; justify-content: space-between; width: 100%;
       padding: 12px 16px; background: var(--card-bg); border: none; cursor: pointer;
@@ -288,7 +336,7 @@
         <div class="full-width">
           <div class="label-row">
             <label for="name">Target Name</label>
-            <span class="help-tip" title="TOI ID (e.g. TOI-1234), TIC ID (e.g. TIC 12345678), or common name (e.g. WASP-21)">?</span>
+            <span class="help-tip" tabindex="0" data-tip="TOI ID (e.g. TOI-1234), TIC ID (e.g. TIC 12345678), or common name (e.g. WASP-21).">?</span>
           </div>
           <input type="text" name="name" id="name" placeholder="e.g. TOI-1234, TIC 12345678" required autofocus>
           <div class="validation-msg" id="nameValidation">Enter a target name (TOI, TIC, or common name)</div>
@@ -296,23 +344,30 @@
         <div>
           <div class="label-row">
             <label for="sector">Sector</label>
-            <span class="help-tip" title="-1 = latest sector. Ignored when 'Each Sector' is checked.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="-1 = latest available sector. Ignored when 'Run each available sector' is checked.">?</span>
           </div>
           <input type="number" name="sector" id="sector" value="-1">
           <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
             <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
+            <span class="help-tip" tabindex="0" data-tip="Submit one job per available sector for this target instead of just the selected one.">?</span>
           </label>
         </div>
         <div>
-          <label for="pipeline">Pipeline</label>
+          <div class="label-row">
+            <label for="pipeline">Pipeline</label>
+            <span class="help-tip" tabindex="0" data-tip="Source of TESS light curves. SPOC = official 2-min cadence; TESS-SPOC/QLP/TGLC/CDIPS/PATHOS/TASOC/T16 are HLSP products from FFIs.">?</span>
+          </div>
           <select name="pipeline" id="pipeline">
-            {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc'] %}
+            {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc','t16'] %}
             <option value="{{p}}">{{ p | upper }}</option>
             {% endfor %}
           </select>
         </div>
         <div>
-          <label for="fluxtype">Flux Type</label>
+          <div class="label-row">
+            <label for="fluxtype">Flux Type</label>
+            <span class="help-tip" tabindex="0" data-tip="PDCSAP = pre-search data conditioned flux, corrected for systematics (recommended). SAP = raw simple aperture photometry.">?</span>
+          </div>
           <select name="fluxtype" id="fluxtype">
             {% for f in ['pdcsap','sap'] %}
             <option value="{{f}}">{{ f | upper }}</option>
@@ -322,9 +377,14 @@
         <div>
           <div class="label-row">
             <label for="exptime">Exposure Time (s)</label>
-            <span class="help-tip" title="Cadence in seconds: 20 (20s), 120 (2min), 600 (10min), 1800 (30min). Leave blank for auto-detect.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Cadence in seconds: 20 (20s), 120 (2min), 200 (3.3min), 600 (10min), 1800 (30min). Select 'auto' to auto-detect.">?</span>
           </div>
-          <input type="number" name="exptime" id="exptime" placeholder="auto">
+          <select name="exptime" id="exptime">
+            <option value="" selected>auto</option>
+            {% for e in [20, 120, 200, 600, 1800] %}
+            <option value="{{e}}">{{e}}</option>
+            {% endfor %}
+          </select>
         </div>
       </div>
     </div>
@@ -339,7 +399,10 @@
     <div class="collapsible-content">
       <div class="form-grid">
         <div>
-          <label for="quality_bitmask">Quality Bitmask</label>
+          <div class="label-row">
+            <label for="quality_bitmask">Quality Bitmask</label>
+            <span class="help-tip" tabindex="0" data-tip="How aggressively to drop cadences flagged by SPOC quality flags. 'default' is recommended; 'hardest' rejects the most data.">?</span>
+          </div>
           <select name="quality_bitmask" id="quality_bitmask">
             {% for q in ['none','default','hard','hardest'] %}
             <option value="{{q}}" {% if q == 'default' %}selected{% endif %}>{{ q | capitalize }}</option>
@@ -347,38 +410,60 @@
           </select>
         </div>
         <div>
-          <label for="edge_cutoff">Edge Cutoff (days)</label>
+          <div class="label-row">
+            <label for="edge_cutoff">Edge Cutoff (days)</label>
+            <span class="help-tip" tabindex="0" data-tip="Days to trim from the start and end of each sector to remove edge artifacts and momentum-dump effects.">?</span>
+          </div>
           <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="0.1">
         </div>
         <div class="full-width">
           <div class="label-row">
             <label for="sigma_clip_raw">Sigma Clip Raw (lo hi)</label>
-            <span class="help-tip" title="Two values: lower and upper sigma bounds for raw light curve clipping. E.g. '10 5' clips below 10-sigma and above 5-sigma.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Two values: lower and upper sigma bounds for raw light curve clipping. E.g. '10 5' clips below 10-sigma and above 5-sigma.">?</span>
           </div>
           <input type="text" name="sigma_clip_raw" id="sigma_clip_raw" placeholder="10 5" value="10 5">
         </div>
         <div>
-          <label for="flatten_method">Flatten Method</label>
-          <input type="text" name="flatten_method" id="flatten_method" value="biweight">
+          <div class="label-row">
+            <label for="flatten_method">Flatten Method</label>
+            <span class="help-tip" tabindex="0" data-tip="Detrending algorithm (wotan). 'biweight' is robust and fast; 'gp' uses Gaussian Processes; others are spline/filter variants.">?</span>
+          </div>
+          <select name="flatten_method" id="flatten_method">
+            <option value="biweight" selected>biweight</option>
+            <option value="gp">gp</option>
+            <option value="medfilt">medfilt</option>
+            <option value="median">median</option>
+            <option value="rspline">rspline</option>
+            <option value="hspline">hspline</option>
+            <option value="pspline">pspline</option>
+            <option value="lowess">lowess</option>
+            <option value="cofiam">cofiam</option>
+            <option value="supersmoother">supersmoother</option>
+            <option value="savgol">savgol</option>
+          </select>
         </div>
         <div>
           <div class="label-row">
             <label for="window_length">Window Length (days)</label>
-            <span class="help-tip" title="Window size for detrending in days. Leave blank for automatic selection based on the detected period.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Window size for detrending in days. Leave blank for automatic selection based on the detected period.">?</span>
           </div>
           <input type="number" step="0.01" name="window_length" id="window_length" placeholder="auto">
         </div>
         <div>
           <div class="label-row">
             <label for="gp_kernel">GP Kernel</label>
-            <span class="help-tip" title="Gaussian Process kernel for GP-based flattening. Options: periodic_auto, matern32, matern52, exp_sq.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Gaussian Process kernel for GP-based flattening. Only used when Flatten Method is 'gp'.">?</span>
           </div>
-          <input type="text" name="gp_kernel" id="gp_kernel" value="periodic_auto">
+          <select name="gp_kernel" id="gp_kernel">
+            <option value="periodic_auto" selected>periodic_auto</option>
+            <option value="periodic">periodic</option>
+            <option value="squared_exp">squared_exp</option>
+          </select>
         </div>
         <div>
           <div class="label-row">
             <label for="sigma_clip_flat">Sigma Clip Flat (lo hi)</label>
-            <span class="help-tip" title="Same format as raw. Applied after flattening. Leave blank to skip.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Two values (lo hi), same format as raw. Applied after flattening. Leave blank to skip.">?</span>
           </div>
           <input type="text" name="sigma_clip_flat" id="sigma_clip_flat" placeholder="none">
         </div>
@@ -395,7 +480,10 @@
     <div class="collapsible-content">
       <div class="form-grid">
         <div>
-          <label for="pg_method">Periodogram Method</label>
+          <div class="label-row">
+            <label for="pg_method">Periodogram Method</label>
+            <span class="help-tip" tabindex="0" data-tip="GLS = Generalised Lomb-Scargle, LS = classic Lomb-Scargle, BLS = Box Least Squares (transit-shaped; best for shallow transits).">?</span>
+          </div>
           <select name="pg_method" id="pg_method">
             {% for pg in ['gls','ls','bls'] %}
             <option value="{{pg}}">{{ pg | upper }}</option>
@@ -403,20 +491,27 @@
           </select>
         </div>
         <div>
-          <label for="period_min">Period Min (days)</label>
+          <div class="label-row">
+            <label for="period_min">Period Min (days)</label>
+            <span class="help-tip" tabindex="0" data-tip="Shortest trial period for the transit search. Default 0.1 days (~2.4 hr).">?</span>
+          </div>
           <input type="number" step="0.01" name="period_min" id="period_min" placeholder="0.1">
         </div>
         <div>
-          <label for="period_max">Period Max (days)</label>
+          <div class="label-row">
+            <label for="period_max">Period Max (days)</label>
+            <span class="help-tip" tabindex="0" data-tip="Longest trial period. Defaults to half the data baseline so at least two transits can be detected.">?</span>
+          </div>
           <input type="number" step="0.01" name="period_max" id="period_max" placeholder="baseline/2">
         </div>
         <div class="full-width checkbox-group" style="margin-top: 4px;">
           <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
+          <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
         </div>
         <div class="full-width">
           <div class="label-row">
             <label for="custom_ephem">Custom Ephemeris</label>
-            <span class="help-tip" title="Six space-separated values: Tc Tc_err Period Period_err Tdur Tdur_err (all in days, BJD for Tc).">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Six space-separated values: Tc Tc_err Period Period_err Tdur Tdur_err (all in days, BJD for Tc).">?</span>
           </div>
           <input type="text" name="custom_ephem" id="custom_ephem" placeholder="Tc Tcerr P Perr Tdur Tdurerr">
         </div>
@@ -433,7 +528,10 @@
     <div class="collapsible-content">
       <div class="form-grid">
         <div>
-          <label for="survey">Archival Survey</label>
+          <div class="label-row">
+            <label for="survey">Archival Survey</label>
+            <span class="help-tip" tabindex="0" data-tip="Sky survey used for the archival image cutout shown in the QuickLook plot. DSS2 is a good general default.">?</span>
+          </div>
           <select name="survey" id="survey">
             {% for s in ['dss1','dss2','dss3','dss4','2mass','sdss','panstarrs'] %}
             <option value="{{s}}">{{ s | upper }}</option>
@@ -441,17 +539,32 @@
           </select>
         </div>
         <div>
-          <label for="suffix">Filename Suffix</label>
+          <div class="label-row">
+            <label for="suffix">Filename Suffix</label>
+            <span class="help-tip" tabindex="0" data-tip="Optional string appended to the output filename, useful for tagging runs (e.g. 'gp_test').">?</span>
+          </div>
           <input type="text" name="suffix" id="suffix" placeholder="optional">
         </div>
         <div class="full-width">
-          <label for="outdir">Output Directory</label>
+          <div class="label-row">
+            <label for="outdir">Output Directory</label>
+            <span class="help-tip" tabindex="0" data-tip="Where to save the PNG and TLS HDF5 files. Leave blank to use the app's default outputs folder.">?</span>
+          </div>
           <input type="text" name="outdir" id="outdir" placeholder="default: app outputs">
         </div>
         <div class="full-width checkbox-group">
-          <label><input type="checkbox" name="save" checked> Save outputs</label>
-          <label><input type="checkbox" name="verbose" checked> Verbose</label>
-          <label><input type="checkbox" name="overwrite"> Overwrite</label>
+          <label>
+            <input type="checkbox" name="save" checked> Save outputs
+            <span class="help-tip" tabindex="0" data-tip="Save the PNG figure and the TLS results HDF5 file to the output directory.">?</span>
+          </label>
+          <label>
+            <input type="checkbox" name="verbose" checked> Verbose
+            <span class="help-tip" tabindex="0" data-tip="Print detailed progress messages to the output log during the run.">?</span>
+          </label>
+          <label>
+            <input type="checkbox" name="overwrite"> Overwrite
+            <span class="help-tip" tabindex="0" data-tip="If an output file for this target already exists, re-run and replace it instead of skipping.">?</span>
+          </label>
         </div>
       </div>
     </div>
@@ -478,8 +591,13 @@
 
 <!-- Job queue -->
 <div id="queueSection" class="queue-section" style="display:none;">
-  <h2>Job Queue</h2>
+  <div class="queue-header">
+    <h2>Job Queue</h2>
+    <span class="queue-count" id="queueCount"></span>
+    <button type="button" class="queue-toggle" id="queueToggle"></button>
+  </div>
   <ul class="queue-list" id="queueList"></ul>
+  <div class="queue-hidden-hint" id="queueHiddenHint" style="display:none;"></div>
 </div>
 
 <!-- Status bar -->
@@ -487,6 +605,7 @@
   <div class="spinner" id="statusSpinner"></div>
   <span id="statusText"></span>
   <button class="btn btn-red btn-sm" id="cancelBtn" style="display:none;" type="button">Cancel</button>
+  <button class="btn btn-red btn-sm" id="cancelAllBtn" style="display:none;" type="button" title="Cancel all queued and running jobs">Cancel All Pending</button>
 </div>
 
 <!-- Progress -->
@@ -549,6 +668,7 @@ const statusBar = $('statusBar');
 const statusSpinner = $('statusSpinner');
 const statusText = $('statusText');
 const cancelBtn = $('cancelBtn');
+const cancelAllBtn = $('cancelAllBtn');
 const progressSection = $('progressSection');
 const progressWrap = $('progressWrap');
 const progressFill = $('progressFill');
@@ -562,6 +682,9 @@ const downloadH5 = $('downloadH5');
 const downloadImg = $('downloadImg');
 const queueSection = $('queueSection');
 const queueList = $('queueList');
+const queueCount = $('queueCount');
+const queueToggle = $('queueToggle');
+const queueHiddenHint = $('queueHiddenHint');
 const batchSection = $('batchSection');
 const batchTargets = $('batchTargets');
 const batchSubmitBtn = $('batchSubmitBtn');
@@ -573,6 +696,70 @@ const toastContainer = $('toastContainer');
 let activeWs = null;
 let activeTarget = null;
 let jobRunning = false;
+
+/* =========================================================================
+   Help tooltips (hover + click toggle, edge-aware positioning)
+   ========================================================================= */
+const TIP_MAX_WIDTH = 260;   // matches CSS max-width
+const TIP_EDGE_PAD = 8;      // viewport edge padding
+
+function positionTip(tip) {
+  // Measure the tooltip via a hidden clone so we get its real width,
+  // which is often less than TIP_MAX_WIDTH for short text.
+  const rect = tip.getBoundingClientRect();
+  const probe = document.createElement('span');
+  probe.textContent = tip.getAttribute('data-tip') || '';
+  probe.style.cssText =
+    'position:fixed;visibility:hidden;pointer-events:none;' +
+    'padding:6px 10px;font-size:0.75rem;line-height:1.4;' +
+    'max-width:' + TIP_MAX_WIDTH + 'px;width:max-content;white-space:normal;';
+  document.body.appendChild(probe);
+  const tipWidth = probe.getBoundingClientRect().width;
+  document.body.removeChild(probe);
+
+  const center = rect.left + rect.width / 2;
+  const halfTip = tipWidth / 2;
+  const vw = window.innerWidth;
+  let shift = 0;
+  if (center - halfTip < TIP_EDGE_PAD) {
+    shift = TIP_EDGE_PAD - (center - halfTip);
+  } else if (center + halfTip > vw - TIP_EDGE_PAD) {
+    shift = -((center + halfTip) - (vw - TIP_EDGE_PAD));
+  }
+  tip.style.setProperty('--tip-shift', shift + 'px');
+}
+
+document.addEventListener('mouseover', (e) => {
+  const tip = e.target.closest && e.target.closest('.help-tip');
+  if (tip) positionTip(tip);
+});
+document.addEventListener('focusin', (e) => {
+  if (e.target.classList && e.target.classList.contains('help-tip')) positionTip(e.target);
+});
+window.addEventListener('resize', () => {
+  document.querySelectorAll('.help-tip.active').forEach(positionTip);
+});
+
+document.addEventListener('click', (e) => {
+  const tip = e.target.closest('.help-tip');
+  if (tip) {
+    e.preventDefault();
+    e.stopPropagation();
+    const wasActive = tip.classList.contains('active');
+    document.querySelectorAll('.help-tip.active').forEach(t => t.classList.remove('active'));
+    if (!wasActive) {
+      positionTip(tip);
+      tip.classList.add('active');
+    }
+  } else {
+    document.querySelectorAll('.help-tip.active').forEach(t => t.classList.remove('active'));
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.help-tip.active').forEach(t => t.classList.remove('active'));
+  }
+});
 
 /* =========================================================================
    Dark mode
@@ -667,6 +854,66 @@ function resetFormDefaults() {
 loadFormState();
 resetBtn.addEventListener('click', resetFormDefaults);
 
+/* =========================================================================
+   Dependent field state — disable inputs whose value would be ignored
+   ========================================================================= */
+const FLUXTYPE_PIPELINES = ['spoc', 'tess-spoc'];
+
+function updateFieldStates() {
+  const eachSector = form.elements['each_sector'];
+  const sectorInput = form.elements['sector'];
+  if (eachSector && sectorInput) {
+    const disabled = eachSector.checked;
+    sectorInput.disabled = disabled;
+    sectorInput.title = disabled ? 'Ignored — "Run each available sector" is on' : '';
+    sectorInput.style.opacity = disabled ? '0.5' : '';
+  }
+
+  const pipeline = form.elements['pipeline'];
+  const fluxtype = form.elements['fluxtype'];
+  if (pipeline && fluxtype) {
+    const disabled = !FLUXTYPE_PIPELINES.includes(pipeline.value);
+    fluxtype.disabled = disabled;
+    fluxtype.title = disabled ? 'Ignored — only SPOC and TESS-SPOC pipelines have a flux-type choice' : '';
+    fluxtype.style.opacity = disabled ? '0.5' : '';
+  }
+
+  const flatten = form.elements['flatten_method'];
+  const gpKernel = form.elements['gp_kernel'];
+  if (flatten && gpKernel) {
+    const disabled = flatten.value !== 'gp';
+    gpKernel.disabled = disabled;
+    gpKernel.title = disabled ? 'Ignored — only used when Flatten Method is "gp"' : '';
+    gpKernel.style.opacity = disabled ? '0.5' : '';
+  }
+}
+
+form.elements['each_sector'].addEventListener('change', updateFieldStates);
+form.elements['pipeline'].addEventListener('change', updateFieldStates);
+form.elements['flatten_method'].addEventListener('change', updateFieldStates);
+updateFieldStates();
+
+/* Batch textarea persistence (independent of the main form) */
+const BATCH_STORAGE_KEY = 'ql-batch-targets';
+(function loadBatchState() {
+  const saved = localStorage.getItem(BATCH_STORAGE_KEY);
+  if (saved) {
+    batchTargets.value = saved;
+    // Auto-expand the batch section so the user sees the restored content
+    if (saved.trim()) {
+      batchSection.classList.add('visible');
+      $('batchToggleBtn').textContent = 'Hide batch mode';
+    }
+  }
+})();
+batchTargets.addEventListener('input', () => {
+  if (batchTargets.value) {
+    localStorage.setItem(BATCH_STORAGE_KEY, batchTargets.value);
+  } else {
+    localStorage.removeItem(BATCH_STORAGE_KEY);
+  }
+});
+
 // Save state on any input change
 form.addEventListener('input', saveFormState);
 form.addEventListener('change', saveFormState);
@@ -740,6 +987,7 @@ function setStatus(state, message) {
   statusSpinner.style.display = state === 'running' ? 'block' : 'none';
   statusText.textContent = message;
   cancelBtn.style.display = state === 'running' ? '' : 'none';
+  cancelAllBtn.style.display = state === 'running' ? '' : 'none';
 }
 
 function formatETA(seconds) {
@@ -771,6 +1019,28 @@ cancelBtn.addEventListener('click', () => {
     activeWs.send(JSON.stringify({action: 'cancel'}));
   }
   if (activeTarget) fetch('/cancel/' + activeTarget, {method: 'POST'});
+});
+
+cancelAllBtn.addEventListener('click', async () => {
+  if (!confirm('Cancel all queued and running jobs?')) return;
+  cancelAllBtn.disabled = true;
+  try {
+    const res = await fetch('/cancel-all', {method: 'POST'});
+    const data = await res.json();
+    if (data.ok) {
+      const n = (data.cancelled || []).length;
+      showToast(n ? 'Cancelled ' + n + ' pending job' + (n === 1 ? '' : 's') : 'No pending jobs', 'info');
+      if (activeWs && activeWs.readyState === WebSocket.OPEN) {
+        activeWs.send(JSON.stringify({action: 'cancel'}));
+      }
+      refreshQueue();
+    } else {
+      showToast('Cancel-all failed', 'error');
+    }
+  } catch (err) {
+    showToast('Network error: ' + err.message, 'error');
+  }
+  cancelAllBtn.disabled = false;
 });
 
 /* =========================================================================
@@ -940,6 +1210,32 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+const QUEUE_FOLD_THRESHOLD = 8;
+const isPending = (s) => s === 'queued' || s === 'running';
+let queueFoldMode = null; // null=auto, true=pending-only, false=show-all
+
+function setQueueFoldMode(mode) {
+  queueFoldMode = mode;
+  try { localStorage.setItem('queueFoldMode', mode === null ? 'auto' : String(mode)); } catch (e) {}
+  refreshQueue();
+}
+try {
+  const saved = localStorage.getItem('queueFoldMode');
+  if (saved === 'true') queueFoldMode = true;
+  else if (saved === 'false') queueFoldMode = false;
+} catch (e) {}
+
+queueToggle.addEventListener('click', () => {
+  // Toggle between pending-only and show-all (user intent overrides auto).
+  setQueueFoldMode(!resolveFolded());
+});
+
+function resolveFolded(total) {
+  if (queueFoldMode === true) return true;
+  if (queueFoldMode === false) return false;
+  return (total || 0) > QUEUE_FOLD_THRESHOLD;
+}
+
 async function refreshQueue() {
   try {
     const res = await fetch('/jobs-json');
@@ -947,8 +1243,17 @@ async function refreshQueue() {
     if (jobs.length === 0) { queueSection.style.display = 'none'; return; }
 
     queueSection.style.display = '';
+    const pendingCount = jobs.filter(j => isPending(j.status)).length;
+    const folded = resolveFolded(jobs.length);
+    const visibleJobs = folded ? jobs.filter(j => isPending(j.status)) : jobs;
+    const hiddenCount = jobs.length - visibleJobs.length;
+
+    queueCount.textContent =
+      pendingCount + ' pending / ' + jobs.length + ' total';
+    queueToggle.textContent = folded ? 'Show all' : 'Show pending only';
+
     queueList.innerHTML = '';
-    for (const job of jobs) {
+    for (const job of visibleJobs) {
       const li = document.createElement('li');
       li.className = 'queue-item';
 
@@ -972,6 +1277,17 @@ async function refreshQueue() {
       }
 
       queueList.appendChild(li);
+    }
+
+    if (folded && hiddenCount > 0) {
+      queueHiddenHint.textContent =
+        '+ ' + hiddenCount + ' finished job' + (hiddenCount === 1 ? '' : 's') + ' hidden';
+      queueHiddenHint.style.display = '';
+    } else if (folded && visibleJobs.length === 0) {
+      queueHiddenHint.textContent = 'No pending jobs. ' + jobs.length + ' finished.';
+      queueHiddenHint.style.display = '';
+    } else {
+      queueHiddenHint.style.display = 'none';
     }
   } catch (e) {
     console.error('Queue refresh failed:', e);

@@ -22,6 +22,7 @@ from quicklook.utils import (
     TESS_pix_scale,
 )
 from quicklook.measure import find_contours
+from loguru import logger
 
 __all__ = [
     "use_style",
@@ -66,29 +67,38 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
     clipped_lc = fold_lc[near_transit]
     clipped_lc.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
 
-    even_lc = clipped_lc[clipped_lc.even_mask]
-    odd_lc = clipped_lc[clipped_lc.odd_mask]
+    # Force writeable deep copies; stacked boolean slices on the folded
+    # LightCurve leave the underlying flux/time buffers non-writeable, which
+    # breaks the in-place ufuncs used by LightCurve.bin() under numpy >= 2.0.
+    even_lc = clipped_lc[clipped_lc.even_mask].copy()
+    odd_lc = clipped_lc[clipped_lc.odd_mask].copy()
 
     if len(even_lc) > 0:
-        even_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
-            label="even transit",
-            c="#1f77b4",
-            marker="o",
-            lw=2,
-            markersize=markersize,
-            ax=ax,
-            zorder=2,
-        )
+        try:
+            even_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+                label="even transit",
+                c="#1f77b4",
+                marker="o",
+                lw=2,
+                markersize=markersize,
+                ax=ax,
+                zorder=2,
+            )
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Could not bin even-transit data: {e}")
     if len(odd_lc) > 0:
-        odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
-            label="odd transit",
-            c="#d62728",
-            marker="o",
-            lw=2,
-            markersize=markersize,
-            ax=ax,
-            zorder=2,
-        )
+        try:
+            odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+                label="odd transit",
+                c="#d62728",
+                marker="o",
+                lw=2,
+                markersize=markersize,
+                ax=ax,
+                zorder=2,
+            )
+        except (ValueError, TypeError) as e:
+            logger.debug(f"Could not bin odd-transit data: {e}")
 
     ax.plot(
         (tls_results.model_folded_phase - 0.5) * tls_results.period,
@@ -123,8 +133,8 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
     t14 = tls_results.duration
     try:
         secthresh = compute_secthresh(fold_lc2, t14)
-    except Exception as e:
-        print(e)
+    except (ValueError, ZeroDivisionError, IndexError) as e:
+        logger.debug(f"Could not compute secondary eclipse threshold: {e}")
         secthresh = np.nan
     # Clip to eclipse window before binning to avoid thousands of empty bins
     phase_lo = half_phase - t14 * 2
@@ -137,7 +147,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
         0,
         1,
         lw=2,
-        label=f"TLS depth={(1-yline)*1e3:.2f} ppt",
+        label=f"TLS depth={(1 - yline) * 1e3:.2f} ppt",
         c="k",
         ls="--",
     )
@@ -150,11 +160,11 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
                 marker="o",
                 markersize=markersize,
                 lw=2,
-                label=f"sec_eclipse_thresh={secthresh*1e3:.2f} ppt",
+                label=f"sec_eclipse_thresh={secthresh * 1e3:.2f} ppt",
                 zorder=2,
             )
-    except Exception as e:
-        print(e)
+    except (ValueError, TypeError) as e:
+        logger.debug(f"Could not bin secondary eclipse data: {e}")
     ax.set_xlabel("Orbital Phase")
     ax.set_xlim(phase_lo, phase_hi)
     ax.legend()
@@ -477,7 +487,10 @@ def plot_gaia_sources_on_tpf(
     # find sources within mask
     # target is assumed to be the first row
     idx = gaia_sources["source_id"].astype(int).isin([target_gaiaid])
-    target_gmag = gaia_sources.loc[idx, "phot_g_mean_mag"].values[0]
+    if idx.sum() == 0:
+        target_gmag = gaia_sources["phot_g_mean_mag"].min()
+    else:
+        target_gmag = gaia_sources.loc[idx, "phot_g_mean_mag"].values[0]
     # sources_inside_aperture = []
     if depth is not None:
         # compute delta mag limit given transit depth
@@ -684,9 +697,8 @@ def plot_gaia_sources_on_survey(
                 width=fov_rad.value,
                 height=fov_rad.value,
             )
-        except Exception:
-            errmsg = "survey image not available"
-            raise FileNotFoundError(errmsg)
+        except (OSError, ValueError, KeyError) as e:
+            raise FileNotFoundError("Survey image not available") from e
         fig = pl.figure(figsize=figsize)
         # define scaling in projection
         ax = fig.add_subplot(111, projection=WCS(hdu.header))
@@ -706,7 +718,10 @@ def plot_gaia_sources_on_survey(
         transform=ax.get_transform(WCS(maskhdr)),
     )
     idx = gaia_sources["source_id"].astype(int).isin([target_gaiaid])
-    target_gmag = gaia_sources.loc[idx, "phot_g_mean_mag"].values[0]
+    if idx.sum() == 0:
+        target_gmag = gaia_sources["phot_g_mean_mag"].min()
+    else:
+        target_gmag = gaia_sources.loc[idx, "phot_g_mean_mag"].values[0]
 
     for _, row in gaia_sources.iterrows():
         marker, s = "o", 100
@@ -799,11 +814,9 @@ def get_dss_data(
         if plot:
             _ = plot_dss_image(hdu)
         return hdu
-    except Exception as e:
-        if isinstance(e, OSError):
-            print(f"Error: {e}\nsurvey={survey} image is likely unavailable.")
-        else:
-            raise Exception(f"Error: {e}")
+    except OSError as e:
+        logger.warning(f"survey={survey} image is likely unavailable: {e}")
+        return None
 
 
 def plot_archival_images(
@@ -880,7 +893,7 @@ def plot_archival_images(
                 color=False,
             )
             img, hdr = ps.get_fits(filter=filter, verbose=False)
-        except Exception:
+        except ImportError:
             raise ModuleNotFoundError("pip install git+https://github.com/jpdeleon/panstarrs3.git")
 
     # poss1
@@ -908,9 +921,8 @@ def plot_archival_images(
             hdu2 = get_dss_data(ra, dec, height=height, width=width, survey=survey2)
     try:
         from reproject import reproject_interp
-    except Exception:
-        cmd = "pip install reproject"
-        raise ModuleNotFoundError(cmd)
+    except ImportError:
+        raise ModuleNotFoundError("pip install reproject")
 
     projected_img, footprint = reproject_interp(hdu2, hdu1.header)
 

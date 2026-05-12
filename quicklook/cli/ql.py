@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import sys
 import argparse
 import subprocess
@@ -30,6 +31,7 @@ def run_ql_for_sector(
     mask_ephem,
     suffix,
     period_limits,
+    tls_use_threads,
 ):
     """Run ql for a single sector. Used by --each-sector."""
     ql = TessQuickLook(
@@ -57,6 +59,7 @@ def run_ql_for_sector(
         verbose=verbose,
         overwrite=overwrite,
         suffix=suffix,
+        tls_use_threads=tls_use_threads,
     )
     ql.plot_tql()
     if not save:
@@ -119,6 +122,20 @@ def main():
         default=1,
         help="number of parallel jobs (default=1)",
     )
+    parser.add_argument(
+        "--nice",
+        type=int,
+        default=None,
+        help="lower CPU priority by this increment (POSIX; e.g. 19 = lowest). "
+        "Default: unchanged.",
+    )
+    parser.add_argument(
+        "--cores",
+        type=int,
+        default=None,
+        help="CPU cores used by TLS per run. "
+        "Default: cpu_count//2 for single run; cpu_count//jobs for --each-sector.",
+    )
     # parser.add_argument(
     #     "-c",
     #     "--cadence",
@@ -145,7 +162,7 @@ def main():
         "--pipeline",
         type=str,
         help="lightcurve produced from which pipeline (default=SPOC)",
-        choices=["spoc", "tess-spoc", "tasoc", "cdips", "pathos", "qlp", "tglc"],
+        choices=["spoc", "tess-spoc", "tasoc", "cdips", "pathos", "qlp", "tglc", "t16"],
         default="SPOC",
     )
     parser.add_argument(
@@ -202,14 +219,28 @@ def main():
     parser.add_argument(
         "--flatten_method",
         type=str,
-        help="wotan flatten method (default=biweight)",
+        help="wotan flatten method (default=biweight); see https://wotan.readthedocs.io/en/latest/Usage.html",
         default="biweight",
+        choices=[
+            "biweight",
+            "gp",
+            "medfilt",
+            "median",
+            "rspline",
+            "hspline",
+            "pspline",
+            "lowess",
+            "cofiam",
+            "supersmoother",
+            "savgol",
+        ],
     )
     parser.add_argument(
         "--gp_kernel",
         type=str,
         help="wotan gp kernel (default=periodic_auto)",
         default="periodic_auto",
+        choices=["periodic_auto", "periodic", "squared_exp"],
     )
     parser.add_argument(
         "--gp_kernel_size",
@@ -308,7 +339,34 @@ def main():
     # prints help if no argument supplied
     args = parser.parse_args(None if sys.argv[1:] else ["-h"])
 
+    if args.nice is not None:
+        try:
+            new_nice = os.nice(args.nice)
+            if args.verbose:
+                print(f"Process niceness set to {new_nice}")
+        except (AttributeError, OSError) as e:
+            print(
+                f"Warning: could not apply --nice {args.nice}: {e}",
+                file=sys.stderr,
+            )
+
     target_name = sanitize_target_name(args.name)
+
+    cpu_total = os.cpu_count() or 1
+    if args.each_sector:
+        tls_use_threads = (
+            args.cores if args.cores is not None else max(1, cpu_total // max(1, args.jobs))
+        )
+    else:
+        tls_use_threads = args.cores if args.cores is not None else max(1, cpu_total // 2)
+    tls_use_threads = max(1, min(tls_use_threads, cpu_total))
+    if args.each_sector and args.jobs * tls_use_threads > cpu_total:
+        print(
+            f"Warning: jobs ({args.jobs}) * cores ({tls_use_threads}) = "
+            f"{args.jobs * tls_use_threads} exceeds cpu_count ({cpu_total}); "
+            "expect oversubscription.",
+            file=sys.stderr,
+        )
 
     if args.each_sector:
         sectors = get_available_sectors(target_name, pipeline=args.pipeline)
@@ -317,7 +375,7 @@ def main():
             sys.exit(1)
 
         print(f"Found {len(sectors)} sectors for {target_name}: {sectors}")
-        print(f"Running with {args.jobs} parallel job(s)...")
+        print(f"Running with {args.jobs} parallel job(s), {tls_use_threads} TLS core(s) each...")
 
         failed = 0
         with ProcessPoolExecutor(max_workers=args.jobs) as executor:
@@ -342,6 +400,7 @@ def main():
                     args.mask_ephem,
                     args.suffix,
                     args.period_limits,
+                    tls_use_threads,
                 )
                 futures[future] = sector
 
@@ -402,6 +461,7 @@ def main():
         verbose=args.verbose,
         overwrite=args.overwrite,
         suffix=args.suffix,
+        tls_use_threads=tls_use_threads,
         # check_if_variable=args.check_if_variable,
         # estimate_spec_type=args.spec_type,
         # estimate_gyro_age=args.gyro_age,
