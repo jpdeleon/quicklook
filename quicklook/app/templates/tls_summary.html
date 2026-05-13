@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TLS Results Summary</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <style>
+    :root {
+      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
+      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
+      --input-border: #ccc; --hover-bg: #eef1ff;
+      --primary: #4a6cf7; --primary-hover: #3451d1;
+      --row-alt: #f9fafe;
+      --thead-bg: #eef1ff;
+      --pill-bg: #e0e7ff; --pill-fg: #1d4ed8;
+    }
+    [data-theme="dark"] {
+      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
+      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
+      --input-border: #3a3a4e; --hover-bg: #1f2342;
+      --primary: #5b7cf9; --primary-hover: #7b96ff;
+      --row-alt: #14142a;
+      --thead-bg: #1f2342;
+      --pill-bg: #1e3a5f; --pill-fg: #93c5fd;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 1400px; margin: 0 auto; padding: 24px 20px;
+      color: var(--text); background: var(--bg); line-height: 1.5;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    a { color: var(--primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    h1 { text-align: center; font-size: 1.5rem; margin: 0 0 4px; }
+    .subtitle { text-align: center; color: var(--text-sec); font-size: 0.88rem; margin-bottom: 18px; }
+
+    .top-bar {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; font-size: 0.88rem; font-weight: 600; border: none;
+      border-radius: 6px; cursor: pointer; text-decoration: none;
+      transition: background-color 0.2s, color 0.2s;
+    }
+    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+    .btn-outline:hover { background: var(--primary); color: #fff; }
+    .theme-toggle {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
+      color: var(--text); transition: background-color 0.2s;
+    }
+    .theme-toggle:hover { background: var(--hover-bg); }
+
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+    .search {
+      padding: 7px 12px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 0.9rem; min-width: 240px; background: var(--input-bg); color: var(--text);
+    }
+    .search:focus { outline: none; border-color: var(--primary); }
+    .count {
+      font-size: 0.82rem; color: var(--text-sec); white-space: nowrap;
+    }
+
+    .table-wrap {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      overflow: auto; max-height: 78vh;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 1500px; }
+    thead { position: sticky; top: 0; z-index: 1; }
+    thead th {
+      background: var(--thead-bg); color: var(--text);
+      font-weight: 700; font-size: 0.78rem; text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 10px 12px; text-align: left; cursor: pointer; user-select: none;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th .arrow { color: var(--text-sec); margin-left: 4px; font-size: 0.75rem; opacity: 0.4; }
+    thead th.sort-asc  .arrow::before { content: "\25B2"; opacity: 1; color: var(--primary); }
+    thead th.sort-desc .arrow::before { content: "\25BC"; opacity: 1; color: var(--primary); }
+    thead th .arrow::before { content: "\25C7"; }
+
+    tbody td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border-light);
+      vertical-align: middle; white-space: nowrap;
+    }
+    tbody tr:nth-child(even) { background: var(--row-alt); }
+    tbody tr:hover { background: var(--hover-bg); }
+    .num { font-variant-numeric: tabular-nums; text-align: right; }
+    .target { font-weight: 600; }
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700;
+      background: var(--pill-bg); color: var(--pill-fg);
+      text-transform: lowercase;
+    }
+    .muted { color: var(--text-sec); }
+    .actions { display: flex; gap: 6px; }
+    .actions a { font-size: 0.78rem; color: var(--primary); }
+    .empty {
+      padding: 60px 20px; text-align: center; color: var(--text-sec);
+      font-size: 0.95rem;
+    }
+    .skipped {
+      margin-top: 12px; font-size: 0.78rem; color: var(--text-sec);
+    }
+    .skipped details summary { cursor: pointer; }
+    /* Directory chooser */
+    .dir-bar {
+      display: flex; flex-direction: column; gap: 6px;
+      margin-bottom: 14px;
+    }
+    .dir-form {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+    }
+    .dir-form label {
+      font-size: 0.82rem; color: var(--text-sec); white-space: nowrap;
+    }
+    .dir-form input[type="text"] {
+      flex: 1; min-width: 280px;
+      padding: 7px 12px; border: 1px solid var(--input-border);
+      border-radius: 6px; font-size: 0.85rem;
+      background: var(--input-bg); color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .dir-form input[type="text"]:focus { outline: none; border-color: var(--primary); }
+    .dir-form .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .dir-error {
+      padding: 8px 12px; background: #fef2f2; color: #b91c1c;
+      border: 1px solid #fecaca; border-radius: 6px; font-size: 0.85rem;
+    }
+    [data-theme="dark"] .dir-error {
+      background: #7f1d1d; color: #fca5a5; border-color: #b91c1c;
+    }
+    /* Page-loading overlay (shown after submitting a directory change) */
+    .page-loading {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      display: none; align-items: center; justify-content: center;
+      z-index: 2000; backdrop-filter: blur(2px);
+    }
+    .page-loading.show { display: flex; }
+    .page-loading .panel {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 22px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      min-width: 280px; max-width: 92%;
+    }
+    .page-loading .pl-spinner {
+      width: 22px; height: 22px; flex-shrink: 0;
+      border: 3px solid var(--primary); border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
+    .page-loading .text strong { font-size: 0.95rem; }
+    .page-loading .text small {
+      font-size: 0.78rem; color: var(--text-sec);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-all;
+    }
+
+    /* Browse modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; width: 92%; max-width: 720px; max-height: 80vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { margin: 0; font-size: 1rem; }
+    .modal-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 1.4rem; color: var(--text-sec); line-height: 1; padding: 0 4px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 12px 16px; overflow: auto; flex: 1; }
+    .modal-footer {
+      display: flex; gap: 8px; justify-content: flex-end;
+      padding: 12px 16px; border-top: 1px solid var(--border);
+    }
+    .breadcrumb {
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      font-size: 0.82rem; margin-bottom: 10px;
+    }
+    .breadcrumb a {
+      color: var(--primary); cursor: pointer; padding: 2px 4px; border-radius: 3px;
+    }
+    .breadcrumb a:hover { background: var(--hover-bg); text-decoration: underline; }
+    .breadcrumb .sep { color: var(--text-sec); }
+    .modal-current {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem; color: var(--text-sec);
+      padding: 6px 10px; background: var(--input-bg);
+      border-radius: 4px; margin-bottom: 10px; word-break: break-all;
+    }
+    .modal-current .badge {
+      background: var(--pill-bg); color: var(--pill-fg);
+      font-size: 0.7rem; padding: 2px 6px; border-radius: 10px;
+      font-weight: 700; margin-left: 8px; text-transform: uppercase;
+    }
+    .dir-list { display: flex; flex-direction: column; gap: 2px; }
+    .dir-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      transition: background-color 0.1s;
+    }
+    .dir-row:hover { background: var(--hover-bg); }
+    .dir-row .icon { color: var(--text-sec); }
+    .dir-row .name {
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dir-row .tls-badge {
+      background: var(--pill-bg); color: var(--pill-fg);
+      font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;
+      text-transform: uppercase;
+    }
+    .dir-row .chev { color: var(--text-sec); font-size: 1rem; }
+    .modal-empty {
+      padding: 20px; text-align: center; color: var(--text-sec); font-size: 0.85rem;
+    }
+    .modal-error:empty { display: none; }
+    .modal-error {
+      margin-bottom: 10px; padding: 8px 12px;
+      background: #fef2f2; color: #b91c1c;
+      border: 1px solid #fecaca; border-radius: 6px; font-size: 0.82rem;
+    }
+    [data-theme="dark"] .modal-error {
+      background: #7f1d1d; color: #fca5a5; border-color: #b91c1c;
+    }
+    /* "Only folders with TLS files" filter */
+    .filter-row {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.82rem; color: var(--text-sec);
+      margin-bottom: 8px; user-select: none;
+    }
+    .filter-row label { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .dir-list.tls-only .dir-row:not(.has-tls) { display: none; }
+    .dir-list.tls-only .dir-row.has-tls .tls-badge { display: none; } /* redundant when filtered */
+
+    .ext-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem; color: var(--text-sec);
+      max-width: 360px; overflow: hidden; text-overflow: ellipsis;
+      display: inline-block; vertical-align: middle;
+    }
+
+    @media (max-width: 800px) {
+      .controls { width: 100%; }
+      .search { min-width: 0; flex: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="top-bar">
+  <a href="{{ url_for('index') }}" class="btn btn-outline">&larr; Back</a>
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
+  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
+  <div class="controls">
+    <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
+    <span class="count" id="count">{{ total }} result{{ '' if total == 1 else 's' }}</span>
+    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
+  </div>
+</div>
+
+<div class="dir-bar">
+  <form method="get" action="{{ url_for('tls_summary') }}" class="dir-form" id="dirForm"
+        data-current-dir="{{ current_dir }}"
+        data-is-default="{{ 'true' if is_default_dir else 'false' }}"
+        data-has-dir-param="{{ 'true' if request.args.get('dir') else 'false' }}">
+    <label for="dirInput">TLS directory:</label>
+    <input type="text" id="dirInput" name="dir" value="{{ current_dir }}"
+           list="recent-dirs" spellcheck="false" autocomplete="off"
+           placeholder="absolute path to *_tls.h5 directory">
+    <datalist id="recent-dirs"></datalist>
+    <button type="button" class="btn btn-outline btn-sm" id="browseBtn" title="Browse a tree of directories on this machine">Browse&hellip;</button>
+    <button type="submit" class="btn btn-outline btn-sm">Load</button>
+    {% if not is_default_dir %}
+    <a href="{{ url_for('tls_summary') }}" class="btn btn-outline btn-sm" title="Reset to the app's default outputs folder">Reset</a>
+    {% endif %}
+  </form>
+  {% if dir_error %}
+  <div class="dir-error">&#9888; {{ dir_error }} &mdash; showing default folder.</div>
+  {% endif %}
+</div>
+
+<h1>TLS Results Summary</h1>
+<p class="subtitle">All saved TLS HDF5 outputs &mdash; click a column to sort, type to filter.</p>
+
+{% if rows %}
+<div class="table-wrap">
+  <table id="tlsTable">
+    <thead>
+      <tr>
+        <th data-key="target" data-type="str">Target <span class="arrow"></span></th>
+        <th data-key="pipeline" data-type="str">Pipeline <span class="arrow"></span></th>
+        <th data-key="exptime" data-type="num">Exp (s) <span class="arrow"></span></th>
+        <th data-key="sector" data-type="num">Sector <span class="arrow"></span></th>
+        <th data-key="Porb" data-type="num">Porb [d] <span class="arrow"></span></th>
+        <th data-key="duration_hr" data-type="num">Dur [hr] <span class="arrow"></span></th>
+        <th data-key="rp_rs" data-type="num">Rp/Rs <span class="arrow"></span></th>
+        <th data-key="depth_ppt" data-type="num">Depth [ppt] <span class="arrow"></span></th>
+        <th data-key="SDE" data-type="num">SDE <span class="arrow"></span></th>
+        <th data-key="snr" data-type="num">SNR <span class="arrow"></span></th>
+        <th data-key="FAP" data-type="num">FAP <span class="arrow"></span></th>
+        <th data-key="odd_even" data-type="num">Odd-even &Delta; <span class="arrow"></span></th>
+        <th data-key="n_tr" data-type="num">N_tr <span class="arrow"></span></th>
+        <th data-key="Prot_gls" data-type="num">Prot [d] <span class="arrow"></span></th>
+        <th data-key="power_gls" data-type="num">GLS power <span class="arrow"></span></th>
+        <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
+        <th data-key="tic" data-type="num">TIC <span class="arrow"></span></th>
+        <th>Files</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="target" data-target="{{ r.stem }}">
+          {% if r.png %}<a href="{{ r.png }}" target="_blank">{{ r.stem }}</a>{% else %}{{ r.stem }}{% endif %}
+        </td>
+        <td>{% if r.pipeline %}<span class="pill">{{ r.pipeline }}</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+        <td class="num" data-v="{{ r.exptime if r.exptime is not none else '' }}">
+          {% if r.exptime is not none %}{{ "%.0f"|format(r.exptime) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.sector if r.sector is not none else '' }}">
+          {% if r.sector is not none %}{{ r.sector }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.Porb if r.Porb is not none else '' }}">
+          {% if r.Porb is not none %}{{ "%.4f"|format(r.Porb) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.duration_hr if r.duration_hr is not none else '' }}">
+          {% if r.duration_hr is not none %}{{ "%.2f"|format(r.duration_hr) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.rp_rs if r.rp_rs is not none else '' }}">
+          {% if r.rp_rs is not none %}{{ "%.4f"|format(r.rp_rs) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.depth_ppt if r.depth_ppt is not none else '' }}">
+          {% if r.depth_ppt is not none %}{{ "%.2f"|format(r.depth_ppt) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.SDE if r.SDE is not none else '' }}">
+          {% if r.SDE is not none %}{{ "%.2f"|format(r.SDE) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.snr if r.snr is not none else '' }}">
+          {% if r.snr is not none %}{{ "%.2f"|format(r.snr) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.FAP if r.FAP is not none else '' }}">
+          {% if r.FAP is not none %}{{ "%.2e"|format(r.FAP) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.odd_even if r.odd_even is not none else '' }}">
+          {% if r.odd_even is not none %}{{ "%.2f"|format(r.odd_even) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.n_tr if r.n_tr is not none else '' }}">
+          {% if r.n_tr is not none %}{{ r.n_tr }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.Prot_gls if r.Prot_gls is not none else '' }}">
+          {% if r.Prot_gls is not none %}{{ "%.3f"|format(r.Prot_gls) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.power_gls if r.power_gls is not none else '' }}">
+          {% if r.power_gls is not none %}{{ "%.4f"|format(r.power_gls) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.toi if r.toi is not none else '' }}">{{ r.toi if r.toi is not none else '' }}</td>
+        <td class="num" data-v="{{ r.tic if r.tic is not none else '' }}">{{ r.tic if r.tic is not none else '' }}</td>
+        <td class="actions">
+          {% if r.external %}
+            <span class="ext-path" title="{{ r.disk_path }}">{{ r.disk_path }}</span>
+          {% else %}
+            {% if r.png %}<a href="{{ r.png }}" target="_blank">PNG</a>{% endif %}
+            {% if r.h5 %}<a href="{{ r.h5 }}" download>H5</a>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty">
+  No TLS results have been saved yet. Run a QuickLook with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
+</div>
+{% endif %}
+
+{% if skipped %}
+<div class="skipped">
+  <details>
+    <summary>{{ skipped|length }} file{{ '' if skipped|length == 1 else 's' }} could not be parsed</summary>
+    <ul>
+      {% for s in skipped %}
+      <li><code>{{ s.name }}</code> &mdash; {{ s.error }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+</div>
+{% endif %}
+
+<script>
+/* =========================================================================
+   Persist the selected TLS directory across page navigations.
+   - Save the *current* dir to localStorage whenever the page is rendered
+     with a valid non-default dir.
+   - On a clean visit (no ?dir= in URL), rehydrate from storage by
+     redirecting to /tls-summary?dir=<saved> exactly once.
+   - The "Reset" link explicitly clears the saved value (handler below).
+   ========================================================================= */
+(function persistSelectedDir() {
+  const KEY = 'tls-summary-current-dir';
+  const form = document.getElementById('dirForm');
+  if (!form) return;
+  const currentDir = form.dataset.currentDir || '';
+  const isDefault = form.dataset.isDefault === 'true';
+  const urlHasDir = form.dataset.hasDirParam === 'true';
+
+  if (!urlHasDir) {
+    // Fresh page load (no ?dir=); rehydrate if we have a saved one.
+    let saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
+    if (saved && saved !== currentDir) {
+      window.location.replace('/tls-summary?dir=' + encodeURIComponent(saved));
+      return; // The new navigation will re-run this script.
+    }
+  } else if (!isDefault && currentDir) {
+    // Server confirmed a custom dir is loaded — remember it.
+    try { localStorage.setItem(KEY, currentDir); } catch (e) {}
+  }
+  // Note: when URL had ?dir= but server fell back to default (bad path),
+  // we intentionally leave the previously-saved value untouched.
+})();
+
+/* Theme toggle (matches index/gallery) */
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀' : '☾';
+  localStorage.setItem('ql-theme', theme);
+}
+(function init() {
+  const saved = localStorage.getItem('ql-theme');
+  if (saved) { applyTheme(saved); return; }
+  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
+})();
+document.getElementById('themeToggle').addEventListener('click', () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  applyTheme(cur === 'dark' ? 'light' : 'dark');
+});
+
+/* Directory input — persist recently-used paths in localStorage */
+const DIR_HISTORY_KEY = 'tls-summary-dir-history';
+const DIR_HISTORY_MAX = 10;
+const dirInput = document.getElementById('dirInput');
+const dirDatalist = document.getElementById('recent-dirs');
+const dirForm = document.getElementById('dirForm');
+
+function loadDirHistory() {
+  try { return JSON.parse(localStorage.getItem(DIR_HISTORY_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveDirHistory(list) {
+  localStorage.setItem(DIR_HISTORY_KEY, JSON.stringify(list.slice(0, DIR_HISTORY_MAX)));
+}
+function renderDirHistory() {
+  const list = loadDirHistory();
+  if (dirDatalist) {
+    dirDatalist.innerHTML = list.map(p => {
+      const v = p.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return '<option value="' + v + '">';
+    }).join('');
+  }
+}
+if (dirForm) {
+  dirForm.addEventListener('submit', () => {
+    const v = dirInput.value.trim();
+    if (v) {
+      const list = loadDirHistory().filter(p => p !== v);
+      list.unshift(v);
+      saveDirHistory(list);
+    }
+    // Show loading overlay; the form submission triggers a full-page
+    // navigation, so this stays visible until the new page renders.
+    const overlay = document.getElementById('pageLoading');
+    const overlayPath = document.getElementById('pageLoadingPath');
+    if (overlay) {
+      if (overlayPath) overlayPath.textContent = v || '(default folder)';
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+  });
+}
+renderDirHistory();
+
+/* Also show the loading overlay when the "Reset" link is clicked, and
+   clear the persisted dir so we don't immediately rehydrate from it. */
+document.querySelectorAll('.dir-form a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    try { localStorage.removeItem('tls-summary-current-dir'); } catch (e) {}
+    const overlay = document.getElementById('pageLoading');
+    const overlayPath = document.getElementById('pageLoadingPath');
+    if (overlay) {
+      if (overlayPath) overlayPath.textContent = '(default folder)';
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+  });
+});
+
+/* Search (live filter across all visible columns) */
+const table = document.getElementById('tlsTable');
+const search = document.getElementById('search');
+const countEl = document.getElementById('count');
+const rows = table ? Array.from(table.tBodies[0].rows) : [];
+
+function applySearch() {
+  if (!table) return;
+  const q = search.value.trim().toLowerCase();
+  let visible = 0;
+  for (const row of rows) {
+    const text = row.textContent.toLowerCase();
+    const match = q === '' || text.includes(q);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  }
+  countEl.textContent = visible + ' / ' + rows.length + ' results';
+}
+if (search) search.addEventListener('input', applySearch);
+
+/* Sort by column (toggle asc/desc, numeric vs string aware) */
+let activeTh = null;
+let activeDir = 1; // 1 = asc, -1 = desc
+
+function cellValue(row, idx, type) {
+  const td = row.cells[idx];
+  if (!td) return type === 'num' ? NaN : '';
+  if (type === 'num') {
+    const v = td.dataset.v ?? td.textContent.trim();
+    if (v === '' || v === null || v === undefined) return NaN;
+    const n = parseFloat(v);
+    return isNaN(n) ? NaN : n;
+  }
+  return td.textContent.trim().toLowerCase();
+}
+
+if (table) {
+  const ths = Array.from(table.tHead.rows[0].cells);
+  ths.forEach((th, idx) => {
+    if (!th.dataset.key) return; // "Files" column has no key
+    th.addEventListener('click', () => {
+      const type = th.dataset.type;
+      if (activeTh === th) {
+        activeDir = -activeDir;
+      } else {
+        if (activeTh) activeTh.classList.remove('sort-asc', 'sort-desc');
+        activeTh = th;
+        activeDir = (type === 'num') ? -1 : 1; // numeric defaults to desc (e.g. high SDE first)
+      }
+      th.classList.toggle('sort-asc', activeDir === 1);
+      th.classList.toggle('sort-desc', activeDir === -1);
+
+      const sorted = rows.slice().sort((a, b) => {
+        const va = cellValue(a, idx, type);
+        const vb = cellValue(b, idx, type);
+        const aMiss = (type === 'num') ? isNaN(va) : va === '';
+        const bMiss = (type === 'num') ? isNaN(vb) : vb === '';
+        if (aMiss && bMiss) return 0;
+        if (aMiss) return 1;
+        if (bMiss) return -1;
+        if (va < vb) return -1 * activeDir;
+        if (va > vb) return  1 * activeDir;
+        return 0;
+      });
+      const tbody = table.tBodies[0];
+      sorted.forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+</script>
+
+<div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
+  <div class="panel">
+    <div class="pl-spinner"></div>
+    <div class="text">
+      <strong>Loading TLS results…</strong>
+      <small id="pageLoadingPath"></small>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="browseModal" role="dialog" aria-modal="true" aria-labelledby="browseTitle">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="browseTitle">Browse for TLS results directory</h2>
+      <button type="button" class="modal-close" id="browseClose" title="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="breadcrumb" id="browseBreadcrumb"></div>
+      <div class="modal-current" id="browseCurrent"></div>
+      <div class="modal-error" id="browseError"></div>
+      <div class="filter-row">
+        <label>
+          <input type="checkbox" id="tlsOnlyToggle">
+          Only show folders with TLS files
+        </label>
+      </div>
+      <div class="dir-list" id="browseList"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline btn-sm" id="browseCancel">Cancel</button>
+      <button type="button" class="btn btn-outline btn-sm" id="browseSelect">Select this directory</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Browse directory tree (modal). Hits /list-dirs server-side;
+   scoped to ALLOWED_BROWSE_ROOTS (default $HOME).
+   ============================================================ */
+(function () {
+  const modal = document.getElementById('browseModal');
+  const browseBtn = document.getElementById('browseBtn');
+  const closeBtn = document.getElementById('browseClose');
+  const cancelBtn = document.getElementById('browseCancel');
+  const selectBtn = document.getElementById('browseSelect');
+  const breadcrumb = document.getElementById('browseBreadcrumb');
+  const currentEl = document.getElementById('browseCurrent');
+  const errorEl = document.getElementById('browseError');
+  const listEl = document.getElementById('browseList');
+  const dirInputEl = document.getElementById('dirInput');
+  const dirFormEl = document.getElementById('dirForm');
+
+  if (!modal || !browseBtn) return;
+
+  let currentPath = null;
+
+  /* Persist the "Only TLS folders" filter across sessions. */
+  const TLS_ONLY_KEY = 'tls-summary-browse-tls-only';
+  const tlsOnlyToggle = document.getElementById('tlsOnlyToggle');
+  function applyTlsOnly() {
+    if (!listEl || !tlsOnlyToggle) return;
+    listEl.classList.toggle('tls-only', tlsOnlyToggle.checked);
+  }
+  if (tlsOnlyToggle && listEl) {
+    let saved = false;
+    try { saved = localStorage.getItem(TLS_ONLY_KEY) === '1'; } catch (e) {}
+    tlsOnlyToggle.checked = saved;
+    applyTlsOnly();
+    tlsOnlyToggle.addEventListener('change', () => {
+      try {
+        if (tlsOnlyToggle.checked) localStorage.setItem(TLS_ONLY_KEY, '1');
+        else localStorage.removeItem(TLS_ONLY_KEY);
+      } catch (e) {}
+      applyTlsOnly();
+    });
+  }
+
+  async function loadDirs(path) {
+    errorEl.textContent = '';
+    listEl.innerHTML = '<div class="modal-empty">Loading…</div>';
+    const url = '/list-dirs' + (path ? '?path=' + encodeURIComponent(path) : '');
+    let data;
+    try {
+      const res = await fetch(url);
+      data = await res.json();
+    } catch (err) {
+      errorEl.textContent = 'Network error: ' + err.message;
+      listEl.innerHTML = '';
+      return;
+    }
+    if (data.error) {
+      errorEl.textContent = data.error;
+      if (!data.path) { listEl.innerHTML = ''; return; }
+    }
+
+    currentPath = data.path;
+    currentEl.innerHTML = '';
+    const pathSpan = document.createElement('span');
+    pathSpan.textContent = data.path;
+    currentEl.appendChild(pathSpan);
+    if (data.has_tls_here) {
+      const b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = 'contains _tls.h5';
+      currentEl.appendChild(b);
+    }
+
+    // Breadcrumb
+    breadcrumb.innerHTML = '';
+    (data.breadcrumbs || []).forEach((bc, i, arr) => {
+      const a = document.createElement('a');
+      a.textContent = bc.name || '/';
+      a.title = bc.path;
+      a.onclick = () => loadDirs(bc.path);
+      breadcrumb.appendChild(a);
+      if (i < arr.length - 1) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = ' › ';
+        breadcrumb.appendChild(sep);
+      }
+    });
+    if (data.parent) {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'btn btn-outline btn-sm';
+      up.style.marginLeft = '8px';
+      up.textContent = '↑ Up';
+      up.onclick = () => loadDirs(data.parent);
+      breadcrumb.appendChild(up);
+    }
+
+    // Entries
+    listEl.innerHTML = '';
+    if (!data.entries || data.entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'modal-empty';
+      empty.textContent = 'No subdirectories here.';
+      listEl.appendChild(empty);
+      return;
+    }
+    data.entries.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'dir-row' + (e.has_tls ? ' has-tls' : '');
+      row.title = e.path;
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = '\u{1F4C1}'; // folder
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = e.name;
+      row.appendChild(icon);
+      row.appendChild(name);
+      if (e.has_tls) {
+        const badge = document.createElement('span');
+        badge.className = 'tls-badge';
+        badge.textContent = 'tls';
+        row.appendChild(badge);
+      }
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.textContent = '›';
+      row.appendChild(chev);
+      row.onclick = () => loadDirs(e.path);
+      listEl.appendChild(row);
+    });
+  }
+
+  function open() {
+    modal.classList.add('open');
+    loadDirs((dirInputEl && dirInputEl.value.trim()) || '');
+  }
+  function close() { modal.classList.remove('open'); }
+
+  browseBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+  selectBtn.addEventListener('click', () => {
+    if (!currentPath || !dirInputEl) return;
+    selectBtn.disabled = true;
+    selectBtn.textContent = 'Loading…';
+    dirInputEl.value = currentPath;
+    if (dirFormEl) dirFormEl.requestSubmit();
+    // Close happens implicitly once the new page loads; explicit close
+    // here would hide the disabled state too early.
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) close();
+  });
+})();
+</script>
+</body>
+</html>

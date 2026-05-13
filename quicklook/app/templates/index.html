@@ -197,6 +197,29 @@
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Full-page loading overlay (shown on heavy navigations like TLS Summary) */
+    .page-loading {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      display: none; align-items: center; justify-content: center;
+      z-index: 2000; backdrop-filter: blur(2px);
+    }
+    .page-loading.show { display: flex; }
+    .page-loading .panel {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 22px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      min-width: 280px; max-width: 92%;
+    }
+    .page-loading .pl-spinner {
+      width: 22px; height: 22px; flex-shrink: 0;
+      border: 3px solid var(--primary); border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
+    .page-loading .text strong { font-size: 0.95rem; }
+    .page-loading .text small { font-size: 0.78rem; color: var(--text-sec); }
     .status-bar .btn { margin-left: auto; }
 
     /* --- Progress --- */
@@ -654,6 +677,7 @@
 <div class="footer-nav">
   <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse All Results</a>
   <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare Results</a>
+  <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="tlsSummaryLink">TLS Summary</a>
 </div>
 
 <script>
@@ -1497,6 +1521,34 @@ if ('Notification' in window && Notification.permission === 'default') {
 })();
 
 setInterval(refreshQueue, 5000);
+
+/* Show a full-page loading overlay when the user clicks "TLS Summary".
+   /tls-summary walks every *_tls.h5 in the chosen folder and can take a
+   few seconds, so we give immediate visual feedback. */
+(function () {
+  const link = document.getElementById('tlsSummaryLink');
+  if (!link) return;
+  link.addEventListener('click', (e) => {
+    // Ignore modifier-click / middle-click (new-tab) so we don't flash
+    // the overlay on the current page when the user opens it elsewhere.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    // Look up the overlay lazily — it sits after this <script> in the
+    // source, so it doesn't exist when the IIFE first runs.
+    const overlay = document.getElementById('pageLoading');
+    if (overlay) overlay.classList.add('show');
+  });
+})();
 </script>
+
+<div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
+  <div class="panel">
+    <div class="pl-spinner"></div>
+    <div class="text">
+      <strong>Loading TLS Summary&hellip;</strong>
+      <small>Scanning saved results</small>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

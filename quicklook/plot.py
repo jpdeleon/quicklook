@@ -55,6 +55,41 @@ def use_style(name="science"):
         pl.style.use(str(style_path))
 
 
+def _strip_for_bin(lc):
+    """Drop non-numeric extra columns before calling LightCurve.bin().
+
+    LightCurve.bin() delegates to astropy.timeseries.aggregate_downsample(),
+    which sums every column. HLSP products such as QLP, TGLC, CDIPS, and
+    pathos carry string-typed columns (e.g. "quality" tags, sector strings)
+    that crash with::
+
+        the resolved dtypes are not compatible with add.reduce.
+
+    Stripping non-numeric extras keeps time/flux/flux_err and any numeric
+    extras (cadenceno, etc.), so binning produces real even/odd panels
+    instead of silently failing.
+    """
+    drop = []
+    for col in list(lc.colnames):
+        if col in ("time", "flux", "flux_err"):
+            continue
+        dtype = getattr(lc[col], "dtype", None)
+        if dtype is None:
+            # e.g. astropy Time/Quantity-like columns without a plain dtype;
+            # aggregate_downsample cannot reduce them, so drop them.
+            drop.append(col)
+            continue
+        try:
+            is_numeric = np.issubdtype(dtype, np.number)
+        except TypeError:
+            is_numeric = False
+        if not is_numeric:
+            drop.append(col)
+    if drop:
+        lc.remove_columns(drop)
+    return lc
+
+
 def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=None):
     if ax is None:
         _, ax = pl.subplots()
@@ -70,8 +105,10 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
     # Force writeable deep copies; stacked boolean slices on the folded
     # LightCurve leave the underlying flux/time buffers non-writeable, which
     # breaks the in-place ufuncs used by LightCurve.bin() under numpy >= 2.0.
-    even_lc = clipped_lc[clipped_lc.even_mask].copy()
-    odd_lc = clipped_lc[clipped_lc.odd_mask].copy()
+    # Strip non-numeric extra columns so aggregate_downsample doesn't choke
+    # on string-typed columns carried by HLSP pipelines (QLP, TGLC, CDIPS).
+    even_lc = _strip_for_bin(clipped_lc[clipped_lc.even_mask].copy())
+    odd_lc = _strip_for_bin(clipped_lc[clipped_lc.odd_mask].copy())
 
     if len(even_lc) > 0:
         try:
@@ -85,7 +122,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
-            logger.debug(f"Could not bin even-transit data: {e}")
+            logger.warning(f"Could not bin even-transit data: {e}")
     if len(odd_lc) > 0:
         try:
             odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
@@ -98,7 +135,7 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
-            logger.debug(f"Could not bin odd-transit data: {e}")
+            logger.warning(f"Could not bin odd-transit data: {e}")
 
     ax.plot(
         (tls_results.model_folded_phase - 0.5) * tls_results.period,
@@ -155,7 +192,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
     ax.axvline(half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     try:
         if len(clipped_lc2) > 0:
-            clipped_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            _strip_for_bin(clipped_lc2).bin(time_bin_size=bin_mins * u.minute).errorbar(
                 ax=ax,
                 marker="o",
                 markersize=markersize,
@@ -164,7 +201,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
                 zorder=2,
             )
     except (ValueError, TypeError) as e:
-        logger.debug(f"Could not bin secondary eclipse data: {e}")
+        logger.warning(f"Could not bin secondary eclipse data: {e}")
     ax.set_xlabel("Orbital Phase")
     ax.set_xlim(phase_lo, phase_hi)
     ax.legend()

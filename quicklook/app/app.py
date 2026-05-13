@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 from collections import OrderedDict
 from pathlib import Path
 from threading import Thread, Event
@@ -336,9 +337,12 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         jobs[name]["error"] = str(e)
         logger.warning(f"Job failed: {e}")
     except Exception as e:
+        tb = traceback.format_exc()
         jobs[name]["status"] = "error"
+        # Keep the short message for the GUI badge, but include the traceback
+        # so the per-target .log captures the offending file/line.
         jobs[name]["error"] = str(e)
-        logger.error(f"Job '{name}' failed unexpectedly: {e}")
+        logger.error(f"Job '{name}' failed unexpectedly: {e}\n{tb}")
     finally:
         # Tear down in safe order: streams first, then loguru sink, then file
         _tls_stdout.clear_stream()
@@ -758,12 +762,21 @@ def ws_log(ws, target):
         time.sleep(1.5)
 
 
+GALLERY_PER_PAGE_CHOICES = [12, 24, 48, 96, 192]
+GALLERY_PER_PAGE_DEFAULT = 24
+
+
 @app.route("/gallery")
 def gallery():
     search_name = request.args.get("search", "")
     sort_by = request.args.get("sort", "date_desc")
     page = max(1, int(request.args.get("page", 1)))
-    per_page = 24
+    try:
+        per_page = int(request.args.get("per_page", GALLERY_PER_PAGE_DEFAULT))
+    except (TypeError, ValueError):
+        per_page = GALLERY_PER_PAGE_DEFAULT
+    if per_page not in GALLERY_PER_PAGE_CHOICES:
+        per_page = GALLERY_PER_PAGE_DEFAULT
 
     images = list(OUTPUT_DIR.glob("*.png"))
 
@@ -795,6 +808,372 @@ def gallery():
         page=page,
         total_pages=total_pages,
         total=total,
+        per_page=per_page,
+        per_page_choices=GALLERY_PER_PAGE_CHOICES,
+    )
+
+
+def _parse_tls_filename(stem):
+    """Best-effort parse of pipeline, flux_type, cadence from a TLS filename.
+
+    Filenames follow `{name}_s{NN}_{lctype}_{c}c[_mask_ephem][_{suffix}]_tls`
+    (see TessQuickLook.check_output_file_exists). ``lctype`` is the flux type
+    when pipeline=="spoc" (pdcsap/sap), else the pipeline name itself.
+    Returns a dict of fallbacks; values are None when not confidently
+    recoverable.
+    """
+    SPOC_FLUX = {"pdcsap", "sap"}
+    HLSP_PIPELINES = {"qlp", "tglc", "tasoc", "cdips", "pathos", "tess-spoc", "t16"}
+    # Trailing "_tls" already stripped by Path.stem callers
+    if stem.endswith("_tls"):
+        stem = stem[: -len("_tls")]
+    tokens = stem.split("_")
+    pipeline = flux_type = cadence = None
+    # Find the sector token (sNN) and the cadence token ((s|l)c).
+    sec_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"s\d{1,3}", t)), None)
+    cad_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"[sl]c", t)), None)
+    if sec_idx is not None and cad_idx is not None and cad_idx > sec_idx + 1:
+        lctype = tokens[sec_idx + 1]
+        if lctype in SPOC_FLUX:
+            pipeline, flux_type = "spoc", lctype
+        elif lctype in HLSP_PIPELINES:
+            pipeline = lctype
+        cadence = "short" if tokens[cad_idx] == "sc" else "long"
+    return {"pipeline": pipeline, "flux_type": flux_type, "cadence": cadence}
+
+
+def _coerce_scalar(val):
+    """Unwrap 0-d/1-elem numpy arrays so Jinja sees a plain Python scalar."""
+    if val is None:
+        return None
+    try:
+        import numpy as _np
+
+        if isinstance(val, _np.ndarray):
+            if val.ndim == 0:
+                return val.item()
+            if val.size == 1:
+                return val.flat[0].item()
+    except Exception:
+        pass
+    if isinstance(val, bytes):
+        try:
+            return val.decode()
+        except Exception:
+            return None
+    return val
+
+
+def _get_allowed_browse_roots():
+    """Roots the /list-dirs endpoint is allowed to descend into.
+
+    Defaults to the user's home directory. Override via the
+    ``ALLOWED_BROWSE_ROOTS`` env var, colon-separated absolute paths.
+    """
+    env = os.environ.get("ALLOWED_BROWSE_ROOTS", "")
+    if env.strip():
+        roots = []
+        for part in env.split(":"):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                roots.append(Path(part).expanduser().resolve())
+            except (OSError, ValueError):
+                continue
+        if roots:
+            return roots
+    return [Path.home().resolve()]
+
+
+def _is_under_allowed_root(p, roots):
+    """True if the resolved path is inside any allowed root (or equals one)."""
+    try:
+        p_resolved = p.resolve()
+    except (OSError, ValueError):
+        return False
+    for root in roots:
+        try:
+            if p_resolved == root or p_resolved.is_relative_to(root):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+@app.route("/list-dirs")
+def list_dirs():
+    """List immediate subdirectories of a path. Localhost-only convenience
+    for the TLS Summary directory picker — scoped to allowed roots so a
+    misconfigured deployment cannot leak arbitrary filesystem layout.
+    """
+    roots = _get_allowed_browse_roots()
+    req = request.args.get("path", "").strip()
+
+    if not req:
+        p = roots[0]
+    else:
+        try:
+            p = Path(req).expanduser()
+        except (OSError, ValueError):
+            return (
+                jsonify(
+                    {
+                        "error": "Invalid path",
+                        "entries": [],
+                        "path": req,
+                        "parent": None,
+                        "breadcrumbs": [],
+                        "roots": [str(r) for r in roots],
+                    }
+                ),
+                400,
+            )
+
+    if not _is_under_allowed_root(p, roots):
+        return (
+            jsonify(
+                {
+                    "error": "Path outside allowed roots",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": None,
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            403,
+        )
+
+    try:
+        p = p.resolve()
+    except (OSError, ValueError) as e:
+        return (
+            jsonify(
+                {
+                    "error": f"Cannot resolve path: {e}",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": None,
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            400,
+        )
+
+    if not p.is_dir():
+        return (
+            jsonify(
+                {
+                    "error": "Not a directory",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": str(p.parent),
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            400,
+        )
+
+    entries = []
+    has_tls_here = False
+    try:
+        for entry in os.scandir(p):
+            try:
+                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
+                    sub = Path(entry.path)
+                    try:
+                        has_tls = any(sub.glob("*_tls.h5"))
+                    except (OSError, PermissionError):
+                        has_tls = False
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "path": str(sub.resolve()),
+                            "has_tls": has_tls,
+                        }
+                    )
+                elif entry.is_file(follow_symlinks=False) and entry.name.endswith("_tls.h5"):
+                    has_tls_here = True
+            except (OSError, PermissionError):
+                continue
+    except (OSError, PermissionError) as e:
+        return jsonify(
+            {
+                "error": f"Cannot list directory: {e}",
+                "entries": [],
+                "path": str(p),
+                "parent": str(p.parent),
+                "breadcrumbs": [],
+                "roots": [str(r) for r in roots],
+            }
+        )
+
+    entries.sort(key=lambda e: e["name"].lower())
+
+    # Parent only if still inside an allowed root
+    parent = None
+    if p != p.parent and _is_under_allowed_root(p.parent, roots):
+        try:
+            parent = str(p.parent.resolve())
+        except (OSError, ValueError):
+            parent = None
+
+    # Breadcrumb path: walk up while still under an allowed root
+    breadcrumbs = []
+    current = p
+    seen = set()
+    while True:
+        if str(current) in seen:
+            break
+        seen.add(str(current))
+        breadcrumbs.append({"name": current.name or str(current), "path": str(current)})
+        if current == current.parent or not _is_under_allowed_root(current.parent, roots):
+            break
+        current = current.parent
+    breadcrumbs.reverse()
+
+    return jsonify(
+        {
+            "path": str(p),
+            "parent": parent,
+            "entries": entries,
+            "has_tls_here": has_tls_here,
+            "breadcrumbs": breadcrumbs,
+            "roots": [str(r) for r in roots],
+            "error": None,
+        }
+    )
+
+
+@app.route("/tls-summary")
+def tls_summary():
+    """Sortable, searchable summary table of every saved TLS .h5 result.
+
+    Reads from ``OUTPUT_DIR`` by default; accepts ``?dir=<absolute_path>``
+    to point at any other directory containing ``*_tls.h5`` files.
+    """
+    from quicklook import h5io
+
+    req_dir = request.args.get("dir", "").strip()
+    chosen_dir = OUTPUT_DIR
+    dir_error = None
+    if req_dir:
+        try:
+            candidate = Path(req_dir).expanduser().resolve()
+        except (OSError, ValueError, RuntimeError):
+            candidate = None
+            dir_error = f"Invalid path: {req_dir}"
+        if candidate is not None:
+            if candidate.is_dir():
+                chosen_dir = candidate
+            else:
+                dir_error = f"Path not found or not a directory: {req_dir}"
+
+    is_default_dir = chosen_dir.resolve() == OUTPUT_DIR.resolve()
+    output_root = OUTPUT_DIR.resolve()
+
+    files = sorted(chosen_dir.glob("*_tls.h5"), key=os.path.getmtime, reverse=True)
+    rows = []
+    skipped = []
+    for fp in files:
+        try:
+            data = h5io.load(str(fp))
+        except Exception as e:
+            skipped.append({"name": fp.name, "error": str(e)})
+            continue
+
+        stem = fp.stem  # foo_s12_pdcsap_sc_tls
+        png_name = stem[: -len("_tls")] + ".png" if stem.endswith("_tls") else stem + ".png"
+
+        # Emit /static/outputs/... URLs only when the file lives inside
+        # OUTPUT_DIR; otherwise show the absolute path as plain text so we
+        # don't have to add a generic file-streaming endpoint.
+        try:
+            fp_resolved = fp.resolve()
+            external = not fp_resolved.is_relative_to(output_root)
+        except (OSError, ValueError):
+            external = True
+            fp_resolved = fp
+
+        if external:
+            png_path = None
+            h5_path = None
+            disk_path = str(fp_resolved)
+        else:
+            png_path = f"/static/outputs/{png_name}" if (OUTPUT_DIR / png_name).exists() else None
+            h5_path = f"/static/outputs/{fp.name}"
+            disk_path = None
+
+        def first(seq):
+            try:
+                return seq[0] if seq is not None and len(seq) > 0 else None
+            except Exception:
+                return None
+
+        ptc = data.get("per_transit_count")
+        try:
+            ptc_str = ",".join(str(int(x)) for x in ptc) if ptc is not None else ""
+        except Exception:
+            ptc_str = str(ptc) if ptc is not None else ""
+
+        # Filename-based fallbacks for older h5 files that pre-date the
+        # "save pipeline/flux_type/exptime/cadence" fix in tql.py.
+        fallback = _parse_tls_filename(stem)
+        pipeline = _coerce_scalar(data.get("pipeline")) or fallback["pipeline"]
+        flux_type = _coerce_scalar(data.get("flux_type")) or fallback["flux_type"]
+        exptime = _coerce_scalar(data.get("exptime"))
+        if exptime is None and fallback["cadence"] == "short":
+            # Use a hint, not a hard claim; surface in the table so users
+            # know it's inferred. 120s is the typical SPOC 2-min cadence.
+            exptime_hint = 120 if pipeline == "spoc" else None
+            exptime = exptime_hint
+
+        depth = data.get("depth")
+        duration_days = _coerce_scalar(data.get("duration"))
+        rows.append(
+            {
+                "filename": fp.name,
+                "stem": stem,
+                "png": png_path,
+                "h5": h5_path,
+                "external": external,
+                "disk_path": disk_path,
+                "mtime": os.path.getmtime(fp),
+                "toi": _coerce_scalar(data.get("toiid")),
+                "tic": _coerce_scalar(data.get("ticid")),
+                "gaiaid": _coerce_scalar(data.get("gaiaid")),
+                "pipeline": pipeline,
+                "flux_type": flux_type,
+                "exptime": exptime,
+                "sector": _coerce_scalar(data.get("sector")),
+                "Porb": _coerce_scalar(data.get("period")),
+                "duration_hr": duration_days * 24.0 if duration_days is not None else None,
+                "rp_rs": _coerce_scalar(data.get("rp_rs")),
+                "SDE": _coerce_scalar(data.get("SDE")),
+                "snr": _coerce_scalar(data.get("snr")),
+                "FAP": _coerce_scalar(data.get("FAP")),
+                "odd_even": _coerce_scalar(data.get("odd_even_mismatch")),
+                "n_tr": _coerce_scalar(data.get("distinct_transit_count")),
+                "depth_ppt": (1 - depth) * 1e3 if depth is not None else None,
+                "Prot_gls": first(data.get("Prot_gls")),
+                "amp_gls": first(data.get("amp_gls")),
+                "power_gls": first(data.get("power_gls")),
+                "per_transit_count": ptc_str,
+                "simbad_obj": _coerce_scalar(data.get("simbad_obj")),
+            }
+        )
+
+    return render_template(
+        "tls_summary.html",
+        rows=rows,
+        total=len(rows),
+        skipped=skipped,
+        current_dir=str(chosen_dir),
+        is_default_dir=is_default_dir,
+        dir_error=dir_error,
     )
 
 
