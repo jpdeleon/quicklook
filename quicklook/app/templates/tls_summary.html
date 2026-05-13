@@ -85,6 +85,37 @@
     thead th.sort-desc .arrow::before { content: "\25BC"; opacity: 1; color: var(--primary); }
     thead th .arrow::before { content: "\25C7"; }
 
+    /* Per-column filter row — distinct class (`.col-filter-row`) to avoid
+       colliding with the modal's `.filter-row` (flex layout). Padding
+       matches the header (12px) and body (12px) cells so each input sits
+       flush under its column header. */
+    thead tr.col-filter-row th {
+      cursor: default; padding: 4px 12px; background: var(--card-bg);
+      text-transform: none; letter-spacing: normal; font-weight: normal;
+      vertical-align: middle;
+    }
+    thead tr.col-filter-row th:hover { background: var(--card-bg); }
+    .col-filter-row input {
+      width: 100%; min-width: 0; box-sizing: border-box;
+      padding: 4px 6px; border: 1px solid var(--input-border); border-radius: 4px;
+      font-size: 0.75rem; background: var(--input-bg); color: var(--text);
+      font-family: inherit; margin: 0;
+    }
+    .col-filter-row input:focus { outline: none; border-color: var(--primary); }
+    .col-filter-row input.has-value {
+      border-color: var(--primary); background: var(--hover-bg); font-weight: 600;
+    }
+    .filter-hint {
+      font-size: 0.75rem; color: var(--text-sec);
+      margin: 0 0 6px 4px;
+    }
+    .filter-hint code {
+      background: var(--input-bg); border: 1px solid var(--border-light);
+      border-radius: 3px; padding: 0 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+
     tbody td {
       padding: 8px 12px; border-bottom: 1px solid var(--border-light);
       vertical-align: middle; white-space: nowrap;
@@ -305,6 +336,10 @@
 
 <h1>TLS Results Summary</h1>
 <p class="subtitle">All saved TLS HDF5 outputs &mdash; click a column to sort, type to filter.</p>
+<p class="filter-hint">
+  Per-column filter syntax: <code>&gt;5</code>, <code>&lt;10</code>, <code>&gt;=2</code>, <code>&lt;=1</code>, <code>=5</code>, <code>3..7</code> (range) for numbers;
+  <code>==exact</code> for full match, else substring for text.
+</p>
 
 {% if rows %}
 <div class="table-wrap">
@@ -329,6 +364,26 @@
         <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
         <th data-key="tic" data-type="num">TIC <span class="arrow"></span></th>
         <th>Files</th>
+      </tr>
+      <tr class="col-filter-row">
+        <th><input type="text" data-col="0"  data-type="str" placeholder="text"></th>
+        <th><input type="text" data-col="1"  data-type="str" placeholder="text"></th>
+        <th><input type="text" data-col="2"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="3"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="4"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="5"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="6"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="7"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="8"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="9"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="10" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="11" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="12" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="13" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="14" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="15" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="16" data-type="num" placeholder="> < .."></th>
+        <th></th>
       </tr>
     </thead>
     <tbody>
@@ -525,19 +580,87 @@ const search = document.getElementById('search');
 const countEl = document.getElementById('count');
 const rows = table ? Array.from(table.tBodies[0].rows) : [];
 
-function applySearch() {
+/* Parse a per-column filter expression into a predicate.
+   Numeric: >n, <n, >=n, <=n, =n / ==n, a..b ; bare text → substring on cell.
+   String:  ==text → exact (case-insensitive) ; else substring. */
+const NUM_RE = '-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?';
+function parseFilterExpr(expr, type) {
+  expr = (expr || '').trim();
+  if (!expr) return null;
+  if (type === 'num') {
+    let m;
+    m = expr.match(new RegExp('^>=\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v >= n; }
+    m = expr.match(new RegExp('^<=\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v <= n; }
+    m = expr.match(new RegExp('^>\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v > n; }
+    m = expr.match(new RegExp('^<\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v < n; }
+    m = expr.match(new RegExp('^==?\\s*(' + NUM_RE + ')$'));
+    if (m) {
+      const n = parseFloat(m[1]);
+      return (v) => !isNaN(v) && Math.abs(v - n) <= 1e-9 * Math.max(1, Math.abs(n));
+    }
+    m = expr.match(new RegExp('^(' + NUM_RE + ')\\s*\\.\\.\\s*(' + NUM_RE + ')$'));
+    if (m) {
+      const a = parseFloat(m[1]), b = parseFloat(m[2]);
+      return (v) => !isNaN(v) && v >= Math.min(a, b) && v <= Math.max(a, b);
+    }
+    // Fallback for numeric column: substring on displayed text.
+    const needle = expr.toLowerCase();
+    return (v, text) => text.includes(needle);
+  }
+  // String
+  const exact = expr.match(/^==?\s*(.+)$/);
+  if (exact) {
+    const target = exact[1].trim().toLowerCase();
+    return (_v, text) => text === target;
+  }
+  const needle = expr.toLowerCase();
+  return (_v, text) => text.includes(needle);
+}
+
+const filterInputs = document.querySelectorAll('.col-filter-row input');
+
+function applyFilters() {
   if (!table) return;
-  const q = search.value.trim().toLowerCase();
+  const q = (search ? search.value : '').trim().toLowerCase();
+
+  // Build active per-column predicates.
+  const active = [];
+  filterInputs.forEach((inp) => {
+    const expr = inp.value.trim();
+    inp.classList.toggle('has-value', expr !== '');
+    if (!expr) return;
+    const colIdx = parseInt(inp.dataset.col, 10);
+    const type = inp.dataset.type || 'str';
+    const pred = parseFilterExpr(expr, type);
+    if (pred) active.push({ colIdx, type, pred });
+  });
+
   let visible = 0;
   for (const row of rows) {
-    const text = row.textContent.toLowerCase();
-    const match = q === '' || text.includes(q);
-    row.style.display = match ? '' : 'none';
-    if (match) visible++;
+    let show = q === '' || row.textContent.toLowerCase().includes(q);
+    if (show) {
+      for (const { colIdx, type, pred } of active) {
+        const td = row.cells[colIdx];
+        if (!td) { show = false; break; }
+        const text = td.textContent.trim().toLowerCase();
+        const raw = (type === 'num')
+          ? parseFloat(td.dataset.v !== undefined && td.dataset.v !== '' ? td.dataset.v : td.textContent)
+          : text;
+        if (!pred(raw, text)) { show = false; break; }
+      }
+    }
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
   }
   countEl.textContent = visible + ' / ' + rows.length + ' results';
 }
-if (search) search.addEventListener('input', applySearch);
+
+if (search) search.addEventListener('input', applyFilters);
+filterInputs.forEach(inp => inp.addEventListener('input', applyFilters));
 
 /* Sort by column (toggle asc/desc, numeric vs string aware) */
 let activeTh = null;
