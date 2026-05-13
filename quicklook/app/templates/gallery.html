@@ -134,6 +134,21 @@
       background: var(--primary); color: #fff; border-color: var(--primary); font-weight: 600;
     }
     .pagination .disabled { opacity: 0.4; pointer-events: none; }
+    .per-page-label {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-left: 12px; font-size: 0.82rem; color: var(--text-sec);
+    }
+    /* Neutralise the .pagination span button styles for our inline label. */
+    .pagination .per-page-text {
+      display: inline; min-width: 0; height: auto; padding: 0;
+      border: none; background: transparent; color: var(--text-sec);
+      font-size: 0.82rem;
+    }
+    .per-page-select {
+      padding: 5px 8px; border: 1px solid var(--input-border); border-radius: 5px;
+      font-size: 0.85rem; background: var(--input-bg); color: var(--text); cursor: pointer;
+    }
+    .per-page-select:focus { outline: none; border-color: var(--primary); }
 
     /* Modal */
     .modal {
@@ -163,6 +178,29 @@
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Shared full-page loading overlay (matches index / tls_summary) */
+    .page-loading {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+      display: none; align-items: center; justify-content: center;
+      z-index: 2000; backdrop-filter: blur(2px);
+    }
+    .page-loading.show { display: flex; }
+    .page-loading .panel {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; padding: 18px 22px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+      min-width: 280px; max-width: 92%;
+    }
+    .page-loading .pl-spinner {
+      width: 22px; height: 22px; flex-shrink: 0;
+      border: 3px solid var(--primary); border-top-color: transparent;
+      border-radius: 50%; animation: spin 0.8s linear infinite;
+    }
+    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
+    .page-loading .text strong { font-size: 0.95rem; }
+    .page-loading .text small { font-size: 0.78rem; color: var(--text-sec); }
     .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
     .running-banner a:hover { text-decoration: underline; }
     .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -189,6 +227,7 @@
     <div class="top-bar-left">
       <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
       <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
+      <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="summaryLink">Summary</a>
       <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
     </div>
     <div class="controls">
@@ -241,7 +280,7 @@
   {% if total_pages > 1 %}
   <div class="pagination">
     {% if page > 1 %}
-      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page-1) }}">&laquo; Prev</a>
+      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page-1, per_page=per_page) }}">&laquo; Prev</a>
     {% else %}
       <span class="disabled">&laquo; Prev</span>
     {% endif %}
@@ -250,17 +289,26 @@
       {% if p == page %}
         <span class="current">{{ p }}</span>
       {% elif p <= 3 or p > total_pages - 3 or (p >= page - 2 and p <= page + 2) %}
-        <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=p) }}">{{ p }}</a>
+        <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=p, per_page=per_page) }}">{{ p }}</a>
       {% elif p == 4 or p == total_pages - 3 %}
         <span>&hellip;</span>
       {% endif %}
     {% endfor %}
 
     {% if page < total_pages %}
-      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page+1) }}">Next &raquo;</a>
+      <a href="{{ url_for('gallery', search=search_name, sort=sort_by, page=page+1, per_page=per_page) }}">Next &raquo;</a>
     {% else %}
       <span class="disabled">Next &raquo;</span>
     {% endif %}
+
+    <label class="per-page-label" for="perPageSelect" title="Number of images per page">
+      <span class="per-page-text">per page</span>
+      <select id="perPageSelect" class="per-page-select">
+        {% for n in per_page_choices %}
+        <option value="{{ n }}" {% if n == per_page %}selected{% endif %}>{{ n }}</option>
+        {% endfor %}
+      </select>
+    </label>
   </div>
   {% endif %}
 
@@ -454,6 +502,42 @@
     }
     pollRunningJobs();
     setInterval(pollRunningJobs, 5000);
+
+    /* Per-page selector: reload the gallery preserving search/sort and
+       resetting to page 1 when the user changes the page size. */
+    (function () {
+      const sel = document.getElementById('perPageSelect');
+      if (!sel) return;
+      sel.addEventListener('change', () => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', sel.value);
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+      });
+    })();
+
+    /* Show the shared loading overlay when navigating to the (potentially
+       slow) TLS Summary page. The overlay markup is parsed after this
+       script, so we look it up lazily inside the click handler. */
+    (function () {
+      const link = document.getElementById('summaryLink');
+      if (!link) return;
+      link.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        const overlay = document.getElementById('pageLoading');
+        if (overlay) overlay.classList.add('show');
+      });
+    })();
   </script>
+
+  <div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
+    <div class="panel">
+      <div class="pl-spinner"></div>
+      <div class="text">
+        <strong>Loading TLS Summary&hellip;</strong>
+        <small>Scanning saved results</small>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

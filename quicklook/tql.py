@@ -1062,10 +1062,10 @@ class TessQuickLook:
         None
         """
         # Append meta
-        # self.tls_results["meta"] = self.raw_lc._meta
-        # self.tls_results["pipeline"] = self.pipeline
-        # self.tls_results["flux_type"] = self.flux_type
-        # self.tls_results["exptime"] = self.exptime
+        self.tls_results["pipeline"] = self.pipeline
+        self.tls_results["flux_type"] = self.flux_type
+        self.tls_results["exptime"] = self.exptime
+        self.tls_results["cadence"] = self.cadence
 
         # Append the raw light curve
         self.tls_results["time_raw"] = self.raw_lc.time.value
