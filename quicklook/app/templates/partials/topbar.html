@@ -1,0 +1,14 @@
+{# Unified top-bar nav, shared by every GUI page.
+   Caller sets {% set current = 'home'|'gallery'|'compare'|'summary' %}
+   before including, so the matching anchor gets aria-current="page". #}
+<nav class="topbar" aria-label="Primary">
+  <a href="{{ url_for('index') }}" class="btn btn-outline btn-sm"
+     {% if current == 'home' %}aria-current="page"{% endif %}>Home</a>
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline btn-sm"
+     {% if current == 'gallery' %}aria-current="page"{% endif %}>Gallery</a>
+  <a href="{{ url_for('compare') }}" class="btn btn-outline btn-sm"
+     {% if current == 'compare' %}aria-current="page"{% endif %}>Compare</a>
+  <a href="{{ url_for('tls_summary') }}" class="btn btn-outline btn-sm" id="summaryLink"
+     {% if current == 'summary' %}aria-current="page"{% endif %}>Summary</a>
+  <button type="button" class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
+</nav>

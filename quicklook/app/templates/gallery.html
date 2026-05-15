@@ -5,32 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook Gallery</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
   <style>
-    :root {
-      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
-      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
-      --input-border: #ccc; --hover-bg: #f5f6fa;
-      --primary: #4a6cf7; --primary-hover: #3451d1;
-      --green: #22c55e; --green-hover: #16a34a;
-      --red: #ef4444; --red-hover: #dc2626;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
-      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
-      --input-border: #3a3a4e; --hover-bg: #222236;
-      --primary: #5b7cf9; --primary-hover: #7b96ff;
-      --green: #34d874; --green-hover: #22c55e;
-      --red: #f87171; --red-hover: #ef4444;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
+    /* Page-specific (theme vars, buttons, theme-toggle, page-loading
+       and @keyframes spin live in static/css/quicklook.css). */
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       max-width: 1100px; margin: 0 auto; padding: 24px 20px;
       color: var(--text); background: var(--bg); line-height: 1.5;
       transition: background-color 0.3s, color 0.3s;
     }
-    a { color: var(--primary); }
     h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
 
     .top-bar {
@@ -38,29 +22,6 @@
       flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
     }
     .top-bar-left { display: flex; gap: 8px; align-items: center; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
-      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
-      transition: background-color 0.2s;
-    }
-    .btn-primary { background: var(--primary); }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-green { background: var(--green); }
-    .btn-green:hover { background: var(--green-hover); }
-    .btn-red { background: var(--red); }
-    .btn-red:hover { background: var(--red-hover); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: #fff; }
-    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .theme-toggle {
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
-      color: var(--text); transition: background-color 0.2s;
-    }
-    .theme-toggle:hover { background: var(--hover-bg); }
 
     .controls {
       display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
@@ -166,44 +127,32 @@
     .modal-actions { margin-top: 10px; display: flex; gap: 8px; }
     .modal-actions .btn { font-size: 0.85rem; }
 
-    /* Running-jobs banner */
+    /* Running-jobs banner. Prominent so users see their submitted
+       job is still alive after switching to the gallery page. */
     .running-banner {
-      display: none; align-items: center; gap: 10px; padding: 10px 16px;
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      margin-bottom: 16px; font-size: 0.85rem;
+      display: none; align-items: center; gap: 12px; padding: 14px 18px;
+      background: var(--status-run-bg, var(--card-bg));
+      border: 1px solid var(--status-run-border, var(--border));
+      color: var(--status-run-fg, var(--text));
+      border-radius: 10px;
+      margin-bottom: 16px; font-size: 0.92rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     .running-banner.visible { display: flex; flex-wrap: wrap; }
     .running-banner .spinner {
-      width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
+      width: 18px; height: 18px; border: 3px solid currentColor; border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Shared full-page loading overlay (matches index / tls_summary) */
-    .page-loading {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: none; align-items: center; justify-content: center;
-      z-index: 2000; backdrop-filter: blur(2px);
-    }
-    .page-loading.show { display: flex; }
-    .page-loading .panel {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 18px 22px;
-      display: flex; align-items: center; gap: 14px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-      min-width: 280px; max-width: 92%;
-    }
-    .page-loading .pl-spinner {
-      width: 22px; height: 22px; flex-shrink: 0;
-      border: 3px solid var(--primary); border-top-color: transparent;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
-    }
-    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
-    .page-loading .text strong { font-size: 0.95rem; }
-    .page-loading .text small { font-size: 0.78rem; color: var(--text-sec); }
-    .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
-    .running-banner a:hover { text-decoration: underline; }
+    /* @keyframes spin + .page-loading family live in shared CSS */
+    .running-banner .label { font-weight: 600; }
+    .running-banner .hint { color: var(--text-sec); font-size: 0.82rem; margin-left: 6px; }
+    .running-banner a { color: inherit; font-weight: 700; text-decoration: underline; }
+    .running-banner a:hover { text-decoration: none; }
     .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
+    .auto-refresh-label {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 0.82rem; color: var(--text-sec); cursor: pointer; white-space: nowrap;
+    }
 
     @media (max-width: 600px) {
       .top-bar { flex-direction: column; align-items: stretch; }
@@ -214,22 +163,24 @@
   </style>
 </head>
 <body>
-  <!-- Running jobs banner -->
+  <!-- Running-jobs banner. Stays visible the whole time a job is alive
+       on the server, so users who switched to the gallery can see their
+       submission is still running. Each job name links back to the
+       home page (?watch=…) so they can resume the live status view. -->
   <div class="running-banner" id="runningBanner">
     <div class="spinner"></div>
-    <span>Running:</span>
+    <span class="label">Job running:</span>
     <div class="job-list" id="runningJobList"></div>
+    <span class="hint">(server-side; clicking the name returns to the live log on the home page)</span>
   </div>
+
+  {% set current = 'gallery' %}
+  {% include 'partials/topbar.html' %}
 
   <h1>Output Gallery</h1>
 
   <div class="top-bar">
-    <div class="top-bar-left">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
-      <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
-      <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="summaryLink">Summary</a>
-      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
-    </div>
+    <div class="top-bar-left"></div>
     <div class="controls">
       <form class="search-form" method="get" action="{{ url_for('gallery') }}">
         <input type="hidden" name="sort" value="{{ sort_by }}">
@@ -242,6 +193,9 @@
         <option value="name_asc" {% if sort_by == 'name_asc' %}selected{% endif %}>Name A-Z</option>
         <option value="name_desc" {% if sort_by == 'name_desc' %}selected{% endif %}>Name Z-A</option>
       </select>
+      <label class="auto-refresh-label" title="Reload the gallery automatically when a running job finishes">
+        <input type="checkbox" id="autoRefreshToggle"> Auto-refresh
+      </label>
     </div>
   </div>
 
@@ -272,7 +226,13 @@
       </div>
     {% endfor %}
     {% if images | length == 0 %}
-      <p class="empty-msg">No images found{% if search_name %} matching "{{ search_name }}"{% endif %}.</p>
+      <p class="empty-state">
+        {% if search_name %}
+          No images match &ldquo;{{ search_name }}&rdquo;. <a href="{{ url_for('gallery') }}">Clear filter</a> to see everything.
+        {% else %}
+          No images yet &mdash; <a href="{{ url_for('index') }}">run your first target</a> and a thumbnail will appear here.
+        {% endif %}
+      </p>
     {% endif %}
   </div>
 
@@ -323,23 +283,8 @@
     </div>
   </div>
 
+  <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
   <script>
-    /* --- Theme --- */
-    function applyTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
-      localStorage.setItem('ql-theme', theme);
-    }
-    (function() {
-      const saved = localStorage.getItem('ql-theme');
-      if (saved) { applyTheme(saved); return; }
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
-    })();
-    document.getElementById('themeToggle').addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme');
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
-    });
-
     /* --- Sort --- */
     function applySort(value) {
       const url = new URL(window.location);
@@ -481,15 +426,52 @@
       modalImg.style.transform = 'scale(' + scale + ') translate(' + posX + 'px, ' + posY + 'px)';
     });
 
-    /* --- Running-jobs banner --- */
+    /* --- Running-jobs banner + auto-refresh on job completion --- */
     const runningBanner = document.getElementById('runningBanner');
     const runningJobList = document.getElementById('runningJobList');
+    const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+
+    /* Restore the auto-refresh preference (default OFF). Auto-reload on
+       job-finish used to be on by default but it surprised users — when
+       their running job finished while they were browsing the gallery,
+       the page would reload out from under them and they'd interpret
+       that as the job being "halted". Opt-in only now. */
+    (function () {
+      let on = false;
+      try { on = localStorage.getItem('gallery-auto-refresh') === '1'; } catch (e) {}
+      if (autoRefreshToggle) {
+        autoRefreshToggle.checked = on;
+        autoRefreshToggle.addEventListener('change', () => {
+          try {
+            localStorage.setItem('gallery-auto-refresh', autoRefreshToggle.checked ? '1' : '0');
+          } catch (e) {}
+        });
+      }
+    })();
+
+    // Set of job names that were "running" at the previous poll.
+    let prevRunning = null;
 
     async function pollRunningJobs() {
       try {
         const res = await fetch('/jobs-json');
         const jobs = await res.json();
         const running = jobs.filter(j => j.status === 'running');
+        const runningNames = new Set(running.map(j => j.name));
+
+        // A job present last poll but absent now has finished. Reload so
+        // its output PNG shows up (search/sort/page are URL params, so
+        // the current view is preserved across the reload).
+        if (prevRunning) {
+          let finished = false;
+          prevRunning.forEach(name => { if (!runningNames.has(name)) finished = true; });
+          if (finished && autoRefreshToggle && autoRefreshToggle.checked) {
+            window.location.reload();
+            return;
+          }
+        }
+        prevRunning = runningNames;
+
         if (running.length === 0) {
           runningBanner.classList.remove('visible');
           return;

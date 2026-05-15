@@ -5,33 +5,20 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TLS Results Summary</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
   <style>
-    :root {
-      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
-      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
-      --input-border: #ccc; --hover-bg: #eef1ff;
-      --primary: #4a6cf7; --primary-hover: #3451d1;
-      --row-alt: #f9fafe;
-      --thead-bg: #eef1ff;
-      --pill-bg: #e0e7ff; --pill-fg: #1d4ed8;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
-      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
-      --input-border: #3a3a4e; --hover-bg: #1f2342;
-      --primary: #5b7cf9; --primary-hover: #7b96ff;
-      --row-alt: #14142a;
-      --thead-bg: #1f2342;
-      --pill-bg: #1e3a5f; --pill-fg: #93c5fd;
-    }
-    *, *::before, *::after { box-sizing: border-box; }
+    /* Theme vars, * box-sizing, .btn*, .theme-toggle, @keyframes spin
+       and .page-loading family live in static/css/quicklook.css. */
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       max-width: 1400px; margin: 0 auto; padding: 24px 20px;
       color: var(--text); background: var(--bg); line-height: 1.5;
       transition: background-color 0.3s, color 0.3s;
+      /* Override: brighter row-hover for the dense table view. */
+      --hover-bg: #eef1ff;
     }
-    a { color: var(--primary); text-decoration: none; }
+    [data-theme="dark"] body { --hover-bg: #1f2342; }
+    a { text-decoration: none; }  /* override default underline */
     a:hover { text-decoration: underline; }
     h1 { text-align: center; font-size: 1.5rem; margin: 0 0 4px; }
     .subtitle { text-align: center; color: var(--text-sec); font-size: 0.88rem; margin-bottom: 18px; }
@@ -40,20 +27,6 @@
       display: flex; align-items: center; gap: 10px;
       flex-wrap: wrap; margin-bottom: 14px;
     }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 14px; font-size: 0.88rem; font-weight: 600; border: none;
-      border-radius: 6px; cursor: pointer; text-decoration: none;
-      transition: background-color 0.2s, color 0.2s;
-    }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: #fff; }
-    .theme-toggle {
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
-      color: var(--text); transition: background-color 0.2s;
-    }
-    .theme-toggle:hover { background: var(--hover-bg); }
 
     .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
     .search {
@@ -71,6 +44,18 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 1500px; }
+
+    /* Freeze the Target column so it stays visible while scrolling horizontally. */
+    table.tls-table thead th:first-child,
+    table.tls-table tbody td:first-child {
+      position: sticky; left: 0; z-index: 2;
+      background: var(--card-bg);
+      box-shadow: 1px 0 0 var(--border);
+    }
+    table.tls-table thead th:first-child { background: var(--thead-bg); z-index: 3; }
+    table.tls-table thead tr.col-filter-row th:first-child { background: var(--card-bg); }
+    table.tls-table tbody tr:nth-child(even) td:first-child { background: var(--row-alt); }
+    table.tls-table tbody tr:hover td:first-child { background: var(--hover-bg); }
     thead { position: sticky; top: 0; z-index: 1; }
     thead th {
       background: var(--thead-bg); color: var(--text);
@@ -170,30 +155,9 @@
     [data-theme="dark"] .dir-error {
       background: #7f1d1d; color: #fca5a5; border-color: #b91c1c;
     }
-    /* Page-loading overlay (shown after submitting a directory change) */
-    .page-loading {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: none; align-items: center; justify-content: center;
-      z-index: 2000; backdrop-filter: blur(2px);
-    }
-    .page-loading.show { display: flex; }
-    .page-loading .panel {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 18px 22px;
-      display: flex; align-items: center; gap: 14px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-      min-width: 280px; max-width: 92%;
-    }
-    .page-loading .pl-spinner {
-      width: 22px; height: 22px; flex-shrink: 0;
-      border: 3px solid var(--primary); border-top-color: transparent;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
-    .page-loading .text strong { font-size: 0.95rem; }
+    /* @keyframes spin + .page-loading base live in shared CSS. We only
+       override the path text to be monospace so long dirs wrap nicely. */
     .page-loading .text small {
-      font-size: 0.78rem; color: var(--text-sec);
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       word-break: break-all;
     }
@@ -302,14 +266,14 @@
 </head>
 <body>
 
+{% set current = 'summary' %}
+{% include 'partials/topbar.html' %}
+
 <div class="top-bar">
-  <a href="{{ url_for('index') }}" class="btn btn-outline">&larr; Back</a>
-  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
-  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
   <div class="controls">
     <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
+    <button type="button" class="btn btn-outline btn-sm" id="resetFiltersBtn" title="Clear the global search and every per-column filter">Reset</button>
     <span class="count" id="count">{{ total }} result{{ '' if total == 1 else 's' }}</span>
-    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
   </div>
 </div>
 
@@ -343,7 +307,7 @@
 
 {% if rows %}
 <div class="table-wrap">
-  <table id="tlsTable">
+  <table id="tlsTable" class="tls-table">
     <thead>
       <tr>
         <th data-key="target" data-type="str">Target <span class="arrow"></span></th>
@@ -448,8 +412,8 @@
   </table>
 </div>
 {% else %}
-<div class="empty">
-  No TLS results have been saved yet. Run a QuickLook with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
+<div class="empty-state">
+  No TLS results in this directory yet. <a href="{{ url_for('index') }}">Run a target on the home page</a> with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
 </div>
 {% endif %}
 
@@ -466,6 +430,7 @@
 </div>
 {% endif %}
 
+<script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
 <script>
 /* =========================================================================
    Persist the selected TLS directory across page navigations.
@@ -499,21 +464,7 @@
   // we intentionally leave the previously-saved value untouched.
 })();
 
-/* Theme toggle (matches index/gallery) */
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀' : '☾';
-  localStorage.setItem('ql-theme', theme);
-}
-(function init() {
-  const saved = localStorage.getItem('ql-theme');
-  if (saved) { applyTheme(saved); return; }
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
-})();
-document.getElementById('themeToggle').addEventListener('click', () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  applyTheme(cur === 'dark' ? 'light' : 'dark');
-});
+/* Theme handling lives in static/js/quicklook.js. */
 
 /* Directory input — persist recently-used paths in localStorage */
 const DIR_HISTORY_KEY = 'tls-summary-dir-history';
@@ -623,7 +574,16 @@ function parseFilterExpr(expr, type) {
 
 const filterInputs = document.querySelectorAll('.col-filter-row input');
 
-function applyFilters() {
+/* Header data-keys aligned to each filter input's data-col index. The
+   key is the `data-key` of the <th> in the first thead row. We use it
+   to (1) read `f_<key>` from the URL and (2) write current values back. */
+const headerCells = table ? Array.from(table.tHead.rows[0].cells) : [];
+function headerKey(colIdx) {
+  const th = headerCells[colIdx];
+  return th && th.dataset.key ? th.dataset.key : null;
+}
+
+function applyFilters({ updateUrl = true } = {}) {
   if (!table) return;
   const q = (search ? search.value : '').trim().toLowerCase();
 
@@ -657,10 +617,53 @@ function applyFilters() {
     if (show) visible++;
   }
   countEl.textContent = visible + ' / ' + rows.length + ' results';
+
+  // Mirror filter state into the URL so the view is shareable / bookmarkable.
+  if (updateUrl && window.history && window.history.replaceState) {
+    const url = new URL(window.location.href);
+    // Drop every existing f_* param, then re-add the current ones.
+    Array.from(url.searchParams.keys()).forEach((k) => {
+      if (k.startsWith('f_')) url.searchParams.delete(k);
+    });
+    filterInputs.forEach((inp) => {
+      const expr = inp.value.trim();
+      if (!expr) return;
+      const key = headerKey(parseInt(inp.dataset.col, 10));
+      if (key) url.searchParams.set('f_' + key, expr);
+    });
+    window.history.replaceState(null, '', url.toString());
+  }
 }
 
-if (search) search.addEventListener('input', applyFilters);
-filterInputs.forEach(inp => inp.addEventListener('input', applyFilters));
+/* Restore filter inputs from URL once at page load. */
+(function restoreFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  let any = false;
+  filterInputs.forEach((inp) => {
+    const key = headerKey(parseInt(inp.dataset.col, 10));
+    if (!key) return;
+    const v = params.get('f_' + key);
+    if (v != null) { inp.value = v; any = true; }
+  });
+  // Run once with updateUrl=false so we don't immediately rewrite the URL.
+  if (any) applyFilters({ updateUrl: false });
+})();
+
+if (search) search.addEventListener('input', () => applyFilters());
+filterInputs.forEach(inp => inp.addEventListener('input', () => applyFilters()));
+
+/* Reset button: clear every filter, drop every f_* param, re-render. */
+const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+if (resetFiltersBtn) {
+  resetFiltersBtn.addEventListener('click', () => {
+    if (search) search.value = '';
+    filterInputs.forEach((inp) => {
+      inp.value = '';
+      inp.classList.remove('has-value');
+    });
+    applyFilters();
+  });
+}
 
 /* Sort by column (toggle asc/desc, numeric vs string aware) */
 let activeTh = null;

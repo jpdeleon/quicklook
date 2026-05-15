@@ -5,26 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TESS QuickLook - Compare</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
   <style>
-    :root {
-      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
-      --border: #e0e0e0; --input-bg: #fafafa; --input-border: #ccc; --hover-bg: #f5f6fa;
-      --primary: #4a6cf7; --primary-hover: #3451d1;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
-      --border: #2a2a3e; --input-bg: #252538; --input-border: #3a3a4e; --hover-bg: #222236;
-      --primary: #5b7cf9; --primary-hover: #7b96ff;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
+    /* Page-specific (theme vars, buttons, theme-toggle, page-loading
+       and @keyframes spin live in static/css/quicklook.css). */
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       max-width: 1400px; margin: 0 auto; padding: 24px 20px;
       color: var(--text); background: var(--bg); line-height: 1.5;
       transition: background-color 0.3s, color 0.3s;
     }
-    a { color: var(--primary); }
     h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
 
     .top-bar {
@@ -32,23 +22,6 @@
       flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
     }
     .top-bar-left { display: flex; gap: 8px; align-items: center; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
-      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
-      transition: background-color 0.2s;
-    }
-    .btn-primary { background: var(--primary); }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: #fff; }
-    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
-    .theme-toggle {
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
-      color: var(--text); transition: background-color 0.2s;
-    }
-    .theme-toggle:hover { background: var(--hover-bg); }
 
     /* Selectors */
     .selectors {
@@ -109,31 +82,7 @@
       width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Shared full-page loading overlay (matches index / gallery / tls_summary) */
-    .page-loading {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.45);
-      display: none; align-items: center; justify-content: center;
-      z-index: 2000; backdrop-filter: blur(2px);
-    }
-    .page-loading.show { display: flex; }
-    .page-loading .panel {
-      background: var(--card-bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 18px 22px;
-      display: flex; align-items: center; gap: 14px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.25);
-      min-width: 280px; max-width: 92%;
-    }
-    .page-loading .pl-spinner {
-      width: 22px; height: 22px; flex-shrink: 0;
-      border: 3px solid var(--primary); border-top-color: transparent;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
-    }
-    .page-loading .text { display: flex; flex-direction: column; gap: 2px; }
-    .page-loading .text strong { font-size: 0.95rem; }
-    .page-loading .text small { font-size: 0.78rem; color: var(--text-sec); }
-
+    /* @keyframes spin + .page-loading family live in shared CSS */
     .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
     .running-banner a:hover { text-decoration: underline; }
     .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -152,16 +101,10 @@
     <div class="job-list" id="runningJobList"></div>
   </div>
 
-  <h1>Compare Results</h1>
+  {% set current = 'compare' %}
+  {% include 'partials/topbar.html' %}
 
-  <div class="top-bar">
-    <div class="top-bar-left">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
-      <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
-      <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="summaryLink">Summary</a>
-      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
-    </div>
-  </div>
+  <h1>Compare Results</h1>
 
   <!-- Image selectors -->
   <div class="selectors">
@@ -221,23 +164,8 @@
     <img id="overlayTop" class="overlay-img" src="" alt="Overlay">
   </div>
 
+  <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
   <script>
-    /* --- Theme --- */
-    function applyTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
-      localStorage.setItem('ql-theme', theme);
-    }
-    (function() {
-      const saved = localStorage.getItem('ql-theme');
-      if (saved) { applyTheme(saved); return; }
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
-    })();
-    document.getElementById('themeToggle').addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme');
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
-    });
-
     /* --- Elements --- */
     const leftSelect = document.getElementById('leftSelect');
     const rightSelect = document.getElementById('rightSelect');

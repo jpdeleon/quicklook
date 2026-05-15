@@ -9,7 +9,7 @@ from pathlib import Path
 # import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
-from quicklook.utils import get_available_sectors
+from quicklook.utils import get_available_pipelines, get_available_sectors
 from quicklook.plot import dss_description
 
 
@@ -113,6 +113,13 @@ def main():
         "--each-sector",
         action="store_true",
         help="run on each available sector for the given pipeline individually",
+        default=False,
+    )
+    parser.add_argument(
+        "--each-pipeline",
+        action="store_true",
+        help="run on each available pipeline for the latest sector "
+        "(mutually exclusive with --each-sector)",
         default=False,
     )
     parser.add_argument(
@@ -360,6 +367,10 @@ def main():
     else:
         tls_use_threads = args.cores if args.cores is not None else max(1, cpu_total // 2)
     tls_use_threads = max(1, min(tls_use_threads, cpu_total))
+    if args.each_sector and args.each_pipeline:
+        print("Error: --each-sector and --each-pipeline are mutually exclusive.", file=sys.stderr)
+        sys.exit(2)
+
     if args.each_sector and args.jobs * tls_use_threads > cpu_total:
         print(
             f"Warning: jobs ({args.jobs}) * cores ({tls_use_threads}) = "
@@ -414,6 +425,59 @@ def main():
                     failed += 1
 
         print(f"\nCompleted: {len(sectors) - failed}/{len(sectors)} sectors successful")
+        if failed:
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.each_pipeline:
+        pipelines = get_available_pipelines(target_name)
+        if not pipelines:
+            print(f"No pipelines found for {target_name}")
+            sys.exit(1)
+
+        print(f"Found {len(pipelines)} pipelines for {target_name}: {pipelines}")
+        print(
+            f"Running with {args.jobs} parallel job(s), {tls_use_threads} TLS core(s) each, "
+            "sector=-1 (latest available per pipeline)..."
+        )
+
+        failed = 0
+        with ProcessPoolExecutor(max_workers=args.jobs) as executor:
+            futures = {}
+            for pipeline in pipelines:
+                future = executor.submit(
+                    run_ql_for_sector,
+                    target_name,
+                    -1,  # latest sector for each pipeline
+                    pipeline,
+                    args.fluxtype,
+                    args.quality_bitmask,
+                    args.flatten_method,
+                    args.gp_kernel,
+                    args.pg_method,
+                    args.edge_cutoff,
+                    args.outdir,
+                    args.exptime,
+                    args.save,
+                    args.overwrite,
+                    args.verbose,
+                    args.mask_ephem,
+                    args.suffix,
+                    args.period_limits,
+                    tls_use_threads,
+                )
+                futures[future] = pipeline
+
+            for i, future in enumerate(as_completed(futures), 1):
+                pipeline = futures[future]
+                try:
+                    future.result()
+                    print(f"[{i}/{len(pipelines)}] pipeline {pipeline}: done")
+                except Exception as e:
+                    print(f"[{i}/{len(pipelines)}] pipeline {pipeline}: FAILED - {e}")
+                    failed += 1
+
+        print(f"\nCompleted: {len(pipelines) - failed}/{len(pipelines)} pipelines successful")
         if failed:
             sys.exit(1)
         sys.exit(0)

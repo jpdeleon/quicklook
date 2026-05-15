@@ -1,0 +1,186 @@
+/* ============================================================================
+ * QuickLook — shared visual chrome
+ *
+ * Loaded by every GUI page (index, gallery, compare, tls_summary).
+ * Contains ONLY rules that are truly common across pages: theme
+ * variables, buttons, the theme toggle, the spin keyframe, and the
+ * full-page loading overlay. Page-specific rules (layout, page-only
+ * components) stay in each template's inline <style>.
+ * ============================================================================ */
+
+/* --- Theme variables -------------------------------------------------------- */
+:root {
+  /* Surfaces & typography */
+  --bg: #f5f6fa;
+  --card-bg: #fff;
+  --text: #1a1a2e;
+  --text-sec: #666;
+  --border: #e0e0e0;
+  --border-light: #f0f0f0;
+  --input-bg: #fafafa;
+  --input-border: #ccc;
+  --hover-bg: #f5f6fa;
+
+  /* Accent palette */
+  --primary: #4a6cf7;
+  --primary-hover: #3451d1;
+  --green: #22c55e;
+  --green-hover: #16a34a;
+  --red: #ef4444;
+  --red-hover: #dc2626;
+
+  /* Page-specific (kept here so they theme together) */
+  --log-bg: #1a1a2e;
+  --log-text: #e0e0e0;
+  --badge-run-bg: #dbeafe;   --badge-run-fg: #1d4ed8;
+  --badge-done-bg: #dcfce7;  --badge-done-fg: #15803d;
+  --badge-err-bg: #fee2e2;   --badge-err-fg: #b91c1c;
+  --badge-cancel-bg: #f3f4f6; --badge-cancel-fg: #6b7280;
+  --status-run-bg: #eff6ff;  --status-run-border: #bfdbfe;  --status-run-fg: #1d4ed8;
+  --status-done-bg: #f0fdf4; --status-done-border: #bbf7d0; --status-done-fg: #15803d;
+  --status-err-bg: #fef2f2;  --status-err-border: #fecaca;  --status-err-fg: #b91c1c;
+  --progress-bg: #e5e7eb;
+  --toast-bg: #333; --toast-fg: #fff;
+
+  /* Used by tls_summary */
+  --row-alt: #f9fafe;
+  --thead-bg: #eef1ff;
+  --pill-bg: #e0e7ff; --pill-fg: #1d4ed8;
+}
+
+[data-theme="dark"] {
+  --bg: #0f0f1a;
+  --card-bg: #1a1a2e;
+  --text: #e0e0e0;
+  --text-sec: #999;
+  --border: #2a2a3e;
+  --border-light: #222236;
+  --input-bg: #252538;
+  --input-border: #3a3a4e;
+  --hover-bg: #222236;
+
+  --primary: #5b7cf9;
+  --primary-hover: #7b96ff;
+  --green: #34d874;
+  --green-hover: #22c55e;
+  --red: #f87171;
+  --red-hover: #ef4444;
+
+  --log-bg: #0a0a14;
+  --log-text: #c0c0c0;
+  --badge-run-bg: #1e3a5f;   --badge-run-fg: #93c5fd;
+  --badge-done-bg: #14532d;  --badge-done-fg: #86efac;
+  --badge-err-bg: #7f1d1d;   --badge-err-fg: #fca5a5;
+  --badge-cancel-bg: #1f2937; --badge-cancel-fg: #9ca3af;
+  --status-run-bg: #1e3a5f;  --status-run-border: #1d4ed8;  --status-run-fg: #93c5fd;
+  --status-done-bg: #14532d; --status-done-border: #15803d; --status-done-fg: #86efac;
+  --status-err-bg: #7f1d1d;  --status-err-border: #b91c1c;  --status-err-fg: #fca5a5;
+  --progress-bg: #2a2a3e;
+  --toast-bg: #e0e0e0; --toast-fg: #1a1a2e;
+
+  --row-alt: #14142a;
+  --thead-bg: #1f2342;
+  --pill-bg: #1e3a5f; --pill-fg: #93c5fd;
+}
+
+/* --- Reset / base ----------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+a { color: var(--primary); }
+
+/* --- Buttons (shared across all pages) ------------------------------------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 16px; font-size: 0.9rem; font-weight: 600;
+  border: none; border-radius: 6px; cursor: pointer;
+  text-decoration: none; color: #fff;
+  transition: background-color 0.2s, opacity 0.2s, color 0.2s;
+}
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary { background: var(--primary); }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+.btn-green { background: var(--green); }
+.btn-green:hover:not(:disabled) { background: var(--green-hover); }
+.btn-red { background: var(--red); }
+.btn-red:hover:not(:disabled) { background: var(--red-hover); }
+.btn-outline {
+  background: transparent; color: var(--primary);
+  border: 1px solid var(--primary);
+}
+.btn-outline:hover:not(:disabled) { background: var(--primary); color: #fff; }
+.btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+
+/* --- Theme toggle ---------------------------------------------------------- */
+.theme-toggle {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text);
+  transition: background-color 0.2s;
+}
+.theme-toggle:hover { background: var(--hover-bg); }
+
+/* --- Empty-state placeholder (Recent Results on home, Gallery, etc.) ----- */
+.empty-state {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--text-sec);
+  font-size: 0.9rem;
+  background: var(--card-bg);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.empty-state a { font-weight: 600; }
+
+/* --- Result-panel fade-in (used on the home page when a job finishes) ---- */
+.result-section { display: none; opacity: 0; transition: opacity 0.3s ease; }
+.result-section.visible { display: block; opacity: 1; }
+
+/* --- Top-bar nav (partials/topbar.html) ------------------------------------ */
+.topbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.topbar a[aria-current="page"] {
+  background: var(--primary); color: #fff;
+  border-color: var(--primary);
+  pointer-events: none; /* can't click yourself */
+  cursor: default;
+}
+
+/* --- Spinner animation (used by .pl-spinner and per-page spinners) -------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* --- Full-page loading overlay -------------------------------------------- */
+.page-loading {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(2px);
+}
+.page-loading.show { display: flex; }
+.page-loading .panel {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 22px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  min-width: 280px; max-width: 92%;
+}
+.page-loading .pl-spinner {
+  width: 22px; height: 22px; flex-shrink: 0;
+  border: 3px solid var(--primary);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.page-loading .text { display: flex; flex-direction: column; gap: 2px; }
+.page-loading .text strong { font-size: 0.95rem; }
+.page-loading .text small { font-size: 0.78rem; color: var(--text-sec); }

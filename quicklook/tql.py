@@ -6,6 +6,7 @@ https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c5
 """
 
 import math
+import re
 import sys
 import traceback
 import textwrap
@@ -52,6 +53,22 @@ from quicklook.tglc import get_tglc_lc
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
+
+FULL_FRAME_TESS_PIPELINES = [
+    "tess-spoc",
+    "qlp",
+    "tglc",
+    "cdips",
+    "pathos",
+    "eleanor",
+    "t16",
+    "gsfc-eleanor-lite",
+    "tequila",
+    "tica",
+    "diamante",
+]
+ALL_TESS_PIPELINES = ["spoc", "tasoc"] + FULL_FRAME_TESS_PIPELINES
+
 
 DATA_PATH = files("quicklook").joinpath("data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
@@ -413,14 +430,23 @@ class TessQuickLook:
             print("All available lightcurves:")
             print(search_result_all_lcs.table.to_pandas()[cols])
 
-        # Validate the requested sector
+        # Validate the requested sector. If the user asked for a specific
+        # sector that the MAST search did not return (e.g. a stale value
+        # left over in the GUI from a different target), fall back to the
+        # latest available sector instead of raising — much friendlier
+        # than killing the job, and the warning still surfaces in the log.
         if kwargs.get("sector") is None:
             if self.verbose:
                 print(f"Available sectors: {self.all_sectors}")
         else:
             if kwargs.get("sector") not in self.all_sectors:
-                err_msg = f"sector={kwargs.get('sector')} not in {self.all_sectors}"
-                raise NoDataError(err_msg)
+                logger.warning(
+                    f"Requested sector={kwargs.get('sector')} is not in the "
+                    f"available sectors {self.all_sectors} for {self.query_name}; "
+                    "falling back to the latest available sector."
+                )
+                sector_orig = -1
+                kwargs["sector"] = None
 
         # Validate the requested author
         if kwargs.get("author") is None:
@@ -449,7 +475,11 @@ class TessQuickLook:
                     for m in tbl["mission"]
                 ]
             )
-        if kwargs.get("exptime") is not None:
+        # Falsy exptime (None, "", 0) means "no filter" — otherwise the
+        # comparison `tbl["t_exptime"] == ""` evaluates to False on every
+        # row and zeros out the search, which then falsely triggered the
+        # TGLC ePSF fallback even when MAST had products.
+        if kwargs.get("exptime"):
             mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
         search_result = search_result_all_lcs[mask]
         if len(search_result) == 0:
@@ -470,7 +500,9 @@ class TessQuickLook:
             filtered_sectors = self.get_unique_sectors(search_result)
             if len(filtered_sectors) <= 1:
                 raise NoDataError(f"Only {len(filtered_sectors)} sector is available.")
-            lc = search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
+            lc = self._download_with_retry(
+                lambda: search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
+            )
             self.sector = self.all_sectors
 
             if self.pipeline in ["spoc"]:
@@ -489,7 +521,9 @@ class TessQuickLook:
             if self.verbose:
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
-            lc = search_result[idx].download(quality_bitmask=self.quality_bitmask)
+            lc = self._download_with_retry(
+                lambda: search_result[idx].download(quality_bitmask=self.quality_bitmask)
+            )
 
             if self.pipeline in ["spoc"]:
                 # exptime = int(lc.meta["EXPOSURE"] / 10) * 10
@@ -540,6 +574,70 @@ class TessQuickLook:
         missions = search_result.table["mission"].tolist()
         all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
         return sorted(set(all_sectors))
+
+    def _download_with_retry(self, download_callable, max_retries=1):
+        """Run a lightkurve download; if it fails with a "corrupt cached
+        file" error (partial FITS left over from an interrupted prior
+        download), delete the offending file from
+        ``~/.lightkurve/cache/`` and retry once.
+
+        Lightkurve does not self-heal these files — every subsequent
+        download attempt re-uses the corrupt copy and fails the same
+        way, requiring manual cleanup. This wrapper makes that
+        automatic.
+
+        Parameters
+        ----------
+        download_callable : Callable
+            A zero-arg callable that performs the actual lightkurve
+            download (typically a lambda wrapping
+            ``search_result[idx].download(...)``).
+        max_retries : int
+            How many times to retry after a corrupt-file deletion.
+            Defaults to 1 — we don't loop forever in case the failure
+            mode isn't actually a stale-cache problem.
+        """
+        from lightkurve.utils import LightkurveError
+
+        for attempt in range(max_retries + 1):
+            try:
+                return download_callable()
+            except LightkurveError as e:
+                msg = str(e)
+                # Lightkurve's exact text:
+                #   "Error in reading Data product <PATH> of type <TYPE> .
+                #    This file may be corrupt due to an interrupted download.
+                #    Please remove it from your disk and try again."
+                m = re.search(r"Error in reading Data product\s+(\S+)", msg)
+                if not m:
+                    # Unrecognised error shape — nothing to clean up.
+                    raise
+
+                bad_path = Path(m.group(1))
+                # Always try to delete the corrupt file, regardless of
+                # whether we're going to retry or re-raise. This is the
+                # fix: previously the last attempt re-raised *before*
+                # deleting, leaving a corrupt .fits on disk after the
+                # retry's fresh download was also corrupt.
+                if bad_path.exists():
+                    try:
+                        bad_path.unlink()
+                        logger.warning(f"Deleted corrupt cached lightcurve: {bad_path}")
+                    except OSError as del_err:
+                        logger.warning(
+                            f"Could not delete corrupt cache file " f"{bad_path}: {del_err}"
+                        )
+                        # If we can't delete, retrying won't help either.
+                        raise e from del_err
+                else:
+                    logger.info(f"Corrupt cache file reported but missing on disk: " f"{bad_path}")
+
+                if attempt >= max_retries:
+                    # Out of retries — re-raise. The freshly-downloaded
+                    # file (if any) has already been deleted above so
+                    # the next run starts from a clean cache.
+                    raise
+                logger.info(f"Retrying download (attempt " f"{attempt + 2}/{max_retries + 1})...")
 
     def _get_tglc_lc_fallback(self, sector):
         """Run local TGLC ePSF extraction when MAST has no TGLC products."""
@@ -1274,7 +1372,7 @@ class TessQuickLook:
             err_msg = "Pipeline to be added soon."
             logger.info(err_msg)
             raise NotImplementedError(err_msg)
-        elif self.pipeline in ["qlp", "cdips", "tasoc", "pathos", "tglc", "t16"]:
+        elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
             if self.verbose:
                 logger.info("Getting TPF with tesscut...")
             self.tpf = self.get_tpf_tesscut()
