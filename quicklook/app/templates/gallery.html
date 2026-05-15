@@ -215,7 +215,13 @@
       </div>
     {% endfor %}
     {% if images | length == 0 %}
-      <p class="empty-msg">No images found{% if search_name %} matching "{{ search_name }}"{% endif %}.</p>
+      <p class="empty-state">
+        {% if search_name %}
+          No images match &ldquo;{{ search_name }}&rdquo;. <a href="{{ url_for('gallery') }}">Clear filter</a> to see everything.
+        {% else %}
+          No images yet &mdash; <a href="{{ url_for('index') }}">run your first target</a> and a thumbnail will appear here.
+        {% endif %}
+      </p>
     {% endif %}
   </div>
 

@@ -124,6 +124,22 @@ a { color: var(--primary); }
 }
 .theme-toggle:hover { background: var(--hover-bg); }
 
+/* --- Empty-state placeholder (Recent Results on home, Gallery, etc.) ----- */
+.empty-state {
+  padding: 28px 20px;
+  text-align: center;
+  color: var(--text-sec);
+  font-size: 0.9rem;
+  background: var(--card-bg);
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+}
+.empty-state a { font-weight: 600; }
+
+/* --- Result-panel fade-in (used on the home page when a job finishes) ---- */
+.result-section { display: none; opacity: 0; transition: opacity 0.3s ease; }
+.result-section.visible { display: block; opacity: 1; }
+
 /* --- Top-bar nav (partials/topbar.html) ------------------------------------ */
 .topbar {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;

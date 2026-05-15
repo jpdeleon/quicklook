@@ -44,6 +44,18 @@
       box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 1500px; }
+
+    /* Freeze the Target column so it stays visible while scrolling horizontally. */
+    table.tls-table thead th:first-child,
+    table.tls-table tbody td:first-child {
+      position: sticky; left: 0; z-index: 2;
+      background: var(--card-bg);
+      box-shadow: 1px 0 0 var(--border);
+    }
+    table.tls-table thead th:first-child { background: var(--thead-bg); z-index: 3; }
+    table.tls-table thead tr.col-filter-row th:first-child { background: var(--card-bg); }
+    table.tls-table tbody tr:nth-child(even) td:first-child { background: var(--row-alt); }
+    table.tls-table tbody tr:hover td:first-child { background: var(--hover-bg); }
     thead { position: sticky; top: 0; z-index: 1; }
     thead th {
       background: var(--thead-bg); color: var(--text);
@@ -260,6 +272,7 @@
 <div class="top-bar">
   <div class="controls">
     <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
+    <button type="button" class="btn btn-outline btn-sm" id="resetFiltersBtn" title="Clear the global search and every per-column filter">Reset</button>
     <span class="count" id="count">{{ total }} result{{ '' if total == 1 else 's' }}</span>
   </div>
 </div>
@@ -294,7 +307,7 @@
 
 {% if rows %}
 <div class="table-wrap">
-  <table id="tlsTable">
+  <table id="tlsTable" class="tls-table">
     <thead>
       <tr>
         <th data-key="target" data-type="str">Target <span class="arrow"></span></th>
@@ -399,8 +412,8 @@
   </table>
 </div>
 {% else %}
-<div class="empty">
-  No TLS results have been saved yet. Run a QuickLook with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
+<div class="empty-state">
+  No TLS results in this directory yet. <a href="{{ url_for('index') }}">Run a target on the home page</a> with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
 </div>
 {% endif %}
 
@@ -561,7 +574,16 @@ function parseFilterExpr(expr, type) {
 
 const filterInputs = document.querySelectorAll('.col-filter-row input');
 
-function applyFilters() {
+/* Header data-keys aligned to each filter input's data-col index. The
+   key is the `data-key` of the <th> in the first thead row. We use it
+   to (1) read `f_<key>` from the URL and (2) write current values back. */
+const headerCells = table ? Array.from(table.tHead.rows[0].cells) : [];
+function headerKey(colIdx) {
+  const th = headerCells[colIdx];
+  return th && th.dataset.key ? th.dataset.key : null;
+}
+
+function applyFilters({ updateUrl = true } = {}) {
   if (!table) return;
   const q = (search ? search.value : '').trim().toLowerCase();
 
@@ -595,10 +617,53 @@ function applyFilters() {
     if (show) visible++;
   }
   countEl.textContent = visible + ' / ' + rows.length + ' results';
+
+  // Mirror filter state into the URL so the view is shareable / bookmarkable.
+  if (updateUrl && window.history && window.history.replaceState) {
+    const url = new URL(window.location.href);
+    // Drop every existing f_* param, then re-add the current ones.
+    Array.from(url.searchParams.keys()).forEach((k) => {
+      if (k.startsWith('f_')) url.searchParams.delete(k);
+    });
+    filterInputs.forEach((inp) => {
+      const expr = inp.value.trim();
+      if (!expr) return;
+      const key = headerKey(parseInt(inp.dataset.col, 10));
+      if (key) url.searchParams.set('f_' + key, expr);
+    });
+    window.history.replaceState(null, '', url.toString());
+  }
 }
 
-if (search) search.addEventListener('input', applyFilters);
-filterInputs.forEach(inp => inp.addEventListener('input', applyFilters));
+/* Restore filter inputs from URL once at page load. */
+(function restoreFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  let any = false;
+  filterInputs.forEach((inp) => {
+    const key = headerKey(parseInt(inp.dataset.col, 10));
+    if (!key) return;
+    const v = params.get('f_' + key);
+    if (v != null) { inp.value = v; any = true; }
+  });
+  // Run once with updateUrl=false so we don't immediately rewrite the URL.
+  if (any) applyFilters({ updateUrl: false });
+})();
+
+if (search) search.addEventListener('input', () => applyFilters());
+filterInputs.forEach(inp => inp.addEventListener('input', () => applyFilters()));
+
+/* Reset button: clear every filter, drop every f_* param, re-render. */
+const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+if (resetFiltersBtn) {
+  resetFiltersBtn.addEventListener('click', () => {
+    if (search) search.value = '';
+    filterInputs.forEach((inp) => {
+      inp.value = '';
+      inp.classList.remove('has-value');
+    });
+    applyFilters();
+  });
+}
 
 /* Sort by column (toggle asc/desc, numeric vs string aware) */
 let activeTh = null;

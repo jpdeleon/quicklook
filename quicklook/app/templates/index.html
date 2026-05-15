@@ -176,8 +176,7 @@
     }
 
     /* --- Result --- */
-    .result-section { display: none; }
-    .result-section.visible { display: block; }
+    /* .result-section show/hide + fade-in live in shared CSS */
     .result-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
     .result-section img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
     .result-actions { display: flex; gap: 12px; margin-top: 12px; justify-content: center; }
@@ -592,7 +591,7 @@
 </div>
 
 <!-- Recent results -->
-<div id="recentSection" class="recent-section" {% if not recent_results %}style="display:none;"{% endif %}>
+<div id="recentSection" class="recent-section">
   <h2>Recent Results</h2>
   <div class="recent-grid" id="recentGrid">
     {% for item in recent_results %}
@@ -606,6 +605,11 @@
     </div>
     {% endfor %}
   </div>
+  {% if not recent_results %}
+  <p class="empty-state" id="recentEmpty">
+    No results yet &mdash; submit a target above and the rendered thumbnail will appear here.
+  </p>
+  {% endif %}
 </div>
 
 <!-- footer-nav removed: navigation now lives in the unified topbar partial. -->
@@ -1201,8 +1205,9 @@ function updateRecentResults(imagePath, cacheBust) {
     recentGrid.insertBefore(card, recentGrid.firstChild);
   }
 
-  // Reveal the section if it was hidden because no recent results existed
-  // when the page was rendered.
+  // First card knocks out the empty-state placeholder if it was rendered.
+  const empty = document.getElementById('recentEmpty');
+  if (empty) empty.remove();
   if (recentSection) recentSection.style.display = '';
 }
 
@@ -1401,8 +1406,18 @@ async function deleteOutput(filename, btnElem) {
     if (data.ok) {
       const card = btnElem.closest('.recent-card');
       if (card) card.remove();
-      if ($('recentGrid') && $('recentGrid').children.length === 0) {
-        $('recentSection').style.display = 'none';
+      const grid = $('recentGrid');
+      const section = $('recentSection');
+      if (grid && section && grid.children.length === 0) {
+        // Last card removed — restore the empty-state placeholder
+        // (cheaper than reloading the page).
+        if (!document.getElementById('recentEmpty')) {
+          const p = document.createElement('p');
+          p.id = 'recentEmpty';
+          p.className = 'empty-state';
+          p.innerHTML = 'No results yet &mdash; submit a target above and the rendered thumbnail will appear here.';
+          section.appendChild(p);
+        }
       }
       showToast('Deleted ' + filename, 'info');
     } else {
