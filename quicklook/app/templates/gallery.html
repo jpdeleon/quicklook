@@ -163,15 +163,13 @@
     <div class="job-list" id="runningJobList"></div>
   </div>
 
+  {% set current = 'gallery' %}
+  {% include 'partials/topbar.html' %}
+
   <h1>Output Gallery</h1>
 
   <div class="top-bar">
-    <div class="top-bar-left">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
-      <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
-      <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="summaryLink">Summary</a>
-      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
-    </div>
+    <div class="top-bar-left"></div>
     <div class="controls">
       <form class="search-form" method="get" action="{{ url_for('gallery') }}">
         <input type="hidden" name="sort" value="{{ sort_by }}">

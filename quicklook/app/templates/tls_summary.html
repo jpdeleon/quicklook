@@ -254,14 +254,13 @@
 </head>
 <body>
 
+{% set current = 'summary' %}
+{% include 'partials/topbar.html' %}
+
 <div class="top-bar">
-  <a href="{{ url_for('index') }}" class="btn btn-outline">&larr; Back</a>
-  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
-  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare</a>
   <div class="controls">
     <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
     <span class="count" id="count">{{ total }} result{{ '' if total == 1 else 's' }}</span>
-    <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
   </div>
 </div>
 

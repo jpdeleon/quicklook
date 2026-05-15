@@ -84,9 +84,12 @@
     .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
     .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
 
-    /* --- Buttons: home page uses a chunkier primary action; the rest of
-           the .btn family lives in static/css/quicklook.css. --- */
-    .btn { padding: 10px 24px; font-size: 0.95rem; }
+    /* --- Buttons: home page uses chunkier buttons in the form's button
+           row and the result download row; everywhere else (topbar, etc.)
+           the shared .btn padding applies. .btn-sm is excluded so the
+           Reset button stays small. --- */
+    .btn-row .btn:not(.btn-sm),
+    .result-actions .btn { padding: 10px 24px; font-size: 0.95rem; }
     .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 
     /* --- Batch mode --- */
@@ -266,9 +269,11 @@
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
 
+{% set current = 'home' %}
+{% include 'partials/topbar.html' %}
+
 <div class="header">
   <h1>TESS QuickLook</h1>
-  <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
 </div>
 <p class="subtitle">Transit search pipeline for TESS light curves</p>
 
@@ -603,11 +608,7 @@
   </div>
 </div>
 
-<div class="footer-nav">
-  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse All Results</a>
-  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare Results</a>
-  <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="tlsSummaryLink">TLS Summary</a>
-</div>
+<!-- footer-nav removed: navigation now lives in the unified topbar partial. -->
 
 <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
 <script>
@@ -1506,7 +1507,7 @@ setInterval(refreshQueue, 5000);
    /tls-summary walks every *_tls.h5 in the chosen folder and can take a
    few seconds, so we give immediate visual feedback. */
 (function () {
-  const link = document.getElementById('tlsSummaryLink');
+  const link = document.getElementById('summaryLink');
   if (!link) return;
   link.addEventListener('click', (e) => {
     // Ignore modifier-click / middle-click (new-tab) so we don't flash

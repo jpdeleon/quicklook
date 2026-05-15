@@ -124,6 +124,18 @@ a { color: var(--primary); }
 }
 .theme-toggle:hover { background: var(--hover-bg); }
 
+/* --- Top-bar nav (partials/topbar.html) ------------------------------------ */
+.topbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.topbar a[aria-current="page"] {
+  background: var(--primary); color: #fff;
+  border-color: var(--primary);
+  pointer-events: none; /* can't click yourself */
+  cursor: default;
+}
+
 /* --- Spinner animation (used by .pl-spinner and per-page spinners) -------- */
 @keyframes spin { to { transform: rotate(360deg); } }
 

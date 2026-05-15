@@ -101,16 +101,10 @@
     <div class="job-list" id="runningJobList"></div>
   </div>
 
-  <h1>Compare Results</h1>
+  {% set current = 'compare' %}
+  {% include 'partials/topbar.html' %}
 
-  <div class="top-bar">
-    <div class="top-bar-left">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
-      <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
-      <a href="{{ url_for('tls_summary') }}" class="btn btn-outline" id="summaryLink">Summary</a>
-      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
-    </div>
-  </div>
+  <h1>Compare Results</h1>
 
   <!-- Image selectors -->
   <div class="selectors">
