@@ -107,6 +107,49 @@ def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
     return sorted(set(sectors))
 
 
+def get_available_pipelines(target_name, tic_id=None):
+    """Query available pipelines (HLSP / mission products) for a target.
+
+    Parameters
+    ----------
+    target_name : str
+        Target name (e.g. "TOI-1234" or "TIC123456").
+    tic_id : int, optional
+        Pre-resolved TIC ID to skip the ExoFOP lookup.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of unique pipeline names (lowercase) available for
+        the target. Always includes ``"tglc"`` because the local ePSF
+        fallback in ``TessQuickLook`` can produce a TGLC light curve
+        even when MAST lists no TGLC HLSP product.
+    """
+    import lightkurve as lk
+
+    if tic_id is not None:
+        query_name = f"TIC{tic_id}"
+    else:
+        try:
+            tic_id = get_tic_id(target_name)
+            query_name = f"TIC{tic_id}"
+        except (ValueError, KeyError, OSError):
+            query_name = target_name
+
+    search = lk.search_lightcurve(query_name)
+    if len(search) == 0:
+        # Local TGLC ePSF fallback is always an option even when MAST
+        # has no products for the target.
+        return ["tglc"]
+
+    df = search.table.to_pandas()
+    pipelines = sorted({p.lower() for p in df["provenance_name"].tolist()})
+    if "tglc" not in pipelines:
+        pipelines.append("tglc")
+        pipelines.sort()
+    return pipelines
+
+
 def get_tois(
     clobber=False,
     outdir=DATA_PATH,

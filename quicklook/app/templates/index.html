@@ -81,6 +81,21 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--card-bg); }
     input.invalid { border-color: var(--red); }
     .validation-msg { color: var(--red); font-size: 0.78rem; margin-top: 2px; display: none; }
+    .sector-hint {
+      margin-top: 4px; font-size: 0.78rem; color: var(--text-sec);
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    }
+    .sector-hint:empty { display: none; }
+    .sector-hint .sector-chip {
+      cursor: pointer; padding: 1px 7px; border-radius: 10px;
+      background: var(--input-bg); border: 1px solid var(--border);
+      color: var(--text); font-variant-numeric: tabular-nums;
+      font-size: 0.75rem; line-height: 1.4;
+    }
+    .sector-hint .sector-chip:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .sector-hint .sector-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .sector-hint .sector-chip.warn { background: var(--red); color: #fff; border-color: var(--red); }
+    .sector-hint .sector-warn { color: var(--red); font-weight: 600; }
     .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
     .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
 
@@ -299,6 +314,7 @@
             <span class="help-tip" tabindex="0" data-tip="-1 = latest available sector. Ignored when 'Run each available sector' is checked.">?</span>
           </div>
           <input type="number" name="sector" id="sector" value="-1">
+          <div id="sectorHint" class="sector-hint" aria-live="polite"></div>
           <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
             <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
             <span class="help-tip" tabindex="0" data-tip="Submit one job per available sector for this target instead of just the selected one.">?</span>
@@ -318,6 +334,10 @@
             <option value="{{p}}">{{ p | upper }}</option>
             {% endfor %}
           </select>
+          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
+            <input type="checkbox" name="each_pipeline" id="each_pipeline"> Run each available pipeline
+            <span class="help-tip" tabindex="0" data-tip="Submit one job per available pipeline for this target on the latest sector (mutually exclusive with 'Run each available sector').">?</span>
+          </label>
         </div>
         <div>
           <div class="label-row">
@@ -761,7 +781,7 @@ const PERSIST_FIELDS = [
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
   'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline'];
 
 function saveFormState() {
   const state = {};
@@ -792,6 +812,7 @@ function resetFormDefaults() {
   form.elements['save'].checked = true;
   form.elements['verbose'].checked = true;
   form.elements['each_sector'].checked = false;
+  form.elements['each_pipeline'].checked = false;
   showToast('Form reset to defaults', 'info');
 }
 
@@ -805,12 +826,48 @@ const FLUXTYPE_PIPELINES = ['spoc', 'tess-spoc'];
 
 function updateFieldStates() {
   const eachSector = form.elements['each_sector'];
+  const eachPipeline = form.elements['each_pipeline'];
   const sectorInput = form.elements['sector'];
+  const pipelineInput = form.elements['pipeline'];
+
+  // Mutually exclusive: enabling one forces the other off.
+  if (eachSector && eachPipeline) {
+    if (eachSector.checked && eachPipeline.checked) {
+      // last-edited check would need a flag; simplest: if user clicked
+      // one while the other was on, the change handler below uncheck
+      // the other before this runs. As a safety net, prefer each_sector.
+      eachPipeline.checked = false;
+    }
+  }
+
   if (eachSector && sectorInput) {
-    const disabled = eachSector.checked;
+    const disabled = eachSector.checked || (eachPipeline && eachPipeline.checked);
     sectorInput.disabled = disabled;
-    sectorInput.title = disabled ? 'Ignored — "Run each available sector" is on' : '';
+    sectorInput.title = disabled
+      ? 'Ignored — either "Run each available sector" or "Run each available pipeline" is on'
+      : '';
     sectorInput.style.opacity = disabled ? '0.5' : '';
+  }
+
+  if (eachPipeline && pipelineInput) {
+    const disabled = eachPipeline.checked;
+    pipelineInput.disabled = disabled;
+    pipelineInput.title = disabled ? 'Ignored — "Run each available pipeline" is on' : '';
+    pipelineInput.style.opacity = disabled ? '0.5' : '';
+    if (eachSector) {
+      eachSector.disabled = disabled;
+      eachSector.parentElement.style.opacity = disabled ? '0.5' : '';
+    }
+  }
+  if (eachSector && eachPipeline) {
+    // when each_sector is on, grey-out each_pipeline too
+    if (eachSector.checked) {
+      eachPipeline.disabled = true;
+      eachPipeline.parentElement.style.opacity = '0.5';
+    } else if (!eachPipeline.checked) {
+      eachPipeline.disabled = false;
+      eachPipeline.parentElement.style.opacity = '';
+    }
   }
 
   const pipeline = form.elements['pipeline'];
@@ -832,10 +889,95 @@ function updateFieldStates() {
   }
 }
 
-form.elements['each_sector'].addEventListener('change', updateFieldStates);
+form.elements['each_sector'].addEventListener('change', () => {
+  // Mutually exclusive with each_pipeline.
+  if (form.elements['each_sector'].checked) form.elements['each_pipeline'].checked = false;
+  updateFieldStates();
+});
+form.elements['each_pipeline'].addEventListener('change', () => {
+  if (form.elements['each_pipeline'].checked) form.elements['each_sector'].checked = false;
+  updateFieldStates();
+});
 form.elements['pipeline'].addEventListener('change', updateFieldStates);
 form.elements['flatten_method'].addEventListener('change', updateFieldStates);
 updateFieldStates();
+
+/* =========================================================================
+   Sector hint — live-fetch available sectors for the current target +
+   pipeline so the user can see them before submitting. Click any chip to
+   fill the Sector input. Validation in the submit handler uses the same
+   list to block submissions for sectors that don't exist.
+   ========================================================================= */
+let _availableSectors = null;   // null = unknown, [] = none, [int...] = found
+let _lastSectorQuery = null;    // dedupe identical name+pipeline lookups
+
+function _sectorHintEl() { return document.getElementById('sectorHint'); }
+
+function renderSectorChips() {
+  const hint = _sectorHintEl();
+  if (!hint || !_availableSectors) return;
+  if (_availableSectors.length === 0) {
+    hint.innerHTML = '<span class="sector-warn">No sectors found for this target/pipeline.</span>';
+    return;
+  }
+  const current = parseInt(form.elements['sector'].value, 10);
+  let html = '<span>Available:</span>';
+  _availableSectors.forEach(s => {
+    const cls = (s === current) ? 'sector-chip active' : 'sector-chip';
+    html += ' <button type="button" class="' + cls + '" data-sector="' + s + '" title="Use sector ' + s + '">' + s + '</button>';
+  });
+  hint.innerHTML = html;
+  hint.querySelectorAll('.sector-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      form.elements['sector'].value = btn.dataset.sector;
+      saveFormState();
+      renderSectorChips();
+    });
+  });
+}
+
+async function refreshSectorHint() {
+  const hint = _sectorHintEl();
+  if (!hint) return;
+  const name = nameInput.value.trim();
+  const pipeline = form.elements['pipeline'].value || 'spoc';
+  if (!name || name.length < 2) {
+    hint.innerHTML = '';
+    _availableSectors = null;
+    _lastSectorQuery = null;
+    return;
+  }
+  const key = name + '|' + pipeline;
+  if (key === _lastSectorQuery) { renderSectorChips(); return; }
+  _lastSectorQuery = key;
+  hint.innerHTML = '<span>Looking up sectors&hellip;</span>';
+  try {
+    const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.sectors) || data.sectors.length === 0) {
+      _availableSectors = [];
+    } else {
+      _availableSectors = data.sectors.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+    }
+    renderSectorChips();
+  } catch (err) {
+    hint.innerHTML = '<span class="sector-warn">Could not fetch sectors: ' + err.message + '</span>';
+    _availableSectors = null;
+    _lastSectorQuery = null;
+  }
+}
+
+nameInput.addEventListener('blur', refreshSectorHint);
+form.elements['pipeline'].addEventListener('change', () => {
+  _lastSectorQuery = null;  // force refetch when pipeline changes
+  refreshSectorHint();
+});
+form.elements['sector'].addEventListener('input', renderSectorChips);
+// Auto-fetch once if the form was restored from localStorage with a name.
+if (nameInput.value.trim().length >= 2) {
+  // Defer so the rest of the page has a chance to settle.
+  setTimeout(refreshSectorHint, 100);
+}
 
 /* Batch textarea persistence (independent of the main form) */
 const BATCH_STORAGE_KEY = 'ql-batch-targets';
@@ -1000,11 +1142,80 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
+  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+
+  // Pre-flight: if we have a known list of available sectors and the user
+  // asked for a specific sector that isn't in it, block the submit. (-1
+  // means "latest available" and is always valid; each-sector mode picks
+  // sectors server-side.)
+  const requestedSector = parseInt(form.elements['sector'].value, 10);
+  if (!eachSector
+      && Number.isInteger(requestedSector)
+      && requestedSector !== -1
+      && Array.isArray(_availableSectors)
+      && _availableSectors.length > 0
+      && !_availableSectors.includes(requestedSector)) {
+    showToast(
+      'Sector ' + requestedSector + ' is not available for ' + name +
+      '. Available: ' + _availableSectors.join(', '),
+      'error', 8000
+    );
+    form.elements['sector'].focus();
+    form.elements['sector'].classList.add('invalid');
+    setTimeout(() => form.elements['sector'].classList.remove('invalid'), 2500);
+    return;
+  }
+
   submitBtn.disabled = true;
   submitBtn.textContent = 'Submitting...';
   resultSection.classList.remove('visible');
 
-  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+  const eachPipeline = form.elements['each_pipeline'] && form.elements['each_pipeline'].checked;
+
+  if (eachPipeline) {
+    // Each-pipeline mode: query available pipelines, then submit one job
+    // per pipeline (each with sector=-1 = latest available for it).
+    try {
+      const fd = new FormData(form);
+      const params = {};
+      for (const [key, val] of fd.entries()) {
+        if (key !== 'name' && key !== 'each_pipeline' && key !== 'each_sector' && key !== 'pipeline') {
+          params[key] = val;
+        }
+      }
+      submitBtn.textContent = 'Querying pipelines...';
+      const res = await fetch('/available-pipelines?name=' + encodeURIComponent(name));
+      const pipeData = await res.json();
+      if (!pipeData.ok || !pipeData.pipelines || pipeData.pipelines.length === 0) {
+        showToast(pipeData.reason || 'No pipelines found for ' + name, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run QuickLook';
+        return;
+      }
+      const pipelines = pipeData.pipelines;
+      showToast('Found ' + pipelines.length + ' pipelines: ' + pipelines.join(', '), 'info', 6000);
+      submitBtn.textContent = 'Submitting ' + pipelines.length + ' jobs...';
+
+      const batchRes = await fetch('/each-pipeline-submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: name, pipelines: pipelines, params: params }),
+      });
+      const batchData = await batchRes.json();
+      if (batchData.ok) {
+        showToast(batchData.submitted.length + ' pipeline jobs submitted', 'success');
+        refreshQueue();
+        if (batchData.submitted.length > 0) connectWs(batchData.submitted[0]);
+      } else {
+        showToast(batchData.reason || 'Each-pipeline submission failed', 'error');
+      }
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Run QuickLook';
+    return;
+  }
 
   if (eachSector) {
     // Each-sector mode: query available sectors, then submit one job per sector
@@ -1284,6 +1495,35 @@ async function refreshQueue() {
         watchBtn.textContent = 'Watch';
         watchBtn.onclick = () => connectWs(job.name);
         li.appendChild(watchBtn);
+      }
+
+      // Remove-from-queue button (rightmost). Hidden for running jobs —
+      // user must cancel them first via the status bar's Cancel.
+      if (job.status !== 'running') {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.title = 'Remove this entry from the queue';
+        delBtn.setAttribute('aria-label', 'Remove ' + job.name + ' from the queue');
+        delBtn.innerHTML = '&times;';
+        delBtn.onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm('Remove "' + job.name + '" from the queue?')) return;
+          try {
+            const res = await fetch('/delete-job/' + encodeURIComponent(job.name), {
+              method: 'POST',
+            });
+            const data = await res.json();
+            if (data.ok) {
+              showToast('Removed "' + job.name + '" from queue', 'info');
+              refreshQueue();
+            } else {
+              showToast(data.reason || 'Failed to remove from queue', 'error');
+            }
+          } catch (err) {
+            showToast('Network error: ' + err.message, 'error');
+          }
+        };
+        li.appendChild(delBtn);
       }
 
       queueList.appendChild(li);

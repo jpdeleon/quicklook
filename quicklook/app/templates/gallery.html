@@ -127,20 +127,27 @@
     .modal-actions { margin-top: 10px; display: flex; gap: 8px; }
     .modal-actions .btn { font-size: 0.85rem; }
 
-    /* Running-jobs banner */
+    /* Running-jobs banner. Prominent so users see their submitted
+       job is still alive after switching to the gallery page. */
     .running-banner {
-      display: none; align-items: center; gap: 10px; padding: 10px 16px;
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      margin-bottom: 16px; font-size: 0.85rem;
+      display: none; align-items: center; gap: 12px; padding: 14px 18px;
+      background: var(--status-run-bg, var(--card-bg));
+      border: 1px solid var(--status-run-border, var(--border));
+      color: var(--status-run-fg, var(--text));
+      border-radius: 10px;
+      margin-bottom: 16px; font-size: 0.92rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     }
     .running-banner.visible { display: flex; flex-wrap: wrap; }
     .running-banner .spinner {
-      width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
+      width: 18px; height: 18px; border: 3px solid currentColor; border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
     /* @keyframes spin + .page-loading family live in shared CSS */
-    .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
-    .running-banner a:hover { text-decoration: underline; }
+    .running-banner .label { font-weight: 600; }
+    .running-banner .hint { color: var(--text-sec); font-size: 0.82rem; margin-left: 6px; }
+    .running-banner a { color: inherit; font-weight: 700; text-decoration: underline; }
+    .running-banner a:hover { text-decoration: none; }
     .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
     .auto-refresh-label {
       display: inline-flex; align-items: center; gap: 5px;
@@ -156,11 +163,15 @@
   </style>
 </head>
 <body>
-  <!-- Running jobs banner -->
+  <!-- Running-jobs banner. Stays visible the whole time a job is alive
+       on the server, so users who switched to the gallery can see their
+       submission is still running. Each job name links back to the
+       home page (?watch=…) so they can resume the live status view. -->
   <div class="running-banner" id="runningBanner">
     <div class="spinner"></div>
-    <span>Running:</span>
+    <span class="label">Job running:</span>
     <div class="job-list" id="runningJobList"></div>
+    <span class="hint">(server-side; clicking the name returns to the live log on the home page)</span>
   </div>
 
   {% set current = 'gallery' %}
@@ -420,10 +431,14 @@
     const runningJobList = document.getElementById('runningJobList');
     const autoRefreshToggle = document.getElementById('autoRefreshToggle');
 
-    /* Restore the auto-refresh preference (default ON). */
+    /* Restore the auto-refresh preference (default OFF). Auto-reload on
+       job-finish used to be on by default but it surprised users — when
+       their running job finished while they were browsing the gallery,
+       the page would reload out from under them and they'd interpret
+       that as the job being "halted". Opt-in only now. */
     (function () {
-      let on = true;
-      try { on = localStorage.getItem('gallery-auto-refresh') !== '0'; } catch (e) {}
+      let on = false;
+      try { on = localStorage.getItem('gallery-auto-refresh') === '1'; } catch (e) {}
       if (autoRefreshToggle) {
         autoRefreshToggle.checked = on;
         autoRefreshToggle.addEventListener('change', () => {

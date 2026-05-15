@@ -16,10 +16,10 @@ from threading import Thread, Event
 from flask import Flask, render_template, request, jsonify
 from flask_sock import Sock
 from loguru import logger
-from quicklook.tql import TessQuickLook
+from quicklook.tql import TessQuickLook, ALL_TESS_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import QuickLookError
-from quicklook.utils import get_available_sectors
+from quicklook.utils import get_available_pipelines, get_available_sectors
 
 # Directories
 BASE_DIR = Path(__file__).parent.resolve()
@@ -302,7 +302,10 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             sector=int(kwargs.get("sector", -1)),
             pipeline=kwargs.get("pipeline", "spoc"),
             flux_type=kwargs.get("fluxtype", "pdcsap"),
-            exptime=kwargs.get("exptime"),
+            # Coerce "" (the form's "auto" option) to None so the pipeline
+            # treats it as "let MAST decide" instead of filtering for an
+            # empty-string exptime and accidentally excluding every row.
+            exptime=(kwargs.get("exptime") or None),
             quality_bitmask=kwargs.get("quality_bitmask", "default"),
             flatten_method=kwargs.get("flatten_method", "biweight"),
             gp_kernel=kwargs.get("gp_kernel", "periodic_auto"),
@@ -450,7 +453,11 @@ def _submit_job(name, params):
 @app.route("/")
 def index():
     recent_results = _get_recent_results()
-    return render_template("index.html", recent_results=recent_results)
+    return render_template(
+        "index.html",
+        recent_results=recent_results,
+        pipelines=ALL_TESS_PIPELINES,
+    )
 
 
 @app.route("/submit", methods=["POST"])
@@ -547,6 +554,62 @@ def each_sector_submit():
     return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
 
 
+@app.route("/available-pipelines")
+def available_pipelines():
+    """Return the list of available pipelines for a target (any sector)."""
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    name = sanitize_target_name(name)
+    try:
+        pipelines = get_available_pipelines(name)
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)}), 500
+    if not pipelines:
+        return jsonify({"ok": False, "reason": f"No pipelines found for {name}"}), 404
+    return jsonify({"ok": True, "pipelines": pipelines})
+
+
+@app.route("/each-pipeline-submit", methods=["POST"])
+def each_pipeline_submit():
+    """Submit one job per pipeline for a single target (--each-pipeline equivalent).
+
+    Sector is forced to -1 (latest available) per pipeline so each pipeline
+    runs on whatever sector(s) it actually has. Useful for "fan out by
+    pipeline" exploration on a single target.
+    """
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    pipelines = data.get("pipelines", [])
+    params_template = _parse_params(data.get("params", {}))
+
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    if not pipelines:
+        return jsonify({"ok": False, "reason": "No pipelines provided"}), 400
+
+    name = sanitize_target_name(name)
+    submitted = []
+    skipped = []
+    for pipeline in pipelines:
+        pipeline = str(pipeline).lower().strip()
+        if not pipeline:
+            continue
+        job_name = f"{name}_{pipeline}"
+        params = dict(params_template)
+        params["pipeline"] = pipeline
+        params["sector"] = -1  # latest available for this pipeline
+        params["target_name"] = name
+        with jobs_lock:
+            if job_name in jobs and jobs[job_name]["status"] not in ("done", "error", "cancelled"):
+                skipped.append(job_name)
+                continue
+        _submit_job(job_name, params)
+        submitted.append(job_name)
+
+    return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
+
+
 @app.route("/jobs-json")
 def jobs_json():
     """Return status of all jobs (for queue display)."""
@@ -585,6 +648,55 @@ def cancel_all():
             info["status"] = "cancelled"
             cancelled.append(name)
     return jsonify({"ok": True, "cancelled": cancelled})
+
+
+@app.route("/delete-job/<target>", methods=["POST"])
+def delete_job(target):
+    """Remove a job's record from the in-memory queue, SQLite history,
+    and the per-target log file.
+
+    Running jobs are refused — they should be cancelled first via
+    ``/cancel/<target>``. Queued jobs are accepted: the cancel_event
+    is set so the worker skips them once they're picked up.
+    """
+    with jobs_lock:
+        info = jobs.get(target)
+        if info and info.get("status") == "running":
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "reason": "Job is still running; cancel it first.",
+                    }
+                ),
+                400,
+            )
+        # If queued, mark the cancel_event so the worker doesn't try to
+        # touch jobs[target] after we've popped it.
+        if info and info.get("status") == "queued":
+            evt = info.get("cancel_event")
+            if evt is not None:
+                evt.set()
+        jobs.pop(target, None)
+
+    # Drop the SQLite history row (best-effort).
+    try:
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.execute("DELETE FROM job_history WHERE name = ?", (target,))
+        conn.commit()
+        conn.close()
+    except sqlite3.DatabaseError as e:
+        logger.warning(f"Failed to delete job_history row for {target}: {e}")
+
+    # Drop the per-target log file (best-effort).
+    log_path = LOG_DIR / f"{target}.log"
+    try:
+        if log_path.exists():
+            log_path.unlink()
+    except OSError as e:
+        logger.warning(f"Failed to delete log file {log_path}: {e}")
+
+    return jsonify({"ok": True})
 
 
 @app.route("/delete-output", methods=["POST"])
