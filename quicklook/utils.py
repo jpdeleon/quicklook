@@ -231,7 +231,7 @@ def get_tois(
         msg += f"{keys} planets are removed.\n"
     msg += f"Saved: {fp}\n"
     if verbose:
-        print(msg)
+        logger.info(msg)
     return d.sort_values("TOI")
 
 
@@ -278,7 +278,7 @@ def get_tic_id(target_name: str) -> int:
 
 
 def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> list:
-    print(f"Querying ephemeris for {target_name}:")
+    logger.info(f"Querying ephemeris for {target_name}:")
     r = get_exofop_json(target_name)
     planet_params = r["planet_parameters"][idx]
     vals = []
@@ -287,7 +287,7 @@ def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> li
         val = float(val) if val else 0.1
         err = planet_params.get(p + "_e")
         err = float(err) if err else 0.1
-        print(f"     {p}: {val}, {err}")
+        logger.info(f"     {p}: {val}, {err}")
         vals.append((val, err))
     return vals
 
@@ -332,13 +332,13 @@ def parse_aperture_mask(
     """Parse and make aperture mask"""
     if verbose:
         if sap_mask == "round":
-            print("aperture photometry mask: {} (r={} pix)\n".format(sap_mask, aper_radius))
+            logger.info(f"aperture photometry mask: {sap_mask} (r={aper_radius} pix)")
         elif sap_mask == "square":
-            print("aperture photometry mask: {0} ({1}x{1} pix)\n".format(sap_mask, aper_radius))
+            logger.info(f"aperture photometry mask: {sap_mask} ({aper_radius}x{aper_radius} pix)")
         elif sap_mask == "percentile":
-            print("aperture photometry mask: {} ({}%)\n".format(sap_mask, percentile))
+            logger.info(f"aperture photometry mask: {sap_mask} ({percentile}%)")
         else:
-            print("aperture photometry mask: {}\n".format(sap_mask))
+            logger.info(f"aperture photometry mask: {sap_mask}")
 
     median_img = np.nanmedian(tpf.flux, axis=0).value
     if (sap_mask == "pipeline") or (sap_mask is None):
@@ -389,8 +389,8 @@ def make_round_mask(img, radius, xy_center=None):
         xy_center = [x, y]
         # check if near edge
         if np.any([abs(x - xcen) > offset, abs(y - ycen) > offset]):
-            print("Brightest star is detected far from the center.")
-            print("Aperture mask is placed at the center instead.\n")
+            logger.info("Brightest star is detected far from the center.")
+            logger.info("Aperture mask is placed at the center instead.")
             xy_center = [xcen, ycen]
 
     Y, X = np.ogrid[: img.shape[0], : img.shape[1]]
@@ -426,8 +426,8 @@ def make_square_mask(img, size, xy_center=None):
         xy_center = [x, y]
         # check if near edge
         if np.any([abs(x - xcen) > offset, abs(y - ycen) > offset]):
-            print("Brightest star detected is far from the center.")
-            print("Aperture mask is placed at the center instead.\n")
+            logger.info("Brightest star detected is far from the center.")
+            logger.info("Aperture mask is placed at the center instead.")
             xy_center = [xcen, ycen]
     mask = np.zeros_like(img, dtype=bool)
     mask[ycen - size : ycen + size + 1, xcen - size : xcen + size + 1] = True  # noqa

@@ -255,7 +255,7 @@ def plot_periodogram(
     ax.set_xlim(xmin, period_max)
     ax.legend(title="Prot peaks [d]")
     if verbose:
-        print(pg.show_properties())
+        logger.info(pg.show_properties())
     return pg
 
 
@@ -495,7 +495,7 @@ def plot_gaia_sources_on_tpf(
     survey image and Gaia DR2 positions
     """
     if verbose:
-        print("Plotting nearby Gaia sources on tpf.")
+        logger.info("Plotting nearby Gaia sources on tpf.")
     assert target_gaiaid is not None
     img = np.nanmedian(tpf.flux, axis=0)
     # make aperture mask
@@ -509,7 +509,7 @@ def plot_gaia_sources_on_tpf(
 
     if gaia_sources is None:
         if verbose:
-            print("Querying Gaia sources around the target.")
+            logger.info("Querying Gaia sources around the target.")
         target_coord = SkyCoord(
             ra=tpf.get_header()["RA_OBJ"],
             dec=tpf.get_header()["DEC_OBJ"],
@@ -541,9 +541,9 @@ def plot_gaia_sources_on_tpf(
         # sources_inside_aperture.append(isinside)
         min_gmag = gaia_sources.loc[isinside, "phot_g_mean_mag"].min()
         if (target_gmag - min_gmag) != 0:
-            print(
-                f"target Gmag={target_gmag:.2f} is not the brightest \
-                within aperture (Gmag={min_gmag:.2f})"
+            logger.warning(
+                f"target Gmag={target_gmag:.2f} is not the brightest "
+                f"within aperture (Gmag={min_gmag:.2f})"
             )
     else:
         min_gmag = gaia_sources.phot_g_mean_mag.min()  # brightest
@@ -695,7 +695,7 @@ def plot_gaia_sources_on_survey(
     errmsg = f"{survey} not in {list(dss_description.keys())}"
     assert survey in list(dss_description.keys()), errmsg
     if verbose:
-        print("Plotting nearby Gaia sources on survey image.")
+        logger.info("Plotting nearby Gaia sources on survey image.")
     assert target_gaiaid is not None
     ny, nx = tpf.flux.shape[1:]
     if fov_rad is None:
@@ -704,7 +704,7 @@ def plot_gaia_sources_on_survey(
     target_coord = SkyCoord(ra=tpf.ra * u.deg, dec=tpf.dec * u.deg)
     if gaia_sources is None:
         if verbose:
-            print("Querying Gaia sources around the target.")
+            logger.info("Querying Gaia sources around the target.")
         gaia_sources = Catalogs.query_region(
             target_coord,
             radius=fov_rad,
@@ -722,7 +722,7 @@ def plot_gaia_sources_on_survey(
     extent = np.array([-1, nx, -1, ny])
 
     if verbose:
-        print(f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image...")
+        logger.info(f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image...")
     # -----------create figure---------------#
     if (ax is None) or (hdu is None):
         # get img hdu for subplot projection

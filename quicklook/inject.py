@@ -16,6 +16,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from wotan import flatten
 from transitleastsquares import transitleastsquares
+from loguru import logger
 
 
 # --------------------------------------------------------------------
@@ -164,7 +165,7 @@ if __name__ == "__main__":
 
     # Select optimal window
     best_window, valid = select_best_window(df)
-    print("Selected window length:", best_window)
+    logger.info(f"Selected window length: {best_window}")
 
     # Run grid with different flatten method
     # method2 = 'rspline'

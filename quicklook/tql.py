@@ -229,9 +229,8 @@ class TessQuickLook:
         """
         self.star_names = np.array(self.exofop_data.get("basic_info")["star_names"].split(", "))
         if self.verbose:
-            print("Catalog names:")
-            for n in self.star_names:
-                print(f"\t{n}")
+            names_block = "\n".join(f"\t{n}" for n in self.star_names)
+            logger.info(f"Catalog names:\n{names_block}")
         self.gaia_name = self.star_names[
             np.array([i[:4].lower() == "gaia" for i in self.star_names])
         ][0]
@@ -427,8 +426,8 @@ class TessQuickLook:
         # Display available light curves
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available lightcurves:")
-            print(search_result_all_lcs.table.to_pandas()[cols])
+            lc_table = search_result_all_lcs.table.to_pandas()[cols]
+            logger.info(f"All available lightcurves:\n{lc_table.to_string()}")
 
         # Validate the requested sector. If the user asked for a specific
         # sector that the MAST search did not return (e.g. a stale value
@@ -437,7 +436,7 @@ class TessQuickLook:
         # than killing the job, and the warning still surfaces in the log.
         if kwargs.get("sector") is None:
             if self.verbose:
-                print(f"Available sectors: {self.all_sectors}")
+                logger.info(f"Available sectors: {self.all_sectors}")
         else:
             if kwargs.get("sector") not in self.all_sectors:
                 logger.warning(
@@ -492,8 +491,11 @@ class TessQuickLook:
         # Download and return light curve
         if sector_orig == "all":
             if self.verbose:
-                print(f"Filtered lightcurves based on query ({kwargs}):")
-                print(search_result.table.to_pandas()[cols])
+                filtered_table = search_result.table.to_pandas()[cols]
+                logger.info(
+                    f"Filtered lightcurves based on query ({kwargs}):\n"
+                    f"{filtered_table.to_string()}"
+                )
             msg = f"Downloading all {kwargs.get('author')} lcs..."
             if self.verbose:
                 logger.info(msg)
@@ -689,8 +691,8 @@ class TessQuickLook:
 
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available TPFs:")
-            print(search_result_all_tpfs.table.to_pandas()[cols])
+            tpf_table = search_result_all_tpfs.table.to_pandas()[cols]
+            logger.info(f"All available TPFs:\n{tpf_table.to_string()}")
         tpf_authors = search_result_all_tpfs.table.to_pandas()["author"].unique()
         if kwargs.get("author").upper() not in tpf_authors:
             if self.verbose:
@@ -787,7 +789,7 @@ class TessQuickLook:
         if planet_params is None:
             return (None, None, None, None)
         if self.verbose:
-            print(f"Parameters for {planet_params.get('name', 'unknown')}:")
+            logger.info(f"Parameters for {planet_params.get('name', 'unknown')}:")
 
         # Initialize variables
         toi_epoch = None
@@ -803,7 +805,7 @@ class TessQuickLook:
             err = planet_params.get(p + "_e")
             err = float(err) if err else 0.1
             if self.verbose:
-                print(f"{p}: {val}, {err} {unit}")
+                logger.info(f"{p}: {val}, {err} {unit}")
             if p == "epoch":
                 toi_epoch = np.array((val, err))
                 toi_epoch[0] -= TESS_TIME_OFFSET
@@ -1545,7 +1547,7 @@ if __name__ == "__main__":
             # Take a snapshot and find any unclosed resources
             snapshot = tracemalloc.take_snapshot()
             for stat in snapshot.statistics("lineno"):
-                print(stat)
+                logger.debug(stat)
 
         else:
             fig = ql.plot_tql()
