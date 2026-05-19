@@ -1,11 +1,7 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+{% extends "base.html" %}
+{% block topbar_current %}home{% endblock %}
+{% block title %}TESS QuickLook{% endblock %}
+{% block head %}
   <style>
     /* Theme variables, * box-sizing, a colour, .btn*, .theme-toggle base,
        @keyframes spin, and the .page-loading family all live in
@@ -277,15 +273,14 @@
       .header { flex-wrap: wrap; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
 
+{% block before_topbar %}
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
+{% endblock %}
 
-{% set current = 'home' %}
-{% include 'partials/topbar.html' %}
-
+{% block content %}
 <div class="header">
   <h1>TESS QuickLook</h1>
 </div>
@@ -633,8 +628,9 @@
 </div>
 
 <!-- footer-nav removed: navigation now lives in the unified topbar partial. -->
+{% endblock %}
 
-<script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% block scripts %}
 <script>
 /* =========================================================================
    DOM refs
@@ -1785,6 +1781,4 @@ setInterval(refreshQueue, 5000);
     </div>
   </div>
 </div>
-
-</body>
-</html>
+{% endblock %}

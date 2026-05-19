@@ -1,11 +1,7 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook - Compare</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+{% extends "base.html" %}
+{% block topbar_current %}compare{% endblock %}
+{% block title %}TESS QuickLook - Compare{% endblock %}
+{% block head %}
   <style>
     /* Page-specific (theme vars, buttons, theme-toggle, page-loading
        and @keyframes spin live in static/css/quicklook.css). */
@@ -92,18 +88,18 @@
       .compare-area { grid-template-columns: 1fr; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block before_topbar %}
   <!-- Running jobs banner -->
   <div class="running-banner" id="runningBanner">
     <div class="spinner"></div>
     <span>Running:</span>
     <div class="job-list" id="runningJobList"></div>
   </div>
+{% endblock %}
 
-  {% set current = 'compare' %}
-  {% include 'partials/topbar.html' %}
-
+{% block content %}
   <h1>Compare Results</h1>
 
   <!-- Image selectors -->
@@ -164,7 +160,9 @@
     <img id="overlayTop" class="overlay-img" src="" alt="Overlay">
   </div>
 
-  <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% endblock %}
+
+{% block scripts %}
   <script>
     /* --- Elements --- */
     const leftSelect = document.getElementById('leftSelect');
@@ -274,5 +272,4 @@
       </div>
     </div>
   </div>
-</body>
-</html>
+{% endblock %}
