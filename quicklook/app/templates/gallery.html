@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
 {% block topbar_current %}gallery{% endblock %}
 {% block title %}TESS QuickLook Gallery{% endblock %}
 {% block head %}
@@ -510,13 +511,5 @@
     })();
   </script>
 
-  <div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
-    <div class="panel">
-      <div class="pl-spinner"></div>
-      <div class="text">
-        <strong>Loading TLS Summary&hellip;</strong>
-        <small>Scanning saved results</small>
-      </div>
-    </div>
-  </div>
+  {{ components.page_loading('Loading TLS Summary…', 'Scanning saved results') }}
 {% endblock %}
