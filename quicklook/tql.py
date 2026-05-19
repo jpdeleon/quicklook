@@ -54,20 +54,12 @@ from quicklook.tglc import get_tglc_lc
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
-FULL_FRAME_TESS_PIPELINES = [
-    "tess-spoc",
-    "qlp",
-    "tglc",
-    "cdips",
-    "pathos",
-    "eleanor",
-    "t16",
-    "gsfc-eleanor-lite",
-    "tequila",
-    "tica",
-    "diamante",
-]
-ALL_TESS_PIPELINES = ["spoc", "tasoc"] + FULL_FRAME_TESS_PIPELINES
+# Pipeline registry is centralized in quicklook.pipelines; these
+# re-exports preserve the old import path for callers (and notebooks).
+from quicklook.pipelines import (  # noqa: E402
+    ALL_TESS_PIPELINES,
+    FULL_FRAME_TESS_PIPELINES,
+)
 
 
 DATA_PATH = files("quicklook").joinpath("data")

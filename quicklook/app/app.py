@@ -16,7 +16,8 @@ from threading import Thread, Event
 from flask import Flask, render_template, request, jsonify
 from flask_sock import Sock
 from loguru import logger
-from quicklook.tql import TessQuickLook, ALL_TESS_PIPELINES
+from quicklook.tql import TessQuickLook
+from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import QuickLookError
 from quicklook.utils import get_available_pipelines, get_available_sectors
@@ -935,7 +936,6 @@ def _parse_tls_filename(stem):
     recoverable.
     """
     SPOC_FLUX = {"pdcsap", "sap"}
-    HLSP_PIPELINES = {"qlp", "tglc", "tasoc", "cdips", "pathos", "tess-spoc", "t16"}
     # Trailing "_tls" already stripped by Path.stem callers
     if stem.endswith("_tls"):
         stem = stem[: -len("_tls")]
