@@ -531,9 +531,15 @@ class TessQuickLook:
                 logger.info(msg)
             self.sector = lc.sector
 
-        # Select flux type for SPOC data
-        if lc.meta["AUTHOR"].lower() == "spoc":
+        # Select flux type / photometry for pipelines that expose a choice.
+        author = lc.meta["AUTHOR"].lower()
+        if author == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
+        elif author == "tglc" and self.flux_type in ("aperture", "psf"):
+            # MAST TGLC HLSP files carry both calibrated flux columns.
+            tglc_col = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}[self.flux_type]
+            if tglc_col in lc.colnames:
+                lc = lc.select_flux(tglc_col)
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -639,9 +645,13 @@ class TessQuickLook:
         self.pipeline = "tglc"
         self.all_pipelines = {"TGLC"}
         sector_arg = None if sector in (None, -1) else int(sector)
+        # flux_type carries the GUI's aperture/psf choice for TGLC; anything
+        # else (e.g. a stale "pdcsap") falls back to automatic selection.
+        photometry = self.flux_type if self.flux_type in ("aperture", "psf", "auto") else "auto"
         lc = get_tglc_lc(
             self.query_name,
             sector=sector_arg,
+            photometry=photometry,
             verbose=self.verbose,
         )
         self.sector = lc.sector

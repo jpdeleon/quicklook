@@ -337,8 +337,8 @@
         </div>
         <div>
           <div class="label-row">
-            <label for="fluxtype">Flux Type</label>
-            <span class="help-tip" tabindex="0" data-tip="PDCSAP = pre-search data conditioned flux, corrected for systematics (recommended). SAP = raw simple aperture photometry.">?</span>
+            <label for="fluxtype">Flux / LC Type</label>
+            <span class="help-tip" tabindex="0" data-tip="SPOC/TESS-SPOC: PDCSAP = systematics-corrected flux (recommended), SAP = raw simple aperture photometry. TGLC: APERTURE vs PSF photometry. Ignored for other pipelines.">?</span>
           </div>
           <select name="fluxtype" id="fluxtype">
             {% for f in ['pdcsap','sap'] %}
@@ -819,7 +819,33 @@ resetBtn.addEventListener('click', resetFormDefaults);
 /* =========================================================================
    Dependent field state — disable inputs whose value would be ignored
    ========================================================================= */
-const FLUXTYPE_PIPELINES = ['spoc', 'tess-spoc'];
+// Options for the Flux / LC-Type dropdown, keyed by pipeline. SPOC-family
+// pipelines choose a flux column; TGLC chooses aperture vs PSF photometry.
+// Pipelines absent from this map expose no such choice.
+const FLUXTYPE_OPTIONS = {
+  'spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tess-spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tglc': [['aperture', 'APERTURE'], ['psf', 'PSF']],
+};
+
+// Rebuild the Flux / LC-Type <option>s to match the selected pipeline,
+// preserving the current selection when it stays valid.
+function syncFluxtypeOptions(pipelineValue) {
+  const fluxtype = form.elements['fluxtype'];
+  if (!fluxtype) return;
+  const opts = FLUXTYPE_OPTIONS[pipelineValue];
+  const prev = fluxtype.value;
+  fluxtype.innerHTML = '';
+  (opts || [['', 'n/a']]).forEach(function (pair) {
+    const o = document.createElement('option');
+    o.value = pair[0];
+    o.textContent = pair[1];
+    fluxtype.appendChild(o);
+  });
+  if (opts && opts.some(function (pair) { return pair[0] === prev; })) {
+    fluxtype.value = prev;
+  }
+}
 
 function updateFieldStates() {
   const eachSector = form.elements['each_sector'];
@@ -870,10 +896,13 @@ function updateFieldStates() {
   const pipeline = form.elements['pipeline'];
   const fluxtype = form.elements['fluxtype'];
   if (pipeline && fluxtype) {
-    const disabled = !FLUXTYPE_PIPELINES.includes(pipeline.value);
-    fluxtype.disabled = disabled;
-    fluxtype.title = disabled ? 'Ignored — only SPOC and TESS-SPOC pipelines have a flux-type choice' : '';
-    fluxtype.style.opacity = disabled ? '0.5' : '';
+    syncFluxtypeOptions(pipeline.value);
+    const hasChoice = Object.prototype.hasOwnProperty.call(FLUXTYPE_OPTIONS, pipeline.value);
+    fluxtype.disabled = !hasChoice;
+    fluxtype.title = hasChoice
+      ? ''
+      : 'Ignored — only SPOC, TESS-SPOC, and TGLC pipelines have a flux / LC-type choice';
+    fluxtype.style.opacity = hasChoice ? '' : '0.5';
   }
 
   const flatten = form.elements['flatten_method'];
