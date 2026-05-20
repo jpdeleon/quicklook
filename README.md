@@ -12,6 +12,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 ## Features
 
 - **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC
+- **Flux / light-curve type** -- PDCSAP or SAP for SPOC; aperture or PSF photometry for TGLC, with an automatic best-quality default
 - **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection** -- Transit Least Squares (TLS) periodogram
@@ -91,6 +92,12 @@ print(f"Rotation period: {ql.Prot_ls:.2f} days")
 print(f"TLS period: {ql.tls_results.period:.4f} days")
 print(f"TLS SDE: {ql.tls_results.SDE:.1f}")
 ```
+
+For **SPOC**, `flux_type` selects `"pdcsap"` or `"sap"`. For **TGLC**, the same
+argument selects the photometry method -- `"aperture"` or `"psf"`; any other
+value (including the default) uses automatic selection of the less-contaminated,
+lower-scatter light curve. TGLC light curves absent from MAST are extracted
+locally via effective-PSF (ePSF) photometry.
 
 ### Web GUI
 

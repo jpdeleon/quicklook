@@ -1,11 +1,8 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}home{% endblock %}
+{% block title %}TESS QuickLook{% endblock %}
+{% block head %}
   <style>
     /* Theme variables, * box-sizing, a colour, .btn*, .theme-toggle base,
        @keyframes spin, and the .page-loading family all live in
@@ -277,15 +274,14 @@
       .header { flex-wrap: wrap; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
 
+{% block before_topbar %}
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
+{% endblock %}
 
-{% set current = 'home' %}
-{% include 'partials/topbar.html' %}
-
+{% block content %}
 <div class="header">
   <h1>TESS QuickLook</h1>
 </div>
@@ -341,8 +337,8 @@
         </div>
         <div>
           <div class="label-row">
-            <label for="fluxtype">Flux Type</label>
-            <span class="help-tip" tabindex="0" data-tip="PDCSAP = pre-search data conditioned flux, corrected for systematics (recommended). SAP = raw simple aperture photometry.">?</span>
+            <label for="fluxtype">Flux / LC Type</label>
+            <span class="help-tip" tabindex="0" data-tip="SPOC/TESS-SPOC: PDCSAP = systematics-corrected flux (recommended), SAP = raw simple aperture photometry. TGLC: APERTURE vs PSF photometry. Ignored for other pipelines.">?</span>
           </div>
           <select name="fluxtype" id="fluxtype">
             {% for f in ['pdcsap','sap'] %}
@@ -633,8 +629,9 @@
 </div>
 
 <!-- footer-nav removed: navigation now lives in the unified topbar partial. -->
+{% endblock %}
 
-<script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% block scripts %}
 <script>
 /* =========================================================================
    DOM refs
@@ -822,7 +819,33 @@ resetBtn.addEventListener('click', resetFormDefaults);
 /* =========================================================================
    Dependent field state — disable inputs whose value would be ignored
    ========================================================================= */
-const FLUXTYPE_PIPELINES = ['spoc', 'tess-spoc'];
+// Options for the Flux / LC-Type dropdown, keyed by pipeline. SPOC-family
+// pipelines choose a flux column; TGLC chooses aperture vs PSF photometry.
+// Pipelines absent from this map expose no such choice.
+const FLUXTYPE_OPTIONS = {
+  'spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tess-spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tglc': [['aperture', 'APERTURE'], ['psf', 'PSF']],
+};
+
+// Rebuild the Flux / LC-Type <option>s to match the selected pipeline,
+// preserving the current selection when it stays valid.
+function syncFluxtypeOptions(pipelineValue) {
+  const fluxtype = form.elements['fluxtype'];
+  if (!fluxtype) return;
+  const opts = FLUXTYPE_OPTIONS[pipelineValue];
+  const prev = fluxtype.value;
+  fluxtype.innerHTML = '';
+  (opts || [['', 'n/a']]).forEach(function (pair) {
+    const o = document.createElement('option');
+    o.value = pair[0];
+    o.textContent = pair[1];
+    fluxtype.appendChild(o);
+  });
+  if (opts && opts.some(function (pair) { return pair[0] === prev; })) {
+    fluxtype.value = prev;
+  }
+}
 
 function updateFieldStates() {
   const eachSector = form.elements['each_sector'];
@@ -873,10 +896,13 @@ function updateFieldStates() {
   const pipeline = form.elements['pipeline'];
   const fluxtype = form.elements['fluxtype'];
   if (pipeline && fluxtype) {
-    const disabled = !FLUXTYPE_PIPELINES.includes(pipeline.value);
-    fluxtype.disabled = disabled;
-    fluxtype.title = disabled ? 'Ignored — only SPOC and TESS-SPOC pipelines have a flux-type choice' : '';
-    fluxtype.style.opacity = disabled ? '0.5' : '';
+    syncFluxtypeOptions(pipeline.value);
+    const hasChoice = Object.prototype.hasOwnProperty.call(FLUXTYPE_OPTIONS, pipeline.value);
+    fluxtype.disabled = !hasChoice;
+    fluxtype.title = hasChoice
+      ? ''
+      : 'Ignored — only SPOC, TESS-SPOC, and TGLC pipelines have a flux / LC-type choice';
+    fluxtype.style.opacity = hasChoice ? '' : '0.5';
   }
 
   const flatten = form.elements['flatten_method'];
@@ -1100,11 +1126,39 @@ function setProgress(pct, label, state, eta) {
 /* =========================================================================
    Cancel
    ========================================================================= */
-cancelBtn.addEventListener('click', () => {
+cancelBtn.addEventListener('click', async () => {
+  const target = activeTarget;
+  // Fast path over the websocket; HTTP path works even if it has dropped.
   if (activeWs && activeWs.readyState === WebSocket.OPEN) {
     activeWs.send(JSON.stringify({action: 'cancel'}));
   }
-  if (activeTarget) fetch('/cancel/' + activeTarget, {method: 'POST'});
+  if (!target) return;
+  cancelBtn.disabled = true;
+  let cancelled = true;
+  try {
+    const res = await fetch('/cancel/' + target, {method: 'POST'});
+    cancelled = res.ok;
+  } catch (err) {
+    /* network error — still tear down the running UI below */
+  }
+  // Close the socket so its 'finish' handler does not double-fire, then
+  // update the GUI directly. This also recovers the case where the socket
+  // had already dropped during a long job, leaving the GUI stuck.
+  if (activeWs) {
+    try { activeWs.close(); } catch (e) { /* already closed */ }
+    activeWs = null;
+  }
+  jobRunning = false;
+  sessionStorage.removeItem('ql-active-target');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Run QuickLook';
+  if (cancelled) {
+    setStatus('cancelled', 'Cancelled ' + target);
+    setProgress(100, 'Cancelled', 'cancelled', null);
+    showToast('Cancelled: ' + target, 'info');
+  }
+  refreshQueue();
+  cancelBtn.disabled = false;
 });
 
 cancelAllBtn.addEventListener('click', async () => {
@@ -1776,15 +1830,5 @@ setInterval(refreshQueue, 5000);
 })();
 </script>
 
-<div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
-  <div class="panel">
-    <div class="pl-spinner"></div>
-    <div class="text">
-      <strong>Loading TLS Summary&hellip;</strong>
-      <small>Scanning saved results</small>
-    </div>
-  </div>
-</div>
-
-</body>
-</html>
+{{ components.page_loading('Loading TLS Summary…', 'Scanning saved results') }}
+{% endblock %}

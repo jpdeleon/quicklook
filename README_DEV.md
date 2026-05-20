@@ -57,3 +57,13 @@ def test_tql_runtime(benchmark, planet_inputs):
 ```bash
 tox -r
 ```
+
+- **Check minimum Python required by dependencies**:
+
+`check_pyproject_deps.py` reads `pyproject.toml`, looks up each dependency's
+`Requires-Python` in the currently installed environment, and prints the
+overall minimum Python version needed.
+
+```bash
+python check_pyproject_deps.py
+```

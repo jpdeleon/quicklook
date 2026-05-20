@@ -1,11 +1,8 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook Gallery</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}gallery{% endblock %}
+{% block title %}TESS QuickLook Gallery{% endblock %}
+{% block head %}
   <style>
     /* Page-specific (theme vars, buttons, theme-toggle, page-loading
        and @keyframes spin live in static/css/quicklook.css). */
@@ -161,8 +158,9 @@
       .controls { flex-direction: column; align-items: stretch; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block before_topbar %}
   <!-- Running-jobs banner. Stays visible the whole time a job is alive
        on the server, so users who switched to the gallery can see their
        submission is still running. Each job name links back to the
@@ -173,10 +171,9 @@
     <div class="job-list" id="runningJobList"></div>
     <span class="hint">(server-side; clicking the name returns to the live log on the home page)</span>
   </div>
+{% endblock %}
 
-  {% set current = 'gallery' %}
-  {% include 'partials/topbar.html' %}
-
+{% block content %}
   <h1>Output Gallery</h1>
 
   <div class="top-bar">
@@ -283,7 +280,9 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% endblock %}
+
+{% block scripts %}
   <script>
     /* --- Sort --- */
     function applySort(value) {
@@ -512,14 +511,5 @@
     })();
   </script>
 
-  <div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
-    <div class="panel">
-      <div class="pl-spinner"></div>
-      <div class="text">
-        <strong>Loading TLS Summary&hellip;</strong>
-        <small>Scanning saved results</small>
-      </div>
-    </div>
-  </div>
-</body>
-</html>
+  {{ components.page_loading('Loading TLS Summary…', 'Scanning saved results') }}
+{% endblock %}

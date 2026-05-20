@@ -54,20 +54,12 @@ from quicklook.tglc import get_tglc_lc
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
-FULL_FRAME_TESS_PIPELINES = [
-    "tess-spoc",
-    "qlp",
-    "tglc",
-    "cdips",
-    "pathos",
-    "eleanor",
-    "t16",
-    "gsfc-eleanor-lite",
-    "tequila",
-    "tica",
-    "diamante",
-]
-ALL_TESS_PIPELINES = ["spoc", "tasoc"] + FULL_FRAME_TESS_PIPELINES
+# Pipeline registry is centralized in quicklook.pipelines; these
+# re-exports preserve the old import path for callers (and notebooks).
+from quicklook.pipelines import (  # noqa: E402
+    ALL_TESS_PIPELINES,
+    FULL_FRAME_TESS_PIPELINES,
+)
 
 
 DATA_PATH = files("quicklook").joinpath("data")
@@ -229,9 +221,8 @@ class TessQuickLook:
         """
         self.star_names = np.array(self.exofop_data.get("basic_info")["star_names"].split(", "))
         if self.verbose:
-            print("Catalog names:")
-            for n in self.star_names:
-                print(f"\t{n}")
+            names_block = "\n".join(f"\t{n}" for n in self.star_names)
+            logger.info(f"Catalog names:\n{names_block}")
         self.gaia_name = self.star_names[
             np.array([i[:4].lower() == "gaia" for i in self.star_names])
         ][0]
@@ -427,8 +418,8 @@ class TessQuickLook:
         # Display available light curves
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available lightcurves:")
-            print(search_result_all_lcs.table.to_pandas()[cols])
+            lc_table = search_result_all_lcs.table.to_pandas()[cols]
+            logger.info(f"All available lightcurves:\n{lc_table.to_string()}")
 
         # Validate the requested sector. If the user asked for a specific
         # sector that the MAST search did not return (e.g. a stale value
@@ -437,7 +428,7 @@ class TessQuickLook:
         # than killing the job, and the warning still surfaces in the log.
         if kwargs.get("sector") is None:
             if self.verbose:
-                print(f"Available sectors: {self.all_sectors}")
+                logger.info(f"Available sectors: {self.all_sectors}")
         else:
             if kwargs.get("sector") not in self.all_sectors:
                 logger.warning(
@@ -492,8 +483,11 @@ class TessQuickLook:
         # Download and return light curve
         if sector_orig == "all":
             if self.verbose:
-                print(f"Filtered lightcurves based on query ({kwargs}):")
-                print(search_result.table.to_pandas()[cols])
+                filtered_table = search_result.table.to_pandas()[cols]
+                logger.info(
+                    f"Filtered lightcurves based on query ({kwargs}):\n"
+                    f"{filtered_table.to_string()}"
+                )
             msg = f"Downloading all {kwargs.get('author')} lcs..."
             if self.verbose:
                 logger.info(msg)
@@ -537,9 +531,15 @@ class TessQuickLook:
                 logger.info(msg)
             self.sector = lc.sector
 
-        # Select flux type for SPOC data
-        if lc.meta["AUTHOR"].lower() == "spoc":
+        # Select flux type / photometry for pipelines that expose a choice.
+        author = lc.meta["AUTHOR"].lower()
+        if author == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
+        elif author == "tglc" and self.flux_type in ("aperture", "psf"):
+            # MAST TGLC HLSP files carry both calibrated flux columns.
+            tglc_col = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}[self.flux_type]
+            if tglc_col in lc.colnames:
+                lc = lc.select_flux(tglc_col)
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -644,10 +644,16 @@ class TessQuickLook:
         logger.info("No TGLC products on MAST; running local ePSF extraction...")
         self.pipeline = "tglc"
         self.all_pipelines = {"TGLC"}
-        sector_arg = None if sector in (None, -1) else int(sector)
+        # Pass the request through to get_tglc_lc unchanged: None -> first
+        # available, -1 -> latest available, positive int -> that sector.
+        sector_arg = None if sector is None else int(sector)
+        # flux_type carries the GUI's aperture/psf choice for TGLC; anything
+        # else (e.g. a stale "pdcsap") falls back to automatic selection.
+        photometry = self.flux_type if self.flux_type in ("aperture", "psf", "auto") else "auto"
         lc = get_tglc_lc(
             self.query_name,
             sector=sector_arg,
+            photometry=photometry,
             verbose=self.verbose,
         )
         self.sector = lc.sector
@@ -689,8 +695,8 @@ class TessQuickLook:
 
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available TPFs:")
-            print(search_result_all_tpfs.table.to_pandas()[cols])
+            tpf_table = search_result_all_tpfs.table.to_pandas()[cols]
+            logger.info(f"All available TPFs:\n{tpf_table.to_string()}")
         tpf_authors = search_result_all_tpfs.table.to_pandas()["author"].unique()
         if kwargs.get("author").upper() not in tpf_authors:
             if self.verbose:
@@ -787,7 +793,7 @@ class TessQuickLook:
         if planet_params is None:
             return (None, None, None, None)
         if self.verbose:
-            print(f"Parameters for {planet_params.get('name', 'unknown')}:")
+            logger.info(f"Parameters for {planet_params.get('name', 'unknown')}:")
 
         # Initialize variables
         toi_epoch = None
@@ -803,7 +809,7 @@ class TessQuickLook:
             err = planet_params.get(p + "_e")
             err = float(err) if err else 0.1
             if self.verbose:
-                print(f"{p}: {val}, {err} {unit}")
+                logger.info(f"{p}: {val}, {err} {unit}")
             if p == "epoch":
                 toi_epoch = np.array((val, err))
                 toi_epoch[0] -= TESS_TIME_OFFSET
@@ -1545,7 +1551,7 @@ if __name__ == "__main__":
             # Take a snapshot and find any unclosed resources
             snapshot = tracemalloc.take_snapshot()
             for stat in snapshot.statistics("lineno"):
-                print(stat)
+                logger.debug(stat)
 
         else:
             fig = ql.plot_tql()

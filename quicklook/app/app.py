@@ -16,7 +16,8 @@ from threading import Thread, Event
 from flask import Flask, render_template, request, jsonify
 from flask_sock import Sock
 from loguru import logger
-from quicklook.tql import TessQuickLook, ALL_TESS_PIPELINES
+from quicklook.tql import TessQuickLook
+from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import QuickLookError
 from quicklook.utils import get_available_pipelines, get_available_sectors
@@ -83,48 +84,25 @@ sys.stderr = _tls_stderr
 
 
 # ---------------------------------------------------------------------------
-# SQLite job history
+# SQLite job history (schema + CRUD live in quicklook.app.jobs_db)
 # ---------------------------------------------------------------------------
-def _init_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS job_history (
-            name         TEXT PRIMARY KEY,
-            status       TEXT NOT NULL,
-            error        TEXT DEFAULT '',
-            params       TEXT DEFAULT '{}',
-            submitted_at REAL,
-            finished_at  REAL,
-            step_times   TEXT DEFAULT '{}'
-        )"""
-    )
-    conn.commit()
-    conn.close()
+from quicklook.app.jobs_db import JobsDB  # noqa: E402
 
-
-_init_db()
+_jobs_db = JobsDB(DB_PATH)
 
 
 def _save_job_history(
     name, status, error="", params=None, submitted_at=None, finished_at=None, step_times=None
 ):
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        "INSERT OR REPLACE INTO job_history "
-        "(name, status, error, params, submitted_at, finished_at, step_times) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            name,
-            status,
-            error,
-            json.dumps(params or {}),
-            submitted_at,
-            finished_at,
-            json.dumps(step_times or {}),
-        ),
+    _jobs_db.save(
+        name=name,
+        status=status,
+        error=error,
+        params=params,
+        submitted_at=submitted_at,
+        finished_at=finished_at,
+        step_times=step_times,
     )
-    conn.commit()
-    conn.close()
 
 
 _avg_step_cache = {"data": {}, "ts": 0}
@@ -137,18 +115,12 @@ def _get_avg_step_times():
     with _avg_step_lock:
         if now - _avg_step_cache["ts"] < 60:
             return dict(_avg_step_cache["data"])
-    conn = sqlite3.connect(str(DB_PATH))
-    rows = conn.execute(
-        "SELECT step_times FROM job_history WHERE status='done' "
-        "ORDER BY finished_at DESC LIMIT 20"
-    ).fetchall()
-    conn.close()
-    if not rows:
+    step_dicts = _jobs_db.recent_step_times(limit=20)
+    if not step_dicts:
         return {}
     totals: dict[str, float] = {}
     counts: dict[str, int] = {}
-    for (st_json,) in rows:
-        st = json.loads(st_json) if st_json else {}
+    for st in step_dicts:
         for step, dur in st.items():
             totals[step] = totals.get(step, 0) + dur
             counts[step] = counts.get(step, 0) + 1
@@ -185,12 +157,17 @@ def _job_worker():
 _worker_thread = Thread(target=_job_worker, daemon=True)
 _worker_thread.start()
 
+# Label for the TGLC local ePSF-extraction step. Kept as a named constant
+# because the websocket handler matches on it for fine-grained sub-progress.
+EPSF_STEP_LABEL = "Extracting ePSF light curve"
+
 # Pipeline step definitions for progress tracking.
 PIPELINE_STEPS = [
     (r"Generating quicklook", "Initializing"),
     (r"Catalog names:|TIC \d+", "Resolving target"),
     (r"Available sectors:|All available lightcurves", "Searching lightcurves"),
     (r"Downloading|search_lightcurve|Using .+ TPF", "Downloading data"),
+    (r"ePSF fitting", EPSF_STEP_LABEL),
     (r"Plotting raw light curve|raw lc", "Raw light curve"),
     (r"flatten|biweight|cosine|Flattening", "Flattening light curve"),
     (r"Lomb-Scargle|GLS|Generalized Lomb", "Lomb-Scargle periodogram"),
@@ -681,10 +658,7 @@ def delete_job(target):
 
     # Drop the SQLite history row (best-effort).
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("DELETE FROM job_history WHERE name = ?", (target,))
-        conn.commit()
-        conn.close()
+        _jobs_db.delete(target)
     except sqlite3.DatabaseError as e:
         logger.warning(f"Failed to delete job_history row for {target}: {e}")
 
@@ -813,6 +787,15 @@ def ws_log(ws, target):
             step_label = PIPELINE_STEPS[step_idx][1] if step_idx >= 0 else "Starting"
             pct = int(((step_idx + 1) / step_total) * 100) if step_idx >= 0 else 0
 
+            # Fine-grained sub-progress within the long TGLC ePSF step:
+            # interpolate the bar from the "ePSF fitting: N/M (X%)" log lines.
+            if step_idx >= 0 and PIPELINE_STEPS[step_idx][1] == EPSF_STEP_LABEL:
+                epsf_pcts = re.findall(r"ePSF fitting: \d+/\d+ \((\d+)%\)", full_log)
+                if epsf_pcts:
+                    frac = int(epsf_pcts[-1]) / 100.0
+                    pct = int(((step_idx + frac) / step_total) * 100)
+                    step_label = f"{EPSF_STEP_LABEL} ({epsf_pcts[-1]}%)"
+
             # Record step timing transitions
             if step_idx > last_step_idx:
                 now = time.time()
@@ -935,7 +918,6 @@ def _parse_tls_filename(stem):
     recoverable.
     """
     SPOC_FLUX = {"pdcsap", "sap"}
-    HLSP_PIPELINES = {"qlp", "tglc", "tasoc", "cdips", "pathos", "tess-spoc", "t16"}
     # Trailing "_tls" already stripped by Path.stem callers
     if stem.endswith("_tls"):
         stem = stem[: -len("_tls")]

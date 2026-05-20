@@ -1,0 +1,15 @@
+{# Shared Jinja macros for repeated UI patterns. Import with:
+     {% import 'partials/_components.html' as components %}
+#}
+
+{% macro page_loading(title='Loading…', subtitle='', subtitle_id=None) %}
+<div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
+  <div class="panel">
+    <div class="pl-spinner"></div>
+    <div class="text">
+      <strong>{{ title }}</strong>
+      <small{% if subtitle_id %} id="{{ subtitle_id }}"{% endif %}>{{ subtitle }}</small>
+    </div>
+  </div>
+</div>
+{% endmacro %}

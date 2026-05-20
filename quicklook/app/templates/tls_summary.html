@@ -1,11 +1,8 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TLS Results Summary</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}summary{% endblock %}
+{% block title %}TLS Results Summary{% endblock %}
+{% block head %}
   <style>
     /* Theme vars, * box-sizing, .btn*, .theme-toggle, @keyframes spin
        and .page-loading family live in static/css/quicklook.css. */
@@ -263,12 +260,9 @@
       .search { min-width: 0; flex: 1; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
 
-{% set current = 'summary' %}
-{% include 'partials/topbar.html' %}
-
+{% block content %}
 <div class="top-bar">
   <div class="controls">
     <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
@@ -430,7 +424,9 @@
 </div>
 {% endif %}
 
-<script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% endblock %}
+
+{% block scripts %}
 <script>
 /* =========================================================================
    Persist the selected TLS directory across page navigations.
@@ -716,15 +712,7 @@ if (table) {
 }
 </script>
 
-<div class="page-loading" id="pageLoading" role="status" aria-live="polite" aria-hidden="true">
-  <div class="panel">
-    <div class="pl-spinner"></div>
-    <div class="text">
-      <strong>Loading TLS results…</strong>
-      <small id="pageLoadingPath"></small>
-    </div>
-  </div>
-</div>
+{{ components.page_loading('Loading TLS results…', subtitle_id='pageLoadingPath') }}
 
 <div class="modal-backdrop" id="browseModal" role="dialog" aria-modal="true" aria-labelledby="browseTitle">
   <div class="modal">
@@ -909,5 +897,4 @@ if (table) {
   });
 })();
 </script>
-</body>
-</html>
+{% endblock %}
