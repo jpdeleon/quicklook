@@ -644,7 +644,9 @@ class TessQuickLook:
         logger.info("No TGLC products on MAST; running local ePSF extraction...")
         self.pipeline = "tglc"
         self.all_pipelines = {"TGLC"}
-        sector_arg = None if sector in (None, -1) else int(sector)
+        # Pass the request through to get_tglc_lc unchanged: None -> first
+        # available, -1 -> latest available, positive int -> that sector.
+        sector_arg = None if sector is None else int(sector)
         # flux_type carries the GUI's aperture/psf choice for TGLC; anything
         # else (e.g. a stale "pdcsap") falls back to automatic selection.
         photometry = self.flux_type if self.flux_type in ("aperture", "psf", "auto") else "auto"

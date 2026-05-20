@@ -157,12 +157,17 @@ def _job_worker():
 _worker_thread = Thread(target=_job_worker, daemon=True)
 _worker_thread.start()
 
+# Label for the TGLC local ePSF-extraction step. Kept as a named constant
+# because the websocket handler matches on it for fine-grained sub-progress.
+EPSF_STEP_LABEL = "Extracting ePSF light curve"
+
 # Pipeline step definitions for progress tracking.
 PIPELINE_STEPS = [
     (r"Generating quicklook", "Initializing"),
     (r"Catalog names:|TIC \d+", "Resolving target"),
     (r"Available sectors:|All available lightcurves", "Searching lightcurves"),
     (r"Downloading|search_lightcurve|Using .+ TPF", "Downloading data"),
+    (r"ePSF fitting", EPSF_STEP_LABEL),
     (r"Plotting raw light curve|raw lc", "Raw light curve"),
     (r"flatten|biweight|cosine|Flattening", "Flattening light curve"),
     (r"Lomb-Scargle|GLS|Generalized Lomb", "Lomb-Scargle periodogram"),
@@ -781,6 +786,15 @@ def ws_log(ws, target):
             step_idx, step_total = _detect_step(full_log)
             step_label = PIPELINE_STEPS[step_idx][1] if step_idx >= 0 else "Starting"
             pct = int(((step_idx + 1) / step_total) * 100) if step_idx >= 0 else 0
+
+            # Fine-grained sub-progress within the long TGLC ePSF step:
+            # interpolate the bar from the "ePSF fitting: N/M (X%)" log lines.
+            if step_idx >= 0 and PIPELINE_STEPS[step_idx][1] == EPSF_STEP_LABEL:
+                epsf_pcts = re.findall(r"ePSF fitting: \d+/\d+ \((\d+)%\)", full_log)
+                if epsf_pcts:
+                    frac = int(epsf_pcts[-1]) / 100.0
+                    pct = int(((step_idx + frac) / step_total) * 100)
+                    step_label = f"{EPSF_STEP_LABEL} ({epsf_pcts[-1]}%)"
 
             # Record step timing transitions
             if step_idx > last_step_idx:

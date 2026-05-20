@@ -1126,8 +1126,11 @@ def fit_lc(
             A_cut, e_psf[j]
         )
     aperture = aperture.reshape((len(source.time), up - down, right - left))
-    target_5x5 = np.dot(A_target, np.nanmedian(e_psf, axis=0)).reshape(cut_size, cut_size)
-    field_stars_5x5 = np.dot(A_cut, np.nanmedian(e_psf, axis=0)).reshape(cut_size, cut_size)
+    # Reshape to the actual cut-region shape, which is smaller than 5x5 when
+    # the star sits near a cutout edge; the block below pads it back to 5x5.
+    region_shape = (up - down, right - left)
+    target_5x5 = np.dot(A_target, np.nanmedian(e_psf, axis=0)).reshape(region_shape)
+    field_stars_5x5 = np.dot(A_cut, np.nanmedian(e_psf, axis=0)).reshape(region_shape)
     if target_5x5.shape != (cut_size, cut_size):
         # Pad with nans to get to 5x5 shape
         # Pad amount in a direction is (expected_num_pix) - (actual_num_pix)
@@ -1150,7 +1153,7 @@ def fit_lc(
     over_size = psf_size * factor + 1
     if near_edge:  # TODO: near_edge
         psf_lc = np.zeros(len(source.time))
-        psf_lc[:] = np.NaN
+        psf_lc[:] = np.nan
         e_psf_1d = np.nanmedian(e_psf[:, : over_size**2], axis=0).reshape(over_size, over_size)
         portion = (
             (36 / 49) * np.nansum(e_psf_1d[8:15, 8:15]) / np.nansum(e_psf_1d)
@@ -1302,7 +1305,7 @@ def fit_lc_float_field(
     over_size = psf_size * factor + 1
     if near_edge:  # TODO: near_edge
         psf_lc = np.zeros(len(source.time))
-        psf_lc[:] = np.NaN
+        psf_lc[:] = np.nan
         e_psf_1d = np.nanmedian(e_psf[:, : over_size**2], axis=0).reshape(over_size, over_size)
         portion = (
             (36 / 49) * np.nansum(e_psf_1d[8:15, 8:15]) / np.nansum(e_psf_1d)
@@ -1988,7 +1991,9 @@ def get_tglc_lc(
     target_name : str
         Target identifier resolved by MAST (e.g. "TIC 12345", "TOI-1234").
     sector : int or None
-        TESS sector.  ``None`` uses the first available sector.
+        TESS sector to extract.  ``None`` selects the first available
+        sector, ``-1`` the latest available sector, and a positive
+        integer that specific sector.
     size : int
         Side length in pixels of the TESScut FFI cutout (default 50).
     limit_mag : float
@@ -2034,12 +2039,21 @@ def get_tglc_lc(
         os.makedirs(source_dir, exist_ok=True)
         os.makedirs(epsf_dir, exist_ok=True)
     slug = target_name.replace(" ", "")
-    sector_tag = "auto" if sector is None else f"s{int(sector)}"
+    # Resolve the sector request. None -> first available, -1 -> latest
+    # available (matching the GUI's "-1 = latest" convention), a positive
+    # integer -> that specific sector. Passing "first"/"last" (rather than
+    # None) makes TESScut download only that one sector's cutout instead of
+    # one cutout per observed sector.
+    if sector is None:
+        source_sector_arg = "first"
+        sector_tag = "first"
+    elif int(sector) == -1:
+        source_sector_arg = "last"
+        sector_tag = "last"
+    else:
+        source_sector_arg = int(sector)
+        sector_tag = f"s{int(sector)}"
     source_pkl = os.path.join(source_dir, f"source_{slug}_{sector_tag}_size{size}.pkl")
-    # sector=None means "first available". Pass "first" to Source_cut so
-    # TESScut downloads only that one sector's cutout; passing None makes it
-    # fetch a cutout for *every* observed sector (very slow, rarely intended).
-    source_sector_arg = "first" if sector is None else sector
 
     # 1. Build (or load) the Source_cut object (downloads FFI cutout + Gaia).
     source = None

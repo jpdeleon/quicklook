@@ -1126,11 +1126,39 @@ function setProgress(pct, label, state, eta) {
 /* =========================================================================
    Cancel
    ========================================================================= */
-cancelBtn.addEventListener('click', () => {
+cancelBtn.addEventListener('click', async () => {
+  const target = activeTarget;
+  // Fast path over the websocket; HTTP path works even if it has dropped.
   if (activeWs && activeWs.readyState === WebSocket.OPEN) {
     activeWs.send(JSON.stringify({action: 'cancel'}));
   }
-  if (activeTarget) fetch('/cancel/' + activeTarget, {method: 'POST'});
+  if (!target) return;
+  cancelBtn.disabled = true;
+  let cancelled = true;
+  try {
+    const res = await fetch('/cancel/' + target, {method: 'POST'});
+    cancelled = res.ok;
+  } catch (err) {
+    /* network error — still tear down the running UI below */
+  }
+  // Close the socket so its 'finish' handler does not double-fire, then
+  // update the GUI directly. This also recovers the case where the socket
+  // had already dropped during a long job, leaving the GUI stuck.
+  if (activeWs) {
+    try { activeWs.close(); } catch (e) { /* already closed */ }
+    activeWs = null;
+  }
+  jobRunning = false;
+  sessionStorage.removeItem('ql-active-target');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Run QuickLook';
+  if (cancelled) {
+    setStatus('cancelled', 'Cancelled ' + target);
+    setProgress(100, 'Cancelled', 'cancelled', null);
+    showToast('Cancelled: ' + target, 'info');
+  }
+  refreshQueue();
+  cancelBtn.disabled = false;
 });
 
 cancelAllBtn.addEventListener('click', async () => {
