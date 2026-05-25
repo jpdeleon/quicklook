@@ -29,7 +29,7 @@ from astropy.coordinates import SkyCoord
 from astroquery.gaia import Gaia
 from astroquery.mast import Catalogs, Tesscut
 from wotan import flatten
-from tqdm import trange
+from tqdm.auto import tqdm, trange
 
 Gaia.ROW_LIMIT = -1
 Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"  # TODO: dr3 MJD = 2457388.5, TBJD = 388.5
@@ -73,17 +73,26 @@ def convert_gaia_id(catalogdata_tic):
     logger.info(f"Converting {len(gaia_array)} Gaia DR2 IDs to DR3 via TAP...")
     try:
         segment = (len(gaia_array) - 1) // 10000
-        gaia_tuple = tuple(gaia_array[:10000])
-        results = _gaia_async_query(query.format(gaia_ids=gaia_tuple))
-        for i in range(segment):
-            gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
-            gaia_tuple_cut = tuple(gaia_array_cut)
-            results = vstack(
-                [
-                    results,
-                    _gaia_async_query(query.format(gaia_ids=gaia_tuple_cut)),
-                ]
-            )
+        n_batches = segment + 1
+        with tqdm(
+            total=n_batches,
+            desc=f"Gaia DR2->DR3 ({len(gaia_array)} IDs)",
+            unit="batch",
+            leave=False,
+        ) as pbar:
+            gaia_tuple = tuple(gaia_array[:10000])
+            results = _gaia_async_query(query.format(gaia_ids=gaia_tuple))
+            pbar.update(1)
+            for i in range(segment):
+                gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
+                gaia_tuple_cut = tuple(gaia_array_cut)
+                results = vstack(
+                    [
+                        results,
+                        _gaia_async_query(query.format(gaia_ids=gaia_tuple_cut)),
+                    ]
+                )
+                pbar.update(1)
         tic_ids = []
         for j in range(len(results)):
             tic_ids.append(
@@ -1549,18 +1558,33 @@ def bg_mod(
     return local_bg, aper_lc, psf_lc, cal_aper_lc, cal_psf_lc
 
 
-def _fit_epsf_series(A, source, over_size, bg_dof, power=0.8, no_progress_bar=False):
+def _fit_epsf_series(
+    A,
+    source,
+    over_size,
+    bg_dof,
+    power=0.8,
+    no_progress_bar=False,
+    cancel_check=None,
+):
     """Fit the effective PSF at every cadence.
 
     Shows a tqdm status bar in interactive terminals and additionally emits
     a loguru progress line every ~5% of cadences, so progress stays visible
     when stdout is captured to a log file (e.g. the web GUI job log) where
     the tqdm bar does not render.
+
+    If ``cancel_check`` is provided and returns truthy at any cadence, the
+    loop aborts immediately with ``InterruptedError`` so an external
+    cancellation (e.g. the web GUI's Cancel button) actually stops the
+    compute instead of waiting for it to finish naturally.
     """
     ntime = len(source.time)
     e_psf = np.zeros((ntime, over_size**2 + bg_dof))
     log_every = max(1, ntime // 20)
     for i in trange(ntime, desc="Fitting ePSF", disable=no_progress_bar):
+        if cancel_check is not None and cancel_check():
+            raise InterruptedError(f"ePSF fitting cancelled at cadence {i}/{ntime}")
         e_psf[i] = fit_psf(A, source, over_size, power=power, time=i)
         done = i + 1
         if not no_progress_bar and (done % log_every == 0 or done == ntime):
@@ -1977,6 +2001,7 @@ def get_tglc_lc(
     cache_dir=None,
     use_cache=True,
     verbose=True,
+    cancel_check=None,
 ):
     """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
 
@@ -2099,7 +2124,13 @@ def get_tglc_lc(
             logger.warning(f"Cached ePSF unreadable ({e}); refitting.")
     if e_psf is None:
         e_psf = _fit_epsf_series(
-            A, source, over_size, bg_dof, power=0.8, no_progress_bar=not verbose
+            A,
+            source,
+            over_size,
+            bg_dof,
+            power=0.8,
+            no_progress_bar=not verbose,
+            cancel_check=cancel_check,
         )
         if use_cache:
             try:

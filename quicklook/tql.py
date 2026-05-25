@@ -99,6 +99,7 @@ class TessQuickLook:
         quality_bitmask: str = "default",
         outdir: str = ".",
         tls_use_threads: int = None,
+        cancel_check=None,
     ):
         # start timer
         self.timer_start = timer()
@@ -119,6 +120,10 @@ class TessQuickLook:
         self.quality_bitmask = quality_bitmask
         self.flatten_method = flatten_method
         self.tls_use_threads = tls_use_threads
+        # Optional zero-arg callable polled inside the long TGLC ePSF loop;
+        # returning truthy raises InterruptedError so the worker thread
+        # actually stops when the GUI Cancel button is clicked.
+        self.cancel_check = cancel_check
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
@@ -731,6 +736,7 @@ class TessQuickLook:
             sector=sector_arg,
             photometry=photometry,
             verbose=self.verbose,
+            cancel_check=getattr(self, "cancel_check", None),
         )
         self.sector = lc.sector
         self.all_sectors = [lc.sector]

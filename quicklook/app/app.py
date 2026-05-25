@@ -301,6 +301,11 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             overwrite=kwargs.get("overwrite", False),
             outdir=outdir,
             suffix=suffix,
+            # Pass the Event's bound is_set so the long TGLC ePSF loop can
+            # actually interrupt when the GUI Cancel button is clicked,
+            # instead of running to completion and only honouring the
+            # cancel at the next phase boundary.
+            cancel_check=cancel_event.is_set,
         )
         if cancel_event.is_set():
             raise InterruptedError("Job cancelled")
@@ -405,6 +410,22 @@ def _parse_params(form):
     }
 
 
+def _job_dedup_signature(params):
+    """Key fields that make a submission semantically distinct.
+
+    Two non-terminal jobs with the same target name AND the same signature
+    are considered true duplicates; the same name with a different signature
+    (e.g. SPOC vs TGLC, different sector, different flux/photometry) is a
+    different job and gets auto-disambiguated rather than rejected.
+    """
+    return (
+        params.get("pipeline", "spoc"),
+        params.get("sector", -1),
+        params.get("fluxtype", "pdcsap"),
+        params.get("exptime", None),
+    )
+
+
 def _submit_job(name, params):
     """Enqueue a job for serial execution. Returns the job name."""
     cancel_event = Event()
@@ -448,9 +469,37 @@ def submit_job():
     name = sanitize_target_name(name)
     params = _parse_params(form)
 
+    new_sig = _job_dedup_signature(params)
     with jobs_lock:
-        if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
-            return jsonify({"ok": False, "reason": f"Job '{name}' is already running"}), 409
+        existing = jobs.get(name)
+        if existing and existing["status"] not in ("done", "error", "cancelled"):
+            if _job_dedup_signature(existing.get("params", {})) == new_sig:
+                # True duplicate: same name AND same key settings.
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "reason": (f"Job '{name}' with these settings " "is already running"),
+                        }
+                    ),
+                    409,
+                )
+            # Same target, different settings (e.g. SPOC vs TGLC). Auto-pick
+            # an unused name so both can coexist in the queue.
+            base = f"{name}_{params.get('pipeline', 'spoc')}"
+            candidate = base
+            n = 2
+            while True:
+                other = jobs.get(candidate)
+                if other is None or other["status"] in (
+                    "done",
+                    "error",
+                    "cancelled",
+                ):
+                    break
+                candidate = f"{base}_{n}"
+                n += 1
+            name = candidate
 
     _submit_job(name, params)
     return jsonify({"ok": True, "name": name})

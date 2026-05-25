@@ -151,6 +151,11 @@
       border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;
     }
     .status-bar.running { display: flex; background: var(--status-run-bg); border: 1px solid var(--status-run-border); color: var(--status-run-fg); }
+    /* Queued reuses the running styling so the bar stays visible while the
+       watched job is waiting for the worker — without this rule the
+       missing-class fallback to base `display:none` made the bar flicker
+       every websocket update (~1.5 s). */
+    .status-bar.queued { display: flex; background: var(--status-run-bg); border: 1px solid var(--status-run-border); color: var(--status-run-fg); }
     .status-bar.done { display: flex; background: var(--status-done-bg); border: 1px solid var(--status-done-border); color: var(--status-done-fg); }
     .status-bar.error, .status-bar.cancelled {
       display: flex; background: var(--status-err-bg); border: 1px solid var(--status-err-border); color: var(--status-err-fg);
@@ -1096,10 +1101,15 @@ logToggle.addEventListener('click', () => {
    ========================================================================= */
 function setStatus(state, message) {
   statusBar.className = 'status-bar ' + state;
+  // Spin only while the job is actively executing.
   statusSpinner.style.display = state === 'running' ? 'block' : 'none';
   statusText.textContent = message;
-  cancelBtn.style.display = state === 'running' ? '' : 'none';
-  cancelAllBtn.style.display = state === 'running' ? '' : 'none';
+  // Cancel is also valid for a queued job (the backend accepts it), and
+  // showing the buttons consistently across running/queued avoids any
+  // flicker when status alternates between the two on websocket updates.
+  const inFlight = state === 'running' || state === 'queued';
+  cancelBtn.style.display = inFlight ? '' : 'none';
+  cancelAllBtn.style.display = inFlight ? '' : 'none';
 }
 
 function formatETA(seconds) {
@@ -1322,6 +1332,11 @@ form.addEventListener('submit', async (e) => {
     if (data.ok) {
       showToast('Job submitted: ' + data.name, 'info');
       connectWs(data.name);
+      // Re-enable Submit immediately so additional jobs can be queued while
+      // this one runs. Cancel still cancels the currently-watched job
+      // (running or queued); Cancel All clears the whole queue.
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Run QuickLook';
     } else {
       showToast(data.reason || 'Submission failed', 'error');
       submitBtn.disabled = false;
@@ -1634,6 +1649,10 @@ function connectWs(target) {
       setProgress(msg.progress, msg.step, msg.status, msg.eta);
       if (msg.status === 'running') {
         setStatus('running', 'Running analysis for ' + target + '...');
+      } else if (msg.status === 'queued') {
+        // Reflect queued state honestly instead of leaving the optimistic
+        // "Running analysis ..." text from connectWs() in place.
+        setStatus('queued', 'Queued: ' + target + ' (waiting for worker)');
       }
     } else if (msg.type === 'finish') {
       jobRunning = false;
