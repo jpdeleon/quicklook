@@ -295,7 +295,16 @@ class TessQuickLook:
         name = self.target_name.replace(" ", "")
         if name.lower()[:3] == "toi":
             name = f"TOI{str(self.toiid).zfill(4)}"
-        lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
+        # Filename "lctype" token. For SPOC it's the flux column (pdcsap/sap);
+        # for TGLC with an explicit aperture/PSF choice it's "tglc_aper" or
+        # "tglc_psf" so the two products of the same target/sector don't
+        # overwrite each other on disk. Otherwise it's just the pipeline name.
+        if self.pipeline == "spoc":
+            lctype = self.flux_type
+        elif self.pipeline == "tglc" and self.flux_type in ("aperture", "psf"):
+            lctype = "tglc_aper" if self.flux_type == "aperture" else "tglc_psf"
+        else:
+            lctype = self.pipeline
         fp = Path(
             self.outdir,
             f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
@@ -576,28 +585,65 @@ class TessQuickLook:
         return sorted(set(all_sectors))
 
     def _download_with_retry(self, download_callable, max_retries=1):
-        """Run a lightkurve download; if it fails with a "corrupt cached
-        file" error (partial FITS left over from an interrupted prior
-        download), delete the offending file from
-        ``~/.lightkurve/cache/`` and retry once.
+        """Run a lightkurve download; if it fails with a "may be corrupt"
+        error, diagnose the failure (FITS truncation vs. lightkurve
+        adapter error), quarantine the suspect file, and retry once if
+        retrying could plausibly help.
 
-        Lightkurve does not self-heal these files — every subsequent
-        download attempt re-uses the corrupt copy and fails the same
-        way, requiring manual cleanup. This wrapper makes that
-        automatic.
+        Lightkurve's ``io/read.py`` re-labels *any* exception from its
+        format-specific reader as "this file may be corrupt — remove
+        it." That message is misleading: a file that passes
+        ``astropy.io.fits.verify('exception')`` is not corrupt — the
+        adapter just failed, and retrying with the same versions will
+        fail the same way. Distinguish the two cases:
+
+        * **truncated** — astropy verify also fails. Genuine partial
+          download. Quarantine and retry.
+        * **adapter_error** — astropy verify passes. Lightkurve's
+          adapter is at fault (schema drift, version skew). Quarantine
+          for post-mortem and raise immediately; no retry.
+        * **missing** — file already gone (e.g. previous quarantine
+          step ran). Treat like truncated for retry purposes.
+
+        Quarantined files are renamed to
+        ``<original>.bad-<unix_ts>`` so the on-disk evidence survives
+        the next run.
 
         Parameters
         ----------
         download_callable : Callable
-            A zero-arg callable that performs the actual lightkurve
-            download (typically a lambda wrapping
-            ``search_result[idx].download(...)``).
+            Zero-arg callable that performs the lightkurve download.
         max_retries : int
-            How many times to retry after a corrupt-file deletion.
-            Defaults to 1 — we don't loop forever in case the failure
-            mode isn't actually a stale-cache problem.
+            How many times to retry after a quarantine. Defaults to 1.
         """
         from lightkurve.utils import LightkurveError
+        from astropy.io import fits
+        from time import time as _now
+
+        def _diagnose(path):
+            if not path.exists():
+                return "missing"
+            try:
+                with fits.open(path) as hdul:
+                    for hdu in hdul:
+                        hdu.verify("exception")
+                return "adapter_error"
+            except Exception:
+                return "truncated"
+
+        def _quarantine(path):
+            ts = int(_now())
+            dest = path.with_suffix(path.suffix + f".bad-{ts}")
+            try:
+                path.rename(dest)
+                return dest
+            except OSError as rename_err:
+                logger.warning(f"Could not quarantine {path}: {rename_err}. Deleting instead.")
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                return None
 
         for attempt in range(max_retries + 1):
             try:
@@ -614,29 +660,59 @@ class TessQuickLook:
                     raise
 
                 bad_path = Path(m.group(1))
-                # Always try to delete the corrupt file, regardless of
-                # whether we're going to retry or re-raise. This is the
-                # fix: previously the last attempt re-raised *before*
-                # deleting, leaving a corrupt .fits on disk after the
-                # retry's fresh download was also corrupt.
-                if bad_path.exists():
-                    try:
-                        bad_path.unlink()
-                        logger.warning(f"Deleted corrupt cached lightcurve: {bad_path}")
-                    except OSError as del_err:
+                verdict = _diagnose(bad_path)
+
+                if verdict == "adapter_error":
+                    # File is structurally valid. Lightkurve's TGLC/SPOC
+                    # adapter raised something the read wrapper turned
+                    # into a "corrupt" message. Retrying won't help.
+                    quarantined = _quarantine(bad_path)
+                    where = (
+                        f"Quarantined the suspect file at: {quarantined}"
+                        if quarantined is not None
+                        else "Quarantine failed; file removed from cache"
+                    )
+                    raise LightkurveError(
+                        f"Lightkurve reported '{bad_path.name}' as corrupt, but "
+                        f"astropy.io.fits.verify('exception') passes — the FITS "
+                        f"file is structurally valid. This is an adapter-level "
+                        f"failure (likely a lightkurve/astropy version skew or an "
+                        f"upstream HLSP schema change), not an interrupted "
+                        f"download. Retrying with the same package versions will "
+                        f"fail the same way. {where}. "
+                        f"Next steps: (1) inspect the quarantined file with "
+                        f"astropy.io.fits.info() to confirm the schema, "
+                        f"(2) check for a lightkurve update, or "
+                        f"(3) for TGLC, use the local ePSF fallback "
+                        f"(_get_tglc_lc_fallback) which bypasses the HLSP adapter."
+                    ) from e
+
+                # verdict in ("truncated", "missing") — quarantine and retry.
+                if verdict == "truncated":
+                    quarantined = _quarantine(bad_path)
+                    if quarantined is not None:
                         logger.warning(
-                            f"Could not delete corrupt cache file " f"{bad_path}: {del_err}"
+                            f"FITS verify failed (truncated/corrupt). "
+                            f"Quarantined to {quarantined}."
                         )
-                        # If we can't delete, retrying won't help either.
-                        raise e from del_err
                 else:
-                    logger.info(f"Corrupt cache file reported but missing on disk: " f"{bad_path}")
+                    logger.info(f"Suspect cache file already missing on disk: {bad_path}")
 
                 if attempt >= max_retries:
-                    # Out of retries — re-raise. The freshly-downloaded
-                    # file (if any) has already been deleted above so
-                    # the next run starts from a clean cache.
-                    raise
+                    attempts = max_retries + 1
+                    raise LightkurveError(
+                        f"MAST returned a truncated/corrupt {bad_path.name} on all "
+                        f"{attempts} attempt(s). Suspect copies have been "
+                        f"quarantined alongside the cache as "
+                        f"<name>.bad-<timestamp> for inspection. "
+                        f"This usually means the upstream HLSP product is "
+                        f"temporarily unavailable or the network dropped mid-download. "
+                        f"Try: (1) re-run the same command in a few minutes, "
+                        f"(2) pick a different sector with --sector, or "
+                        f"(3) for TGLC, the local ePSF fallback "
+                        f"(_get_tglc_lc_fallback) can recompute the light curve "
+                        f"directly from the FFI cutout."
+                    ) from e
                 logger.info(f"Retrying download (attempt " f"{attempt + 2}/{max_retries + 1})...")
 
     def _get_tglc_lc_fallback(self, sector):

@@ -161,8 +161,8 @@ def main():
     parser.add_argument(
         "--fluxtype",
         type=str,
-        help="type of lightcurve",
-        choices=["pdcsap", "sap"],
+        help="type of lightcurve (SPOC: pdcsap/sap; TGLC: aperture/psf/auto)",
+        choices=["pdcsap", "sap", "aperture", "psf", "auto"],
         default="pdcsap",
     )
     parser.add_argument(
