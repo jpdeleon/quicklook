@@ -970,7 +970,7 @@ def plot_gaia_sources_on_survey(
         ylim=(0, my),
     )
     ax.set_title(
-        f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')",
+        f"{survey.upper()} survey (FOV={fov_rad.value:.2g}' x {fov_rad.value:.2g}')",
         y=0.99,
     )
     return ax

@@ -1021,7 +1021,10 @@ class TessQuickLook:
         else:
             # Logged unconditionally (not gated on verbose) so users can always
             # verify which prior values reached TLS when they enabled --use_priors.
-            logger.info(f"Using ExoFOP stellar priors for TLS: {kwargs}")
+            # Round to 2 significant figures for readability (display only; the
+            # full-precision kwargs are still returned to TLS).
+            pretty = {k: float(f"{v:.2g}") for k, v in kwargs.items()}
+            logger.info(f"Using ExoFOP stellar priors for TLS: {pretty}")
         return kwargs
 
     def init_gls(self):
@@ -1167,15 +1170,20 @@ class TessQuickLook:
             tmask = np.zeros_like(self.raw_lc.time.value, dtype=bool)
         return tmask
 
-    def make_summary_info(self):
-        """
-        Generate a summary string with the TLS results, stellar params,
-        and other useful information.
+    def _summary_sections(self):
+        """Build the summary as structured (label, value) rows per section.
+
+        Single source of truth for both the plain-text summary
+        (:meth:`make_summary_info`) and the rendered panel
+        (:meth:`_render_summary_panel`). Units use mathtext so they render
+        cleanly in matplotlib. TOI/TFOP reference values are emitted as their
+        own rows (rather than appended to the TLS value) so each row stays
+        short and the label/value columns line up.
 
         Returns
         -------
-        msg : str
-            A summary string with the results.
+        list of (str, list of (str, str))
+            ``[(section_title, [(label, value), ...]), ...]``
         """
         try:
             # Use the TIC stellar parameters as default
@@ -1210,108 +1218,199 @@ class TessQuickLook:
         meta = self.raw_lc.meta
         # Calculate the planet radius
         Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
-        # If the pipeline is Spoc or Tess-Spoc, correct for dilution
+        # If the pipeline is Spoc or Tess-Spoc, correct for dilution. Keep the
+        # applied contamination factor so it can be shown in the summary panel.
         if self.pipeline in ["spoc", "tess-spoc"]:
-            Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
+            contam_factor = np.sqrt(1 + meta["CROWDSAP"])
+            Rp_true = Rp * contam_factor
         else:
             # Otherwise, use the raw radius
+            contam_factor = None
             Rp_true = Rp
-        # Create the summary string
-        msg = "\nCandidate Properties\n"
-        msg += "-" * 30 + "\n"
-        text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector}"
-        text += f" in {self.all_sectors})"
-        msg += "\n".join(textwrap.wrap(text, 60))
-        msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
-        msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)"
-        if self.toi_period is not None:
-            msg += f", {self.toi_period[0]:.4f}" + r"$\pm$"
-            msg += f"{self.toi_period[1]:.4f} d ({self.ephem_source})\n"
-        else:
-            msg += "\n"
-        msg += f"T0={self.tls_results.T0:.4f} "
-        if self.toi_period is not None:
-            msg += f"(TLS), {self.toi_epoch[0]:.4f}" + r"$\pm$"
-            msg += f"{self.toi_epoch[1]:.4f} "
-            msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
-        else:
-            msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
-        msg += f"Duration={self.tls_results.duration * 24:.2f} hr (TLS)"
-        if self.toi_dur is not None:
-            msg += f", {self.toi_dur[0] * 24:.2f}" + r"$\pm$"
-            msg += f"{self.toi_dur[1] * 24:.2f} hr ({self.ephem_source})\n"
-        else:
-            msg += "\n"
-        msg += f"Depth={(1 - self.tls_results.depth) * 1e3:.2f} ppt (TLS)"
-        if self.toi_depth is not None:
-            msg += f", {self.toi_depth[0]:.1f}" + r"$\pm$"
-            msg += f"{self.toi_depth[1]:.1f} ppt (TFOP)\n"
-        else:
-            msg += "\n"
-        if (
-            (meta["FLUX_ORIGIN"].lower() == "pdcsap")
-            or (meta["FLUX_ORIGIN"].lower() == "sap")
-            or self.pipeline == "tglc"
-        ):
-            # msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 5
-            msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$ "
-            msg += f"= {Rp_true * u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
-        else:
-            msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
-            msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
 
-        if self.toi_rp is not None:
-            msg += (
-                f"Rp={self.toi_rp[0]:.2f}"
-                + r"$\pm$"
-                + f"{self.toi_rp[1]:.2f} "
-                + r"R$_{\oplus}$ "
-                + "(TFOP)\n"
+        pm = r"$\pm$"
+        r_earth = r"R$_{\oplus}$"
+        r_sun = r"R$_{\odot}$"
+        m_sun = r"M$_{\odot}$"
+        tls = self.tls_results
+
+        # --- Candidate properties ---
+        candidate = [
+            ("SDE", f"{tls.SDE:.2f}"),
+            ("Period (TLS)", f"{tls.period:.4f}{pm}{tls.period_uncertainty:.4f} d"),
+        ]
+        if self.toi_period is not None:
+            candidate.append(
+                (
+                    f"Period ({self.ephem_source})",
+                    f"{self.toi_period[0]:.4f}{pm}{self.toi_period[1]:.4f} d",
+                )
             )
-        msg += f"Odd-Even mismatch={self.tls_results.odd_even_mismatch:.2f}" + r"$\sigma$"
-        msg += "\n" * 2
-        msg += "Stellar Properties\n"
-        msg += "-" * 30 + "\n"
-        msg += (
-            f"Rstar={params['srad']:.2f}"
-            + r"$\pm$"
-            + f"{params['srad_e']:.2f} "
-            + r"R$_{\odot}$"
-            + " " * 5
+        # BTJD = BJD - TESS_TIME_OFFSET (2457000); compact unit keeps the value
+        # short enough for the half-width column.
+        candidate.append(("T0 (TLS)", f"{tls.T0:.4f} BTJD"))
+        if self.toi_period is not None:
+            candidate.append(
+                (
+                    f"T0 ({self.ephem_source})",
+                    f"{self.toi_epoch[0]:.4f}{pm}{self.toi_epoch[1]:.4f}",
+                )
+            )
+        candidate.append(("Duration (TLS)", f"{tls.duration * 24:.2f} hr"))
+        if self.toi_dur is not None:
+            candidate.append(
+                (
+                    f"Duration ({self.ephem_source})",
+                    f"{self.toi_dur[0] * 24:.2f}{pm}{self.toi_dur[1] * 24:.2f} hr",
+                )
+            )
+        candidate.append(("Depth (TLS)", f"{(1 - tls.depth) * 1e3:.2f} ppt"))
+        if self.toi_depth is not None:
+            candidate.append(
+                ("Depth (TFOP)", f"{self.toi_depth[0]:.1f}{pm}{self.toi_depth[1]:.1f} ppt")
+            )
+        # Contamination factor actually applied to undilute Rp (sqrt(1+CROWDSAP)
+        # for SPOC-family light curves); shown so the correction is auditable.
+        if contam_factor is not None:
+            candidate.append(("Contamination", f"{contam_factor:.2g}"))
+        is_undiluted = (meta["FLUX_ORIGIN"].lower() in ("pdcsap", "sap")) or (
+            self.pipeline == "tglc"
         )
-        msg += f"Teff={params.get('teff')}" + r"$\pm$" + f"{params.get('teff_e')} K" + "\n"
-        msg += (
-            f"Mstar={params['mass']:.2f}"
-            + r"$\pm$"
-            + f"{params['mass_e']:.2f} "
-            + r"M$_{\odot}$"
-            + " " * 5
-        )
-        msg += f"logg={params['logg']:.2f}" + r"$\pm$" + f"{params['logg_e']:.2f} cgs\n"
-        msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
+        if is_undiluted:
+            candidate.append(("Rp (TLS)", f"{Rp_true:.2f} {r_earth}"))
+        else:
+            candidate.append(("Rp (diluted)", f"{Rp:.2f} {r_earth}"))
+            candidate.append(("Rp (undiluted)", f"{Rp_true:.2f} {r_earth}"))
+        if self.toi_rp is not None:
+            candidate.append(
+                ("Rp (TFOP)", f"{self.toi_rp[0]:.2f}{pm}{self.toi_rp[1]:.2f} {r_earth}")
+            )
+        candidate.append(("Odd-Even", f"{tls.odd_even_mismatch:.2f} " + r"$\sigma$"))
+        candidate.append(("Sector", f"{self.sector} (in {self.all_sectors})"))
+
+        # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
-        msg += f"Vsini={per / t:.2f} km/s\n"
-        msg += f"Gaia DR2 ID={self.gaiaid}\n"
-        # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
-        msg += f"RA,Dec={float(coords[0]), float(coords[1])}"
         mags = self.exofop_data["magnitudes"][0]
-        msg += f", {mags['band']}mag={float(mags['value']):.1f}\n"
-        msg += f"Distance={params['dist']:.1f}" + r"$\pm$" + f"{params['dist_e']:.1f} pc\n"
-        # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
-        # D = gp.astrometric_excess_noise_sig
-        # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
+        stellar = [
+            ("Rstar", f"{params['srad']:.2f}{pm}{params['srad_e']:.2f} " + r_sun),
+            ("Mstar", f"{params['mass']:.2f}{pm}{params['mass_e']:.2f} " + m_sun),
+            ("Teff", f"{params.get('teff')}{pm}{params.get('teff_e')} K"),
+            ("logg", f"{params['logg']:.2f}{pm}{params['logg_e']:.2f} cgs"),
+            ("Distance", f"{params['dist']:.1f}{pm}{params['dist_e']:.1f} pc"),
+            ("Prot", f"{self.Prot_ls:.2f} d"),
+            ("Vsini", f"{per / t:.2f} km/s"),
+            ("RA, Dec", f"{float(coords[0])}, {float(coords[1])}"),
+            (f"{mags['band']}mag", f"{float(mags['value']):.1f}"),
+            ("Gaia DR2 ID", f"{self.gaiaid}"),
+        ]
         if self.nearby_star_sep is not None:
             if self.nearby_star_sep < 1 * u.arcmin:
                 val = self.nearby_star_sep.to(u.arcsec)
             else:
                 val = self.nearby_star_sep
-            msg += f"Nearby star sep={val:.1f}\n"
+            stellar.append(("Nearby sep", f"{val:.1f}"))
         if self.simbad_obj_type is not None:
-            msg += f"Simbad Object: {self.simbad_obj_type}"
-        # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
-        return msg
+            stellar.append(("SIMBAD type", f"{self.simbad_obj_type}"))
+
+        return [
+            ("Candidate Properties", candidate),
+            ("Stellar Properties", stellar),
+        ]
+
+    def make_summary_info(self):
+        """
+        Generate a plain-text summary of the TLS results, stellar params,
+        and other useful information.
+
+        Returns
+        -------
+        msg : str
+            A summary string with the results.
+        """
+        lines = []
+        for title, rows in self._summary_sections():
+            lines.append(title)
+            lines.append("-" * 30)
+            for label, value in rows:
+                lines.append(f"{label}: {value}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _render_summary_panel(self, ax):
+        """Render the summary as aligned label/value rows grouped by section.
+
+        Each section is placed in its own column (side by side) so the two
+        stacks stay short enough to fit the panel without overflowing the
+        bottom edge. Everything is positioned in axes-fraction coordinates
+        (robust to figure size), with bold section headers, a thin divider,
+        and a monospace value column so units and uncertainties line up. Font
+        size follows the figure default so the panel matches the neighbouring
+        plots; the row pitch is sized to the longest column so the content
+        always fits regardless of how many optional rows appear.
+        """
+        sections = self._summary_sections()
+        ax.axis("off")
+        n_cols = len(sections)
+        col_w = 1.0 / n_cols
+        header_fs = pl.rcParams["font.size"]
+        row_fs = header_fs - 1
+        # Pitch is set by the longest column plus generous overhead (header,
+        # divider and a comfortable bottom margin) so the final row of the
+        # tallest section stays clear of the panel's bottom edge instead of
+        # being clipped when the figure is compressed (e.g. by the suptitle).
+        max_units = max(len(rows) for _, rows in sections) + 5.0
+        top, bottom = 0.99, 0.03
+        dy = (top - bottom) / max_units
+        # Nudge each column leftward: the first (Candidate) column into the left
+        # margin so its labels line up with the "DEC" ylabel of the archival
+        # panel directly above, and the second (Stellar) column slightly left so
+        # it isn't pushed hard against the right edge.
+        col_pads = (-0.195, -0.10)
+        for col, (title, rows) in enumerate(sections):
+            x0 = col * col_w + (col_pads[col] if col < len(col_pads) else 0.0)
+            label_x = x0 + 0.01
+            value_x = x0 + 0.25
+            y = top
+            ax.text(
+                x0,
+                y,
+                title,
+                transform=ax.transAxes,
+                fontsize=header_fs,
+                fontweight="bold",
+                va="top",
+            )
+            y -= dy * 0.8
+            ax.plot(
+                [x0, x0 + col_w - 0.03],
+                [y, y],
+                transform=ax.transAxes,
+                color="0.7",
+                lw=0.8,
+            )
+            y -= dy * 0.9
+            for label, value in rows:
+                ax.text(
+                    label_x,
+                    y,
+                    label,
+                    transform=ax.transAxes,
+                    fontsize=row_fs,
+                    color="0.30",
+                    va="top",
+                )
+                ax.text(
+                    value_x,
+                    y,
+                    value,
+                    transform=ax.transAxes,
+                    fontsize=row_fs,
+                    family="monospace",
+                    va="top",
+                )
+                y -= dy
 
     def append_tls_results(self):
         """
@@ -1640,10 +1739,7 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Creating summary panel...")
         ax = axes.flatten()[8]
-        ax.axis([0, 10, 0, 10])
-        msg = self.make_summary_info()
-        ax.text(-1, 11, msg, ha="left", va="top", fontsize=10, wrap=True)
-        ax.axis("off")
+        self._render_summary_panel(ax)
         title = ""
         if self.toiid is not None:
             title = f"TOI {self.toiid} | "

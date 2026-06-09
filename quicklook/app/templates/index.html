@@ -639,7 +639,10 @@
   {% endif %}
 </div>
 
-<!-- footer-nav removed: navigation now lives in the unified topbar partial. -->
+<!-- Quick link to the full gallery below recent results -->
+<div class="footer-nav">
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse all results in Gallery &raquo;</a>
+</div>
 {% endblock %}
 
 {% block scripts %}

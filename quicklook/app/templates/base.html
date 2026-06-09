@@ -18,5 +18,8 @@
 </body>
 </html>
 {# Pages override topbar_current to highlight the active nav link.
-   Values: home | gallery | compare | summary #}
-{% block topbar_current %}{% endblock %}
+   Values: home | gallery | compare | summary
+   Wrapped in `if false` so the block is defined for self.topbar_current()
+   (used above) and child overrides, but never rendered inline here — without
+   this guard a page's value (e.g. "home") leaks as stray text after </html>. #}
+{% if false %}{% block topbar_current %}{% endblock %}{% endif %}
