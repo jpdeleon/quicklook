@@ -1,4 +1,5 @@
 import importlib.resources as pkg_resources
+import warnings
 from typing import List, Tuple
 import matplotlib.pyplot as pl
 import numpy as np
@@ -8,6 +9,7 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
+from astropy.utils.data import download_file
 import astropy.units as u
 
 # from astroplan.plots import plot_finder_image
@@ -31,6 +33,7 @@ __all__ = [
     "plot_periodogram",
     "plot_gaia_sources_on_tpf",
     "plot_gaia_sources_on_survey",
+    "query_simbad_region",
     "plot_archival_images",
     "plot_tls",
 ]
@@ -645,6 +648,126 @@ def plot_gaia_sources_on_tpf(
     return ax
 
 
+_SIMBAD_OTYPE_LABELS = None
+
+
+def _load_simbad_otype_labels():
+    """Map SIMBAD otype codes to condensed labels.
+
+    SIMBAD returns short otype codes (e.g. ``"EB*"``, ``"*"``), but the
+    bundled ``data/simbad_obj_types.csv`` maps these to readable condensed
+    labels (e.g. ``"EclBin"``, ``"Star"``). Returns ``{code: label}``; an
+    empty dict if the CSV can't be read, in which case callers fall back to
+    the raw code. Cached after first load.
+    """
+    global _SIMBAD_OTYPE_LABELS
+    if _SIMBAD_OTYPE_LABELS is not None:
+        return _SIMBAD_OTYPE_LABELS
+    labels = {}
+    try:
+        csv_path = pkg_resources.files("quicklook").joinpath("data", "simbad_obj_types.csv")
+        df = pd.read_csv(csv_path)
+        for code, label in zip(df["Id"].astype(str), df["Label"].astype(str)):
+            code, label = code.strip(), label.strip()
+            if code and label and label.lower() != "nan":
+                labels[code] = label
+    except Exception as e:  # missing/corrupt CSV must not break plotting
+        logger.warning(f"Could not load SIMBAD otype labels: {e}")
+    _SIMBAD_OTYPE_LABELS = labels
+    return labels
+
+
+def _simbad_radec_deg(df, ra_col, dec_col):
+    """Return SIMBAD ra/dec columns as float degrees.
+
+    astroquery returns ra/dec either as numeric degrees (newer versions) or
+    as sexagesimal strings (older versions); handle both.
+    """
+    ra_vals = df[ra_col]
+    dec_vals = df[dec_col]
+    if np.issubdtype(ra_vals.dtype, np.number):
+        return ra_vals.astype(float).to_numpy(), dec_vals.astype(float).to_numpy()
+    coords = SkyCoord(ra_vals.tolist(), dec_vals.tolist(), unit=(u.hourangle, u.deg))
+    return coords.ra.deg, coords.dec.deg
+
+
+def query_simbad_region(
+    target_coord,
+    radius=3 * u.arcmin,
+    exclude_otypes=("Star",),
+    verbose=True,
+):
+    """Cone-search SIMBAD for objects around a sky position.
+
+    Parameters
+    ----------
+    target_coord : astropy.coordinates.SkyCoord
+        center of the cone search
+    radius : astropy.units.Quantity
+        search radius (default 3 arcmin)
+    exclude_otypes : tuple of str
+        object types to drop from the result (default drops plain ``"Star"``)
+    verbose : bool
+        log progress
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        columns ``main_id``, ``ra``, ``dec`` (deg), ``otype``; ``None`` when
+        the query failed, returned nothing, or everything was excluded.
+
+    See also: https://simbad.cds.unistra.fr/guide/otypes.htx
+    """
+    from astroquery.simbad import Simbad
+
+    simbad = Simbad()
+    try:
+        simbad.add_votable_fields("otype")
+    except Exception:  # field already present / version differences
+        pass
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simbad.query_region(target_coord, radius=radius)
+    except Exception as e:  # network/parse errors must not break the plot
+        logger.warning(f"SIMBAD region query failed: {e}")
+        return None
+    if result is None or len(result) == 0:
+        return None
+
+    df = result.to_pandas()
+    cols = {c.lower(): c for c in df.columns}
+    ra_col, dec_col = cols.get("ra"), cols.get("dec")
+    otype_col, id_col = cols.get("otype"), cols.get("main_id")
+    if ra_col is None or dec_col is None or otype_col is None:
+        logger.warning(f"Unexpected SIMBAD columns: {list(df.columns)}")
+        return None
+
+    ra_deg, dec_deg = _simbad_radec_deg(df, ra_col, dec_col)
+    # SIMBAD returns short codes (e.g. "EB*"); translate to condensed labels
+    # (e.g. "EclBin"), falling back to the raw code when unmapped.
+    code = df[otype_col].astype(str).str.strip()
+    label_map = _load_simbad_otype_labels()
+    otype_label = code.map(lambda c: label_map.get(c, c))
+    out = pd.DataFrame(
+        {
+            "main_id": df[id_col].astype(str) if id_col else "",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "otype": otype_label,
+        }
+    )
+    # plot all otypes except the excluded ones (matched on the readable label,
+    # e.g. drop plain "Star")
+    out = out[~out["otype"].isin(set(exclude_otypes))].reset_index(drop=True)
+    if verbose:
+        logger.info(
+            f"SIMBAD returned {len(out)} object(s) within {radius} "
+            f"(excluding {exclude_otypes})."
+        )
+    return out if len(out) else None
+
+
 def plot_gaia_sources_on_survey(
     tpf,
     target_gaiaid,
@@ -656,6 +779,8 @@ def plot_gaia_sources_on_survey(
     sap_mask="pipeline",
     survey="dss1",
     ax=None,
+    show_simbad=True,
+    simbad_radius=3 * u.arcmin,
     color_aper="C0",  # pink
     figsize=None,
     invert_xaxis=False,
@@ -788,6 +913,46 @@ def plot_gaia_sources_on_survey(
             alpha=alpha,
             facecolor="none",
         )
+    # ----- overplot nearby non-stellar SIMBAD objects -----
+    if show_simbad:
+        simbad_objs = query_simbad_region(target_coord, radius=simbad_radius, verbose=verbose)
+        n_shown = 0
+        if simbad_objs is not None:
+            ny_img, nx_img = hdu.data.shape
+            for _, row in simbad_objs.iterrows():
+                pix = imgwcs.all_world2pix(np.c_[row["ra"], row["dec"]], 1)[0]
+                x, y = pix[0], pix[1]
+                # skip objects that fall outside the archival image FOV
+                if not (0 <= x < nx_img and 0 <= y < ny_img):
+                    continue
+                ax.scatter(
+                    x,
+                    y,
+                    marker="x",
+                    s=60,
+                    c="C9",
+                    linewidths=1.5,
+                    alpha=0.9,
+                    zorder=5,
+                )
+                ax.annotate(
+                    row["otype"],
+                    xy=(x, y),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color="C9",
+                    zorder=5,
+                )
+                n_shown += 1
+        if n_shown > 0:
+            logger.info(
+                f"Overplotted {n_shown} SIMBAD object(s) within the archival "
+                "image FOV. For description of Simbad object types, see "
+                "https://simbad.cds.unistra.fr/Pages/guide/otypes.htx"
+            )
+        else:
+            logger.info("No SIMBAD objects detected within the archival image FOV.")
     # orient such that north is up; left is east
     if invert_yaxis:
         # ax.invert_yaxis()
@@ -819,6 +984,7 @@ def get_dss_data(
     height=1,
     width=1,
     epoch="J2000",
+    cache=True,
 ):
     """
     Digitized Sky Survey (DSS)
@@ -831,6 +997,11 @@ def get_dss_data(
         image cutout height and width [arcmin]
     epoch : str
         default=J2000
+    cache : bool or str
+        cache the downloaded FITS in astropy's download cache
+        (``~/.astropy/cache``, scoped by ``pkgname="quicklook"``) so repeated
+        queries for the same target hit disk instead of the STScI server.
+        Pass ``cache="update"`` to force a re-download (e.g. on overwrite).
     Returns
     -------
     hdu
@@ -842,12 +1013,11 @@ def get_dss_data(
     url = f"{base_url}{survey}&r={ra}&d={dec}&e={epoch}&h={height}&w={width}"
     url += "&f=fits&c=none&s=on&fov=NONE&v3"
     try:
-        hdulist = fits.open(url)
-        # hdulist.info()
-
+        # The full URL encodes survey + coords + size, so it doubles as the
+        # cache key; astropy handles concurrency-safe writes and integrity.
+        path = download_file(url, cache=cache, pkgname="quicklook", show_progress=False)
+        hdulist = fits.open(path)
         hdu = hdulist[0]
-        # data = hdu.data
-        # header = hdu.header
         if plot:
             _ = plot_dss_image(hdu)
         return hdu

@@ -484,6 +484,8 @@
         <div class="full-width checkbox-group" style="margin-top: 4px;">
           <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
           <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
+          <label><input type="checkbox" name="use_priors" id="use_priors" checked> Use star priors (Ms, Rs)</label>
+          <span class="help-tip" tabindex="0" data-tip="Pass R_star and M_star (from ExoFOP, ±1σ) to TLS as priors so the transit search uses the host's real properties instead of Sun-like defaults.">?</span>
         </div>
         <div class="full-width">
           <div class="label-row">
@@ -541,6 +543,10 @@
           <label>
             <input type="checkbox" name="overwrite"> Overwrite
             <span class="help-tip" tabindex="0" data-tip="If an output file for this target already exists, re-run and replace it instead of skipping.">?</span>
+          </label>
+          <label>
+            <input type="checkbox" name="show_simbad" checked> Show SIMBAD
+            <span class="help-tip" tabindex="0" data-tip="Overplot nearby non-stellar SIMBAD objects (within the archival image FOV) on the QuickLook archival image, labelled by object type (e.g. EclBin).">?</span>
           </label>
         </div>
       </div>
@@ -783,7 +789,7 @@ const PERSIST_FIELDS = [
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
   'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad'];
 
 function saveFormState() {
   const state = {};
@@ -813,6 +819,7 @@ function resetFormDefaults() {
   form.elements['flatten_method'].value = 'biweight';
   form.elements['save'].checked = true;
   form.elements['verbose'].checked = true;
+  form.elements['show_simbad'].checked = true;
   form.elements['each_sector'].checked = false;
   form.elements['each_pipeline'].checked = false;
   showToast('Form reset to defaults', 'info');
@@ -1533,6 +1540,10 @@ async function refreshQueue() {
     if (jobs.length === 0) { queueSection.style.display = 'none'; return; }
 
     queueSection.style.display = '';
+    // Track the currently-running job so the "Queued: X (waiting for worker)"
+    // status line can name *which* job the single worker is busy on.
+    const runningJob = jobs.find(j => j.status === 'running');
+    window._runningJobName = runningJob ? runningJob.name : null;
     const pendingCount = jobs.filter(j => isPending(j.status)).length;
     const folded = resolveFolded(jobs.length);
     const visibleJobs = folded ? jobs.filter(j => isPending(j.status)) : jobs;
@@ -1651,8 +1662,14 @@ function connectWs(target) {
         setStatus('running', 'Running analysis for ' + target + '...');
       } else if (msg.status === 'queued') {
         // Reflect queued state honestly instead of leaving the optimistic
-        // "Running analysis ..." text from connectWs() in place.
-        setStatus('queued', 'Queued: ' + target + ' (waiting for worker)');
+        // "Running analysis ..." text from connectWs() in place. If the
+        // single worker is busy on another job, name it so the user knows
+        // why their queued job isn't starting.
+        const busy = window._runningJobName;
+        const tail = (busy && busy !== target)
+          ? ' (worker busy on ' + busy + ')'
+          : ' (waiting for worker)';
+        setStatus('queued', 'Queued: ' + target + tail);
       }
     } else if (msg.type === 'finish') {
       jobRunning = false;

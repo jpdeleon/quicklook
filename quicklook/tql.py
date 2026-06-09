@@ -90,6 +90,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
+        show_simbad: bool = False,
         show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
@@ -99,6 +100,7 @@ class TessQuickLook:
         quality_bitmask: str = "default",
         outdir: str = ".",
         tls_use_threads: int = None,
+        use_star_priors: bool = False,
         cancel_check=None,
     ):
         # start timer
@@ -120,15 +122,18 @@ class TessQuickLook:
         self.quality_bitmask = quality_bitmask
         self.flatten_method = flatten_method
         self.tls_use_threads = tls_use_threads
+        self.use_star_priors = use_star_priors
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
         self.cancel_check = cancel_check
+        self._check_cancel("before light-curve download")
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
             exptime=self.exptime,  # cadence=cadence
         )
+        self._check_cancel("after light-curve download")
         self.overwrite = overwrite
         self.outdir = outdir
         self.suffix = suffix
@@ -159,8 +164,10 @@ class TessQuickLook:
             self.raw_lc = self.raw_lc[~self.tmask]
             # update tmask
             self.tmask = self.get_transit_mask()
+        self._check_cancel("before flattening light curve")
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
+        self._check_cancel("after flattening light curve")
         self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
         flat_time = self.flat_lc.time.value
         self._flat_time_min = flat_time.min()
@@ -170,7 +177,9 @@ class TessQuickLook:
             if Porb_limits is None
             else Porb_limits[1]
         )
+        self._check_cancel("before TLS transit search")
         self.run_tls()
+        self._check_cancel("after TLS transit search")
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period,
             epoch_time=self.tls_results.T0,
@@ -182,6 +191,18 @@ class TessQuickLook:
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
+        self.show_simbad = show_simbad
+
+    def _check_cancel(self, phase=""):
+        """Raise InterruptedError if the GUI's cancel button was pressed.
+
+        Called at phase boundaries so a cancel issued mid-pipeline (e.g.
+        during a slow MAST download or a multi-minute TLS run) is honoured
+        as soon as the current blocking call returns, instead of running
+        the rest of the pipeline to completion.
+        """
+        if self.cancel_check is not None and self.cancel_check():
+            raise InterruptedError(f"Job cancelled ({phase})" if phase else "Job cancelled")
 
     def __repr__(self):
         """Override to print a readable string representation of class.
@@ -940,12 +961,68 @@ class TessQuickLook:
         }
         if self.tls_use_threads is not None:
             power_kwargs["use_threads"] = self.tls_use_threads
+        if self.use_star_priors:
+            logger.info(
+                "use_priors=True: fetching ExoFOP stellar parameters (R_star, M_star) for TLS"
+            )
+            power_kwargs.update(self._stellar_prior_kwargs())
+        else:
+            logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
         self.tls_results = tls(
             self.flat_lc.time.value,
             self.flat_lc.flux.value,
             flux_err,
             verbose=self.verbose,
         ).power(**power_kwargs)
+
+    def _stellar_prior_kwargs(self):
+        """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
+
+        Returns a dict of TLS ``.power()`` kwargs. Any value that is missing
+        or non-finite is omitted, letting TLS fall back to its Sun-like
+        default for that parameter alone.
+        """
+        try:
+            star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters", idx=1)
+        except (KeyError, TypeError, ValueError, IndexError):
+            try:
+                star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters")
+            except (KeyError, TypeError, ValueError, IndexError) as e:
+                logger.warning(f"No ExoFOP stellar params available ({e}); skipping priors")
+                return {}
+
+        def _as_float(key):
+            try:
+                v = float(star_params.get(key))
+            except (TypeError, ValueError):
+                return None
+            return v if np.isfinite(v) else None
+
+        kwargs = {}
+        # R_star and ±1σ bounds (R_star ± srad_e), clipped to TLS's allowed range.
+        r = _as_float("srad")
+        r_err = _as_float("srad_e")
+        if r is not None:
+            kwargs["R_star"] = r
+            if r_err is not None and r_err > 0:
+                kwargs["R_star_min"] = max(r - r_err, 0.13)
+                kwargs["R_star_max"] = r + r_err
+        # M_star and ±1σ bounds (M_star ± mass_e).
+        m = _as_float("mass")
+        m_err = _as_float("mass_e")
+        if m is not None:
+            kwargs["M_star"] = m
+            if m_err is not None and m_err > 0:
+                kwargs["M_star_min"] = max(m - m_err, 0.1)
+                kwargs["M_star_max"] = m + m_err
+
+        if not kwargs:
+            logger.warning("ExoFOP stellar params present but unusable; skipping priors")
+        else:
+            # Logged unconditionally (not gated on verbose) so users can always
+            # verify which prior values reached TLS when they enabled --use_priors.
+            logger.info(f"Using ExoFOP stellar priors for TLS: {kwargs}")
+        return kwargs
 
     def init_gls(self):
         masked_lc = self.raw_lc[~self.tmask]
@@ -1286,6 +1363,14 @@ class TessQuickLook:
         self.tls_results["flatten_method"] = self.flatten_method
         self.tls_results["window_length"] = self.window_length
 
+        # Record whether ExoFOP stellar parameters were used as TLS priors,
+        # and (if so) which prior values reached the search. Stored in the
+        # HDF5 output so downstream analysis can tell prior-informed runs
+        # apart from Sun-like-default runs.
+        self.tls_results["use_star_priors"] = bool(self.use_star_priors)
+        if self.use_star_priors:
+            self.tls_results["star_prior_kwargs"] = self._stellar_prior_kwargs()
+
         # Append exofop data (TICv8)
         self.tls_results["exofop_data"] = self.exofop_data
 
@@ -1410,7 +1495,16 @@ class TessQuickLook:
                 show_colorbar=False,
             )
         )
-        model_folded = pg.model(self.raw_lc[~self.tmask].time).fold(
+        # Evaluate the model sinusoid at the *fold* period. In the GLS path the
+        # fold period (self.Prot_ls) comes from the Gls object, which can differ
+        # from this lightkurve periodogram's own peak frequency; without pinning
+        # the frequency here pg.model() builds a sine at pg.period_at_max_power,
+        # which then drifts across phase when folded at Prot_ls instead of
+        # closing into a single clean sine wave.
+        model_folded = pg.model(
+            self.raw_lc[~self.tmask].time,
+            frequency=(1.0 / self.Prot_ls) / u.day,
+        ).fold(
             self.Prot_ls,
             normalize_phase=False,
             wrap_phase=self.Prot_ls / 2,
@@ -1510,6 +1604,7 @@ class TessQuickLook:
                 sap_mask=self.sap_mask,
                 aper_radius=2,
                 survey=self.archival_survey,
+                show_simbad=self.show_simbad,
                 verbose=self.verbose,
                 ax=ax,
             )

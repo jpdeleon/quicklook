@@ -194,13 +194,31 @@ def _detect_step(log_text):
 # Background job runner
 # ---------------------------------------------------------------------------
 def run_quicklook_background(name, cancel_event, **kwargs):
-    # Skip if cancelled while waiting in queue.
-    if cancel_event.is_set():
-        return
-
-    # Mark as running now that the worker has picked it up.
+    # Atomically: if the job was cancelled (or deleted) while sitting in
+    # the queue, finalize its history row and bail. Doing this under the
+    # lock closes the race where a cancel arrives between an unlocked
+    # `is_set()` check and the `status="running"` write that would
+    # otherwise silently overwrite the user's cancellation.
     with jobs_lock:
-        jobs[name]["status"] = "running"
+        info = jobs.get(name)
+        if info is None or cancel_event.is_set() or info.get("status") == "cancelled":
+            if info is not None:
+                info["status"] = "cancelled"
+                info.setdefault("finished_at", time.time())
+                try:
+                    _save_job_history(
+                        name=name,
+                        status="cancelled",
+                        error="",
+                        params=info.get("params"),
+                        submitted_at=info.get("submitted_at"),
+                        finished_at=info["finished_at"],
+                        step_times=info.get("step_times", {}),
+                    )
+                except sqlite3.DatabaseError as e:
+                    logger.warning(f"Could not persist cancelled job {name}: {e}")
+            return
+        info["status"] = "running"
 
     # Allow overriding the target name passed to the pipeline (e.g. for each-sector jobs
     # where the job name is "TOI1234_s34" but the pipeline target is "TOI1234")
@@ -293,8 +311,10 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             sigma_clip_flat=sigma_clip_flat,
             Porb_limits=period_limits,
             mask_ephem=kwargs.get("mask_ephem", False),
+            use_star_priors=kwargs.get("use_priors", False),
             custom_ephem=custom_ephem,
             archival_survey=kwargs.get("survey", "dss1"),
+            show_simbad=kwargs.get("show_simbad", False),
             savefig=kwargs.get("save", False),
             savetls=kwargs.get("save", False),
             verbose=kwargs.get("verbose", True),
@@ -400,8 +420,10 @@ def _parse_params(form):
         "period_min": safe_float(form.get("period_min") or None, None),
         "period_max": safe_float(form.get("period_max") or None, None),
         "mask_ephem": _is_truthy(form.get("mask_ephem")),
+        "use_priors": _is_truthy(form.get("use_priors")),
         "custom_ephem": form.get("custom_ephem"),
         "survey": form.get("survey", "dss1"),
+        "show_simbad": _is_truthy(form.get("show_simbad")),
         "outdir": form.get("outdir"),
         "suffix": form.get("suffix") if form.get("suffix") else "",
         "save": _is_truthy(form.get("save")),

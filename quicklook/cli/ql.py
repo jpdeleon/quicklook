@@ -32,6 +32,7 @@ def run_ql_for_sector(
     suffix,
     period_limits,
     tls_use_threads,
+    show_simbad=False,
 ):
     """Run ql for a single sector. Used by --each-sector."""
     ql = TessQuickLook(
@@ -53,6 +54,7 @@ def run_ql_for_sector(
         Porb_limits=period_limits,
         edge_cutoff=edge_cutoff,
         archival_survey="dss1",
+        show_simbad=show_simbad,
         savefig=save,
         savetls=save,
         outdir=outdir,
@@ -295,13 +297,13 @@ def main():
         type=float,
         default=None,
     )
-    # parser.add_argument(
-    #     "-u",
-    #     "--use_priors",
-    #     action="store_true",
-    #     help="use star priors for detrending and periodogram",
-    #     default=False,
-    # )
+    parser.add_argument(
+        "-u",
+        "--use_priors",
+        action="store_true",
+        help="use ExoFOP stellar params (R_star, M_star) as TLS priors",
+        default=False,
+    )
     parser.add_argument(
         "--survey",
         help="archival image survey name if using img option (default=dss1)",
@@ -324,6 +326,12 @@ def main():
     )
     parser.add_argument("-verbose", action="store_true", help="show details", default=False)
     parser.add_argument("-overwrite", action="store_true", help="overwrite files", default=False)
+    parser.add_argument(
+        "-show_simbad",
+        action="store_true",
+        help="overplot nearby SIMBAD objects on the archival image (default=False)",
+        default=False,
+    )
     # parser.add_argument(
     #     "-use_tpf_image",
     #     action="store_true",
@@ -412,6 +420,7 @@ def main():
                     args.suffix,
                     args.period_limits,
                     tls_use_threads,
+                    args.show_simbad,
                 )
                 futures[future] = sector
 
@@ -465,6 +474,7 @@ def main():
                     args.suffix,
                     args.period_limits,
                     tls_use_threads,
+                    args.show_simbad,
                 )
                 futures[future] = pipeline
 
@@ -513,12 +523,13 @@ def main():
         # cutout_size=args.cutout_size,
         # bin_hr=args.bin_hr,
         Porb_limits=args.period_limits,
-        # use_star_priors=args.use_priors,
+        use_star_priors=args.use_priors,
         edge_cutoff=args.edge_cutoff,
         # find_cluster=args.find_cluster,
         # nearby_gaia_radius=args.nearby_gaia_radius,
         # run_gls=args.gls,
         archival_survey=args.survey,
+        show_simbad=args.show_simbad,
         savefig=args.save,
         savetls=args.save,
         outdir=args.outdir,
