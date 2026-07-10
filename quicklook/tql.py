@@ -1322,11 +1322,13 @@ class TessQuickLook:
         ]
 
     @staticmethod
-    def _format_sector_summary(sector, all_sectors, max_listed=20, sectors_per_line=4):
+    def _format_sector_summary(sector, all_sectors, max_listed=8, sectors_per_line=4):
         """Format sector availability for the summary panel.
 
         Keep the selected sector visible, but avoid long inline sector lists
-        because they can run into the neighbouring summary column.
+        because they can run into the neighbouring summary column. Beyond
+        max_listed sectors the list is replaced by a count, capping the panel
+        at two wrapped lines.
         """
         if all_sectors is None:
             return str(sector)

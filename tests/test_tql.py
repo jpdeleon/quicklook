@@ -193,6 +193,18 @@ def test_format_sector_summary_counts_long_lists():
     assert summary == "86\n11 sectors available"
 
 
+def test_format_sector_summary_lists_at_max_listed_boundary():
+    summary = TessQuickLook._format_sector_summary(8, list(range(1, 9)))
+
+    assert summary == "8\navailable: 1, 2, 3, 4\n5, 6, 7, 8"
+
+
+def test_format_sector_summary_counts_one_past_max_listed():
+    summary = TessQuickLook._format_sector_summary(9, list(range(1, 10)))
+
+    assert summary == "9\n9 sectors available"
+
+
 # @pytest.mark.parametrize("pg_method", ["gls", "lombscargle", "bls"])
 # def test_different_periodogram_methods(planet_inputs, pg_method):
 #     """Test TessQuickLook with different periodogram methods"""
