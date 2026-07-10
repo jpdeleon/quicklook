@@ -9,6 +9,7 @@ from pathlib import Path
 # import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
+from quicklook.exceptions import InvalidInputError
 from quicklook.utils import get_available_pipelines, get_available_sectors
 from quicklook.plot import dss_description
 
@@ -88,6 +89,15 @@ def sanitize_target_name(name: str) -> str:
     - Strip leading/trailing spaces
     - If the target starts with 'TOI', ensure it is formatted as 'TOI-xxxx'
     - Otherwise, remove spaces
+
+    Raises
+    ------
+    InvalidInputError
+        If the sanitized name is empty or could escape the directory it is
+        interpolated into. The result reaches the filesystem unquoted as a
+        log filename and as part of the figure/H5 output paths, so a name
+        like ``../../foo`` would otherwise create or truncate ``foo.log``
+        outside the output tree.
     """
     name = name.strip()
     if name[:3].lower() == "toi":
@@ -99,6 +109,11 @@ def sanitize_target_name(name: str) -> str:
     else:
         # Remove all spaces for non-TOI targets
         name = name.replace(" ", "")
+
+    if not name:
+        raise InvalidInputError("Target name is empty")
+    if any(char in name for char in ("/", "\\", "\x00")) or ".." in name or name.startswith("."):
+        raise InvalidInputError(f"Invalid target name: {name!r}")
     return name
 
 
@@ -376,7 +391,11 @@ def main():
                 file=sys.stderr,
             )
 
-    target_name = sanitize_target_name(args.name)
+    try:
+        target_name = sanitize_target_name(args.name)
+    except InvalidInputError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(2)
 
     cpu_total = os.cpu_count() or 1
     if args.each_sector:

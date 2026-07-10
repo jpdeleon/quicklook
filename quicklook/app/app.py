@@ -20,7 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from quicklook.tql import TessQuickLook
 from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
-from quicklook.exceptions import QuickLookError
+from quicklook.exceptions import InvalidInputError, QuickLookError
 from quicklook.utils import get_available_pipelines, get_available_sectors
 
 # Directories
@@ -489,6 +489,12 @@ def index():
     )
 
 
+@app.errorhandler(InvalidInputError)
+def handle_invalid_input(e):
+    """Turn a rejected target name into a 400 rather than a 500 + traceback."""
+    return jsonify({"ok": False, "reason": str(e)}), 400
+
+
 @app.route("/submit", methods=["POST"])
 def submit_job():
     """AJAX endpoint for single-job submission."""
@@ -552,7 +558,12 @@ def batch_submit():
         raw_name = raw_name.strip()
         if not raw_name:
             continue
-        name = sanitize_target_name(raw_name)
+        try:
+            name = sanitize_target_name(raw_name)
+        except InvalidInputError:
+            # One bad name should not abort the rest of the batch.
+            skipped.append(raw_name)
+            continue
         with jobs_lock:
             if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
                 skipped.append(name)
@@ -1375,7 +1386,10 @@ def compare():
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    app.run(debug=True, threaded=True)
+    # The Werkzeug debugger exposes an interactive console (arbitrary code
+    # execution) to anyone who can reach the port, so it is opt-in.
+    debug = os.environ.get("QUICKLOOK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(debug=debug, threaded=True)
 
 
 if __name__ == "__main__":

@@ -116,6 +116,16 @@ Open http://127.0.0.1:5000 in your browser. Enter a target, adjust parameters, a
 
 ![QuickLook Web GUI](docs/img/ql-gui.png)
 
+The Flask debugger is off by default. Set `QUICKLOOK_DEBUG=1` to enable it and
+the auto-reloader while developing:
+
+```bash
+QUICKLOOK_DEBUG=1 ql-gui
+```
+
+Leave it unset on any host other users can reach — the Werkzeug debugger
+exposes an interactive console to whoever can open the port.
+
 ## Output figure
 
 ```bash
