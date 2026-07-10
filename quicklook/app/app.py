@@ -13,9 +13,10 @@ from collections import OrderedDict
 from pathlib import Path
 from threading import Thread, Event
 
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, url_for
 from flask_sock import Sock
 from loguru import logger
+from werkzeug.middleware.proxy_fix import ProxyFix
 from quicklook.tql import TessQuickLook
 from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
@@ -33,6 +34,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 app = Flask(
     __name__, static_folder=str(BASE_DIR / "static"), template_folder=str(BASE_DIR / "templates")
 )
+# Honor only the mount prefix supplied by the trusted muscat-db gateway.  Host,
+# scheme, port, and client-address forwarding remain disabled deliberately.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=0, x_host=0, x_port=0, x_prefix=1)
 sock = Sock(app)
 
 # Original stdout/stderr for fallback
@@ -376,7 +380,10 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 def _get_recent_results(limit=12):
     """Return the most recent output PNGs as dicts with path and filename."""
     images = sorted(OUTPUT_DIR.glob("*.png"), key=os.path.getmtime, reverse=True)
-    return [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in images[:limit]]
+    return [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in images[:limit]
+    ]
 
 
 def _is_truthy(val):
@@ -802,8 +809,8 @@ def results_json(target):
     h5s = sorted(OUTPUT_DIR.glob(f"*{search_name}*_tls.h5"), key=os.path.getmtime, reverse=True)
     return jsonify(
         {
-            "image": f"/static/outputs/{images[0].name}" if images else None,
-            "h5": f"/static/outputs/{h5s[0].name}" if h5s else None,
+            "image": url_for("static", filename=f"outputs/{images[0].name}") if images else None,
+            "h5": url_for("static", filename=f"outputs/{h5s[0].name}") if h5s else None,
         }
     )
 
@@ -967,7 +974,10 @@ def gallery():
     start = (page - 1) * per_page
     page_images = images[start : start + per_page]
 
-    items = [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in page_images]
+    items = [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in page_images
+    ]
     return render_template(
         "gallery.html",
         images=items,
@@ -1270,8 +1280,12 @@ def tls_summary():
             h5_path = None
             disk_path = str(fp_resolved)
         else:
-            png_path = f"/static/outputs/{png_name}" if (OUTPUT_DIR / png_name).exists() else None
-            h5_path = f"/static/outputs/{fp.name}"
+            png_path = (
+                url_for("static", filename=f"outputs/{png_name}")
+                if (OUTPUT_DIR / png_name).exists()
+                else None
+            )
+            h5_path = url_for("static", filename=f"outputs/{fp.name}")
             disk_path = None
 
         def first(seq):
@@ -1348,7 +1362,10 @@ def tls_summary():
 def compare():
     """Side-by-side comparison view."""
     images = sorted(OUTPUT_DIR.glob("*.png"), key=os.path.getmtime, reverse=True)
-    items = [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in images]
+    items = [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in images
+    ]
     left = request.args.get("left", "")
     right = request.args.get("right", "")
     return render_template("compare.html", images=items, left=left, right=right)

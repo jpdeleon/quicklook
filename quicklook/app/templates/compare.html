@@ -234,7 +234,7 @@
 
     async function pollRunningJobs() {
       try {
-        const res = await fetch('/jobs-json');
+        const res = await fetch(BASE + '/jobs-json');
         const jobs = await res.json();
         const running = jobs.filter(j => j.status === 'running');
         if (running.length === 0) {

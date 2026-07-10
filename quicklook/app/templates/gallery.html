@@ -353,7 +353,7 @@
     /* --- Delete --- */
     async function doDelete(filename) {
       try {
-        const res = await fetch('/delete-output', {
+        const res = await fetch(BASE + '/delete-output', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({filename: filename}),
@@ -406,7 +406,7 @@
       if (!confirm('Delete ' + files.length + ' selected files and their associated data?')) return;
 
       try {
-        const res = await fetch('/bulk-delete', {
+        const res = await fetch(BASE + '/bulk-delete', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({filenames: files}),
@@ -491,7 +491,7 @@
 
     async function pollRunningJobs() {
       try {
-        const res = await fetch('/jobs-json');
+        const res = await fetch(BASE + '/jobs-json');
         const jobs = await res.json();
         const running = jobs.filter(j => j.status === 'running');
         const runningNames = new Set(running.map(j => j.name));

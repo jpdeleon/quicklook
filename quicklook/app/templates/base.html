@@ -13,6 +13,7 @@
 {% set current = self.topbar_current()|trim %}
 {% include 'partials/topbar.html' %}
 {% block content %}{% endblock %}
+<script>const BASE = {{ request.script_root|tojson }};</script>
 <script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
