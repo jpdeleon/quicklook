@@ -53,11 +53,10 @@ dev = [
     "pytest",           # run tests
     "pytest-benchmark", # measure performance
     "pytest-xdist",     # parallelize tests
-    "black",            # enforce formatting
     "mypy",             # static type checking
     "pre-commit",       # hook management
     "tox>=4.0",         # multi-env testing
-    "ruff",             # fast linting
+    "ruff",             # linting and formatting
     #"flake8>=6.0"       # legacy linting
 ]
 
@@ -72,13 +71,12 @@ notebooks = [
 [project.urls]
 Homepage = "https://github.com/jpdeleon/quicklook"
 
-[tool.black]
-line-length = 100
-include = '\.pyi?$'
-exclude = '/(\.git|\.hg|\.mypy_cache|\.tox|\.venv|_build|buck-out|build|dist)/'
-
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.format]
+# black formatted .py only (include = '\.pyi?$'); keep notebooks untouched.
+exclude = ["*.ipynb"]
 
 [tool.ruff.lint]
 select = ["B", "C", "E", "F", "W", "B9"]
