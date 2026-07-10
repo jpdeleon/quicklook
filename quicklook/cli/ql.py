@@ -9,7 +9,7 @@ from pathlib import Path
 # import logging
 import matplotlib.pyplot as pl
 from quicklook.tql import TessQuickLook
-from quicklook.utils import get_available_sectors
+from quicklook.utils import get_available_pipelines, get_available_sectors
 from quicklook.plot import dss_description
 
 
@@ -32,6 +32,8 @@ def run_ql_for_sector(
     suffix,
     period_limits,
     tls_use_threads,
+    phase_xlim,
+    show_simbad=False,
 ):
     """Run ql for a single sector. Used by --each-sector."""
     ql = TessQuickLook(
@@ -52,7 +54,9 @@ def run_ql_for_sector(
         sigma_clip_flat=None,
         Porb_limits=period_limits,
         edge_cutoff=edge_cutoff,
+        phase_xlim=phase_xlim,
         archival_survey="dss1",
+        show_simbad=show_simbad,
         savefig=save,
         savetls=save,
         outdir=outdir,
@@ -116,6 +120,13 @@ def main():
         default=False,
     )
     parser.add_argument(
+        "--each-pipeline",
+        action="store_true",
+        help="run on each available pipeline for the latest sector "
+        "(mutually exclusive with --each-sector)",
+        default=False,
+    )
+    parser.add_argument(
         "-j",
         "--jobs",
         type=int,
@@ -154,8 +165,8 @@ def main():
     parser.add_argument(
         "--fluxtype",
         type=str,
-        help="type of lightcurve",
-        choices=["pdcsap", "sap"],
+        help="type of lightcurve (SPOC: pdcsap/sap; TGLC: aperture/psf/auto)",
+        choices=["pdcsap", "sap", "aperture", "psf", "auto"],
         default="pdcsap",
     )
     parser.add_argument(
@@ -288,13 +299,23 @@ def main():
         type=float,
         default=None,
     )
-    # parser.add_argument(
-    #     "-u",
-    #     "--use_priors",
-    #     action="store_true",
-    #     help="use star priors for detrending and periodogram",
-    #     default=False,
-    # )
+    parser.add_argument(
+        "--phase_xlim",
+        type=float,
+        default=None,
+        help=(
+            "phase half-width for panels 7 and 8. Example: 0.1 plots "
+            "transit phase -0.1..0.1 and eclipse phase 0.4..0.6. "
+            "Default: automatic zoom from transit duration."
+        ),
+    )
+    parser.add_argument(
+        "-u",
+        "--use_priors",
+        action="store_true",
+        help="use ExoFOP stellar params (R_star, M_star) as TLS priors",
+        default=False,
+    )
     parser.add_argument(
         "--survey",
         help="archival image survey name if using img option (default=dss1)",
@@ -317,6 +338,12 @@ def main():
     )
     parser.add_argument("-verbose", action="store_true", help="show details", default=False)
     parser.add_argument("-overwrite", action="store_true", help="overwrite files", default=False)
+    parser.add_argument(
+        "-show_simbad",
+        action="store_true",
+        help="overplot nearby SIMBAD objects on the archival image (default=False)",
+        default=False,
+    )
     # parser.add_argument(
     #     "-use_tpf_image",
     #     action="store_true",
@@ -360,6 +387,10 @@ def main():
     else:
         tls_use_threads = args.cores if args.cores is not None else max(1, cpu_total // 2)
     tls_use_threads = max(1, min(tls_use_threads, cpu_total))
+    if args.each_sector and args.each_pipeline:
+        print("Error: --each-sector and --each-pipeline are mutually exclusive.", file=sys.stderr)
+        sys.exit(2)
+
     if args.each_sector and args.jobs * tls_use_threads > cpu_total:
         print(
             f"Warning: jobs ({args.jobs}) * cores ({tls_use_threads}) = "
@@ -401,6 +432,8 @@ def main():
                     args.suffix,
                     args.period_limits,
                     tls_use_threads,
+                    args.phase_xlim,
+                    args.show_simbad,
                 )
                 futures[future] = sector
 
@@ -414,6 +447,61 @@ def main():
                     failed += 1
 
         print(f"\nCompleted: {len(sectors) - failed}/{len(sectors)} sectors successful")
+        if failed:
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.each_pipeline:
+        pipelines = get_available_pipelines(target_name)
+        if not pipelines:
+            print(f"No pipelines found for {target_name}")
+            sys.exit(1)
+
+        print(f"Found {len(pipelines)} pipelines for {target_name}: {pipelines}")
+        print(
+            f"Running with {args.jobs} parallel job(s), {tls_use_threads} TLS core(s) each, "
+            "sector=-1 (latest available per pipeline)..."
+        )
+
+        failed = 0
+        with ProcessPoolExecutor(max_workers=args.jobs) as executor:
+            futures = {}
+            for pipeline in pipelines:
+                future = executor.submit(
+                    run_ql_for_sector,
+                    target_name,
+                    -1,  # latest sector for each pipeline
+                    pipeline,
+                    args.fluxtype,
+                    args.quality_bitmask,
+                    args.flatten_method,
+                    args.gp_kernel,
+                    args.pg_method,
+                    args.edge_cutoff,
+                    args.outdir,
+                    args.exptime,
+                    args.save,
+                    args.overwrite,
+                    args.verbose,
+                    args.mask_ephem,
+                    args.suffix,
+                    args.period_limits,
+                    tls_use_threads,
+                    args.phase_xlim,
+                    args.show_simbad,
+                )
+                futures[future] = pipeline
+
+            for i, future in enumerate(as_completed(futures), 1):
+                pipeline = futures[future]
+                try:
+                    future.result()
+                    print(f"[{i}/{len(pipelines)}] pipeline {pipeline}: done")
+                except Exception as e:
+                    print(f"[{i}/{len(pipelines)}] pipeline {pipeline}: FAILED - {e}")
+                    failed += 1
+
+        print(f"\nCompleted: {len(pipelines) - failed}/{len(pipelines)} pipelines successful")
         if failed:
             sys.exit(1)
         sys.exit(0)
@@ -449,12 +537,14 @@ def main():
         # cutout_size=args.cutout_size,
         # bin_hr=args.bin_hr,
         Porb_limits=args.period_limits,
-        # use_star_priors=args.use_priors,
+        use_star_priors=args.use_priors,
+        phase_xlim=args.phase_xlim,
         edge_cutoff=args.edge_cutoff,
         # find_cluster=args.find_cluster,
         # nearby_gaia_radius=args.nearby_gaia_radius,
         # run_gls=args.gls,
         archival_survey=args.survey,
+        show_simbad=args.show_simbad,
         savefig=args.save,
         savetls=args.save,
         outdir=args.outdir,

@@ -8,6 +8,7 @@ import sqlite3
 import sys
 import threading
 import time
+import traceback
 from collections import OrderedDict
 from pathlib import Path
 from threading import Thread, Event
@@ -16,9 +17,10 @@ from flask import Flask, render_template, request, jsonify
 from flask_sock import Sock
 from loguru import logger
 from quicklook.tql import TessQuickLook
+from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import QuickLookError
-from quicklook.utils import get_available_sectors
+from quicklook.utils import get_available_pipelines, get_available_sectors
 
 # Directories
 BASE_DIR = Path(__file__).parent.resolve()
@@ -82,48 +84,25 @@ sys.stderr = _tls_stderr
 
 
 # ---------------------------------------------------------------------------
-# SQLite job history
+# SQLite job history (schema + CRUD live in quicklook.app.jobs_db)
 # ---------------------------------------------------------------------------
-def _init_db():
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS job_history (
-            name         TEXT PRIMARY KEY,
-            status       TEXT NOT NULL,
-            error        TEXT DEFAULT '',
-            params       TEXT DEFAULT '{}',
-            submitted_at REAL,
-            finished_at  REAL,
-            step_times   TEXT DEFAULT '{}'
-        )"""
-    )
-    conn.commit()
-    conn.close()
+from quicklook.app.jobs_db import JobsDB  # noqa: E402
 
-
-_init_db()
+_jobs_db = JobsDB(DB_PATH)
 
 
 def _save_job_history(
     name, status, error="", params=None, submitted_at=None, finished_at=None, step_times=None
 ):
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.execute(
-        "INSERT OR REPLACE INTO job_history "
-        "(name, status, error, params, submitted_at, finished_at, step_times) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            name,
-            status,
-            error,
-            json.dumps(params or {}),
-            submitted_at,
-            finished_at,
-            json.dumps(step_times or {}),
-        ),
+    _jobs_db.save(
+        name=name,
+        status=status,
+        error=error,
+        params=params,
+        submitted_at=submitted_at,
+        finished_at=finished_at,
+        step_times=step_times,
     )
-    conn.commit()
-    conn.close()
 
 
 _avg_step_cache = {"data": {}, "ts": 0}
@@ -136,18 +115,12 @@ def _get_avg_step_times():
     with _avg_step_lock:
         if now - _avg_step_cache["ts"] < 60:
             return dict(_avg_step_cache["data"])
-    conn = sqlite3.connect(str(DB_PATH))
-    rows = conn.execute(
-        "SELECT step_times FROM job_history WHERE status='done' "
-        "ORDER BY finished_at DESC LIMIT 20"
-    ).fetchall()
-    conn.close()
-    if not rows:
+    step_dicts = _jobs_db.recent_step_times(limit=20)
+    if not step_dicts:
         return {}
     totals: dict[str, float] = {}
     counts: dict[str, int] = {}
-    for (st_json,) in rows:
-        st = json.loads(st_json) if st_json else {}
+    for st in step_dicts:
         for step, dur in st.items():
             totals[step] = totals.get(step, 0) + dur
             counts[step] = counts.get(step, 0) + 1
@@ -184,12 +157,17 @@ def _job_worker():
 _worker_thread = Thread(target=_job_worker, daemon=True)
 _worker_thread.start()
 
+# Label for the TGLC local ePSF-extraction step. Kept as a named constant
+# because the websocket handler matches on it for fine-grained sub-progress.
+EPSF_STEP_LABEL = "Extracting ePSF light curve"
+
 # Pipeline step definitions for progress tracking.
 PIPELINE_STEPS = [
     (r"Generating quicklook", "Initializing"),
     (r"Catalog names:|TIC \d+", "Resolving target"),
     (r"Available sectors:|All available lightcurves", "Searching lightcurves"),
     (r"Downloading|search_lightcurve|Using .+ TPF", "Downloading data"),
+    (r"ePSF fitting", EPSF_STEP_LABEL),
     (r"Plotting raw light curve|raw lc", "Raw light curve"),
     (r"flatten|biweight|cosine|Flattening", "Flattening light curve"),
     (r"Lomb-Scargle|GLS|Generalized Lomb", "Lomb-Scargle periodogram"),
@@ -216,13 +194,31 @@ def _detect_step(log_text):
 # Background job runner
 # ---------------------------------------------------------------------------
 def run_quicklook_background(name, cancel_event, **kwargs):
-    # Skip if cancelled while waiting in queue.
-    if cancel_event.is_set():
-        return
-
-    # Mark as running now that the worker has picked it up.
+    # Atomically: if the job was cancelled (or deleted) while sitting in
+    # the queue, finalize its history row and bail. Doing this under the
+    # lock closes the race where a cancel arrives between an unlocked
+    # `is_set()` check and the `status="running"` write that would
+    # otherwise silently overwrite the user's cancellation.
     with jobs_lock:
-        jobs[name]["status"] = "running"
+        info = jobs.get(name)
+        if info is None or cancel_event.is_set() or info.get("status") == "cancelled":
+            if info is not None:
+                info["status"] = "cancelled"
+                info.setdefault("finished_at", time.time())
+                try:
+                    _save_job_history(
+                        name=name,
+                        status="cancelled",
+                        error="",
+                        params=info.get("params"),
+                        submitted_at=info.get("submitted_at"),
+                        finished_at=info["finished_at"],
+                        step_times=info.get("step_times", {}),
+                    )
+                except sqlite3.DatabaseError as e:
+                    logger.warning(f"Could not persist cancelled job {name}: {e}")
+            return
+        info["status"] = "running"
 
     # Allow overriding the target name passed to the pipeline (e.g. for each-sector jobs
     # where the job name is "TOI1234_s34" but the pipeline target is "TOI1234")
@@ -301,7 +297,10 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             sector=int(kwargs.get("sector", -1)),
             pipeline=kwargs.get("pipeline", "spoc"),
             flux_type=kwargs.get("fluxtype", "pdcsap"),
-            exptime=kwargs.get("exptime"),
+            # Coerce "" (the form's "auto" option) to None so the pipeline
+            # treats it as "let MAST decide" instead of filtering for an
+            # empty-string exptime and accidentally excluding every row.
+            exptime=(kwargs.get("exptime") or None),
             quality_bitmask=kwargs.get("quality_bitmask", "default"),
             flatten_method=kwargs.get("flatten_method", "biweight"),
             gp_kernel=kwargs.get("gp_kernel", "periodic_auto"),
@@ -312,14 +311,22 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             sigma_clip_flat=sigma_clip_flat,
             Porb_limits=period_limits,
             mask_ephem=kwargs.get("mask_ephem", False),
+            use_star_priors=kwargs.get("use_priors", False),
+            phase_xlim=kwargs.get("phase_xlim"),
             custom_ephem=custom_ephem,
             archival_survey=kwargs.get("survey", "dss1"),
+            show_simbad=kwargs.get("show_simbad", False),
             savefig=kwargs.get("save", False),
             savetls=kwargs.get("save", False),
             verbose=kwargs.get("verbose", True),
             overwrite=kwargs.get("overwrite", False),
             outdir=outdir,
             suffix=suffix,
+            # Pass the Event's bound is_set so the long TGLC ePSF loop can
+            # actually interrupt when the GUI Cancel button is clicked,
+            # instead of running to completion and only honouring the
+            # cancel at the next phase boundary.
+            cancel_check=cancel_event.is_set,
         )
         if cancel_event.is_set():
             raise InterruptedError("Job cancelled")
@@ -336,9 +343,12 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         jobs[name]["error"] = str(e)
         logger.warning(f"Job failed: {e}")
     except Exception as e:
+        tb = traceback.format_exc()
         jobs[name]["status"] = "error"
+        # Keep the short message for the GUI badge, but include the traceback
+        # so the per-target .log captures the offending file/line.
         jobs[name]["error"] = str(e)
-        logger.error(f"Job '{name}' failed unexpectedly: {e}")
+        logger.error(f"Job '{name}' failed unexpectedly: {e}\n{tb}")
     finally:
         # Tear down in safe order: streams first, then loguru sink, then file
         _tls_stdout.clear_stream()
@@ -410,15 +420,34 @@ def _parse_params(form):
         "sigma_clip_flat": form.get("sigma_clip_flat"),
         "period_min": safe_float(form.get("period_min") or None, None),
         "period_max": safe_float(form.get("period_max") or None, None),
+        "phase_xlim": safe_float(form.get("phase_xlim") or None, None),
         "mask_ephem": _is_truthy(form.get("mask_ephem")),
+        "use_priors": _is_truthy(form.get("use_priors")),
         "custom_ephem": form.get("custom_ephem"),
         "survey": form.get("survey", "dss1"),
+        "show_simbad": _is_truthy(form.get("show_simbad")),
         "outdir": form.get("outdir"),
         "suffix": form.get("suffix") if form.get("suffix") else "",
         "save": _is_truthy(form.get("save")),
         "verbose": _is_truthy(form.get("verbose")),
         "overwrite": _is_truthy(form.get("overwrite")),
     }
+
+
+def _job_dedup_signature(params):
+    """Key fields that make a submission semantically distinct.
+
+    Two non-terminal jobs with the same target name AND the same signature
+    are considered true duplicates; the same name with a different signature
+    (e.g. SPOC vs TGLC, different sector, different flux/photometry) is a
+    different job and gets auto-disambiguated rather than rejected.
+    """
+    return (
+        params.get("pipeline", "spoc"),
+        params.get("sector", -1),
+        params.get("fluxtype", "pdcsap"),
+        params.get("exptime", None),
+    )
 
 
 def _submit_job(name, params):
@@ -446,7 +475,11 @@ def _submit_job(name, params):
 @app.route("/")
 def index():
     recent_results = _get_recent_results()
-    return render_template("index.html", recent_results=recent_results)
+    return render_template(
+        "index.html",
+        recent_results=recent_results,
+        pipelines=ALL_TESS_PIPELINES,
+    )
 
 
 @app.route("/submit", methods=["POST"])
@@ -460,9 +493,37 @@ def submit_job():
     name = sanitize_target_name(name)
     params = _parse_params(form)
 
+    new_sig = _job_dedup_signature(params)
     with jobs_lock:
-        if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
-            return jsonify({"ok": False, "reason": f"Job '{name}' is already running"}), 409
+        existing = jobs.get(name)
+        if existing and existing["status"] not in ("done", "error", "cancelled"):
+            if _job_dedup_signature(existing.get("params", {})) == new_sig:
+                # True duplicate: same name AND same key settings.
+                return (
+                    jsonify(
+                        {
+                            "ok": False,
+                            "reason": (f"Job '{name}' with these settings " "is already running"),
+                        }
+                    ),
+                    409,
+                )
+            # Same target, different settings (e.g. SPOC vs TGLC). Auto-pick
+            # an unused name so both can coexist in the queue.
+            base = f"{name}_{params.get('pipeline', 'spoc')}"
+            candidate = base
+            n = 2
+            while True:
+                other = jobs.get(candidate)
+                if other is None or other["status"] in (
+                    "done",
+                    "error",
+                    "cancelled",
+                ):
+                    break
+                candidate = f"{base}_{n}"
+                n += 1
+            name = candidate
 
     _submit_job(name, params)
     return jsonify({"ok": True, "name": name})
@@ -543,6 +604,62 @@ def each_sector_submit():
     return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
 
 
+@app.route("/available-pipelines")
+def available_pipelines():
+    """Return the list of available pipelines for a target (any sector)."""
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    name = sanitize_target_name(name)
+    try:
+        pipelines = get_available_pipelines(name)
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)}), 500
+    if not pipelines:
+        return jsonify({"ok": False, "reason": f"No pipelines found for {name}"}), 404
+    return jsonify({"ok": True, "pipelines": pipelines})
+
+
+@app.route("/each-pipeline-submit", methods=["POST"])
+def each_pipeline_submit():
+    """Submit one job per pipeline for a single target (--each-pipeline equivalent).
+
+    Sector is forced to -1 (latest available) per pipeline so each pipeline
+    runs on whatever sector(s) it actually has. Useful for "fan out by
+    pipeline" exploration on a single target.
+    """
+    data = request.json or {}
+    name = (data.get("name") or "").strip()
+    pipelines = data.get("pipelines", [])
+    params_template = _parse_params(data.get("params", {}))
+
+    if not name:
+        return jsonify({"ok": False, "reason": "Target name is required"}), 400
+    if not pipelines:
+        return jsonify({"ok": False, "reason": "No pipelines provided"}), 400
+
+    name = sanitize_target_name(name)
+    submitted = []
+    skipped = []
+    for pipeline in pipelines:
+        pipeline = str(pipeline).lower().strip()
+        if not pipeline:
+            continue
+        job_name = f"{name}_{pipeline}"
+        params = dict(params_template)
+        params["pipeline"] = pipeline
+        params["sector"] = -1  # latest available for this pipeline
+        params["target_name"] = name
+        with jobs_lock:
+            if job_name in jobs and jobs[job_name]["status"] not in ("done", "error", "cancelled"):
+                skipped.append(job_name)
+                continue
+        _submit_job(job_name, params)
+        submitted.append(job_name)
+
+    return jsonify({"ok": True, "submitted": submitted, "skipped": skipped})
+
+
 @app.route("/jobs-json")
 def jobs_json():
     """Return status of all jobs (for queue display)."""
@@ -581,6 +698,52 @@ def cancel_all():
             info["status"] = "cancelled"
             cancelled.append(name)
     return jsonify({"ok": True, "cancelled": cancelled})
+
+
+@app.route("/delete-job/<target>", methods=["POST"])
+def delete_job(target):
+    """Remove a job's record from the in-memory queue, SQLite history,
+    and the per-target log file.
+
+    Running jobs are refused — they should be cancelled first via
+    ``/cancel/<target>``. Queued jobs are accepted: the cancel_event
+    is set so the worker skips them once they're picked up.
+    """
+    with jobs_lock:
+        info = jobs.get(target)
+        if info and info.get("status") == "running":
+            return (
+                jsonify(
+                    {
+                        "ok": False,
+                        "reason": "Job is still running; cancel it first.",
+                    }
+                ),
+                400,
+            )
+        # If queued, mark the cancel_event so the worker doesn't try to
+        # touch jobs[target] after we've popped it.
+        if info and info.get("status") == "queued":
+            evt = info.get("cancel_event")
+            if evt is not None:
+                evt.set()
+        jobs.pop(target, None)
+
+    # Drop the SQLite history row (best-effort).
+    try:
+        _jobs_db.delete(target)
+    except sqlite3.DatabaseError as e:
+        logger.warning(f"Failed to delete job_history row for {target}: {e}")
+
+    # Drop the per-target log file (best-effort).
+    log_path = LOG_DIR / f"{target}.log"
+    try:
+        if log_path.exists():
+            log_path.unlink()
+    except OSError as e:
+        logger.warning(f"Failed to delete log file {log_path}: {e}")
+
+    return jsonify({"ok": True})
 
 
 @app.route("/delete-output", methods=["POST"])
@@ -697,6 +860,15 @@ def ws_log(ws, target):
             step_label = PIPELINE_STEPS[step_idx][1] if step_idx >= 0 else "Starting"
             pct = int(((step_idx + 1) / step_total) * 100) if step_idx >= 0 else 0
 
+            # Fine-grained sub-progress within the long TGLC ePSF step:
+            # interpolate the bar from the "ePSF fitting: N/M (X%)" log lines.
+            if step_idx >= 0 and PIPELINE_STEPS[step_idx][1] == EPSF_STEP_LABEL:
+                epsf_pcts = re.findall(r"ePSF fitting: \d+/\d+ \((\d+)%\)", full_log)
+                if epsf_pcts:
+                    frac = int(epsf_pcts[-1]) / 100.0
+                    pct = int(((step_idx + frac) / step_total) * 100)
+                    step_label = f"{EPSF_STEP_LABEL} ({epsf_pcts[-1]}%)"
+
             # Record step timing transitions
             if step_idx > last_step_idx:
                 now = time.time()
@@ -758,12 +930,21 @@ def ws_log(ws, target):
         time.sleep(1.5)
 
 
+GALLERY_PER_PAGE_CHOICES = [12, 24, 48, 96, 192]
+GALLERY_PER_PAGE_DEFAULT = 24
+
+
 @app.route("/gallery")
 def gallery():
     search_name = request.args.get("search", "")
     sort_by = request.args.get("sort", "date_desc")
     page = max(1, int(request.args.get("page", 1)))
-    per_page = 24
+    try:
+        per_page = int(request.args.get("per_page", GALLERY_PER_PAGE_DEFAULT))
+    except (TypeError, ValueError):
+        per_page = GALLERY_PER_PAGE_DEFAULT
+    if per_page not in GALLERY_PER_PAGE_CHOICES:
+        per_page = GALLERY_PER_PAGE_DEFAULT
 
     images = list(OUTPUT_DIR.glob("*.png"))
 
@@ -795,6 +976,371 @@ def gallery():
         page=page,
         total_pages=total_pages,
         total=total,
+        per_page=per_page,
+        per_page_choices=GALLERY_PER_PAGE_CHOICES,
+    )
+
+
+def _parse_tls_filename(stem):
+    """Best-effort parse of pipeline, flux_type, cadence from a TLS filename.
+
+    Filenames follow `{name}_s{NN}_{lctype}_{c}c[_mask_ephem][_{suffix}]_tls`
+    (see TessQuickLook.check_output_file_exists). ``lctype`` is the flux type
+    when pipeline=="spoc" (pdcsap/sap), else the pipeline name itself.
+    Returns a dict of fallbacks; values are None when not confidently
+    recoverable.
+    """
+    SPOC_FLUX = {"pdcsap", "sap"}
+    # Trailing "_tls" already stripped by Path.stem callers
+    if stem.endswith("_tls"):
+        stem = stem[: -len("_tls")]
+    tokens = stem.split("_")
+    pipeline = flux_type = cadence = None
+    # Find the sector token (sNN) and the cadence token ((s|l)c).
+    sec_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"s\d{1,3}", t)), None)
+    cad_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"[sl]c", t)), None)
+    if sec_idx is not None and cad_idx is not None and cad_idx > sec_idx + 1:
+        lctype = tokens[sec_idx + 1]
+        if lctype in SPOC_FLUX:
+            pipeline, flux_type = "spoc", lctype
+        elif lctype in HLSP_PIPELINES:
+            pipeline = lctype
+        cadence = "short" if tokens[cad_idx] == "sc" else "long"
+    return {"pipeline": pipeline, "flux_type": flux_type, "cadence": cadence}
+
+
+def _coerce_scalar(val):
+    """Unwrap 0-d/1-elem numpy arrays so Jinja sees a plain Python scalar."""
+    if val is None:
+        return None
+    try:
+        import numpy as _np
+
+        if isinstance(val, _np.ndarray):
+            if val.ndim == 0:
+                return val.item()
+            if val.size == 1:
+                return val.flat[0].item()
+    except Exception:
+        pass
+    if isinstance(val, bytes):
+        try:
+            return val.decode()
+        except Exception:
+            return None
+    return val
+
+
+def _get_allowed_browse_roots():
+    """Roots the /list-dirs endpoint is allowed to descend into.
+
+    Defaults to the user's home directory. Override via the
+    ``ALLOWED_BROWSE_ROOTS`` env var, colon-separated absolute paths.
+    """
+    env = os.environ.get("ALLOWED_BROWSE_ROOTS", "")
+    if env.strip():
+        roots = []
+        for part in env.split(":"):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                roots.append(Path(part).expanduser().resolve())
+            except (OSError, ValueError):
+                continue
+        if roots:
+            return roots
+    return [Path.home().resolve()]
+
+
+def _is_under_allowed_root(p, roots):
+    """True if the resolved path is inside any allowed root (or equals one)."""
+    try:
+        p_resolved = p.resolve()
+    except (OSError, ValueError):
+        return False
+    for root in roots:
+        try:
+            if p_resolved == root or p_resolved.is_relative_to(root):
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+@app.route("/list-dirs")
+def list_dirs():
+    """List immediate subdirectories of a path. Localhost-only convenience
+    for the TLS Summary directory picker — scoped to allowed roots so a
+    misconfigured deployment cannot leak arbitrary filesystem layout.
+    """
+    roots = _get_allowed_browse_roots()
+    req = request.args.get("path", "").strip()
+
+    if not req:
+        p = roots[0]
+    else:
+        try:
+            p = Path(req).expanduser()
+        except (OSError, ValueError):
+            return (
+                jsonify(
+                    {
+                        "error": "Invalid path",
+                        "entries": [],
+                        "path": req,
+                        "parent": None,
+                        "breadcrumbs": [],
+                        "roots": [str(r) for r in roots],
+                    }
+                ),
+                400,
+            )
+
+    if not _is_under_allowed_root(p, roots):
+        return (
+            jsonify(
+                {
+                    "error": "Path outside allowed roots",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": None,
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            403,
+        )
+
+    try:
+        p = p.resolve()
+    except (OSError, ValueError) as e:
+        return (
+            jsonify(
+                {
+                    "error": f"Cannot resolve path: {e}",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": None,
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            400,
+        )
+
+    if not p.is_dir():
+        return (
+            jsonify(
+                {
+                    "error": "Not a directory",
+                    "entries": [],
+                    "path": str(p),
+                    "parent": str(p.parent),
+                    "breadcrumbs": [],
+                    "roots": [str(r) for r in roots],
+                }
+            ),
+            400,
+        )
+
+    entries = []
+    has_tls_here = False
+    try:
+        for entry in os.scandir(p):
+            try:
+                if entry.is_dir(follow_symlinks=False) and not entry.name.startswith("."):
+                    sub = Path(entry.path)
+                    try:
+                        has_tls = any(sub.glob("*_tls.h5"))
+                    except (OSError, PermissionError):
+                        has_tls = False
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "path": str(sub.resolve()),
+                            "has_tls": has_tls,
+                        }
+                    )
+                elif entry.is_file(follow_symlinks=False) and entry.name.endswith("_tls.h5"):
+                    has_tls_here = True
+            except (OSError, PermissionError):
+                continue
+    except (OSError, PermissionError) as e:
+        return jsonify(
+            {
+                "error": f"Cannot list directory: {e}",
+                "entries": [],
+                "path": str(p),
+                "parent": str(p.parent),
+                "breadcrumbs": [],
+                "roots": [str(r) for r in roots],
+            }
+        )
+
+    entries.sort(key=lambda e: e["name"].lower())
+
+    # Parent only if still inside an allowed root
+    parent = None
+    if p != p.parent and _is_under_allowed_root(p.parent, roots):
+        try:
+            parent = str(p.parent.resolve())
+        except (OSError, ValueError):
+            parent = None
+
+    # Breadcrumb path: walk up while still under an allowed root
+    breadcrumbs = []
+    current = p
+    seen = set()
+    while True:
+        if str(current) in seen:
+            break
+        seen.add(str(current))
+        breadcrumbs.append({"name": current.name or str(current), "path": str(current)})
+        if current == current.parent or not _is_under_allowed_root(current.parent, roots):
+            break
+        current = current.parent
+    breadcrumbs.reverse()
+
+    return jsonify(
+        {
+            "path": str(p),
+            "parent": parent,
+            "entries": entries,
+            "has_tls_here": has_tls_here,
+            "breadcrumbs": breadcrumbs,
+            "roots": [str(r) for r in roots],
+            "error": None,
+        }
+    )
+
+
+@app.route("/tls-summary")
+def tls_summary():
+    """Sortable, searchable summary table of every saved TLS .h5 result.
+
+    Reads from ``OUTPUT_DIR`` by default; accepts ``?dir=<absolute_path>``
+    to point at any other directory containing ``*_tls.h5`` files.
+    """
+    from quicklook import h5io
+
+    req_dir = request.args.get("dir", "").strip()
+    chosen_dir = OUTPUT_DIR
+    dir_error = None
+    if req_dir:
+        try:
+            candidate = Path(req_dir).expanduser().resolve()
+        except (OSError, ValueError, RuntimeError):
+            candidate = None
+            dir_error = f"Invalid path: {req_dir}"
+        if candidate is not None:
+            if candidate.is_dir():
+                chosen_dir = candidate
+            else:
+                dir_error = f"Path not found or not a directory: {req_dir}"
+
+    is_default_dir = chosen_dir.resolve() == OUTPUT_DIR.resolve()
+    output_root = OUTPUT_DIR.resolve()
+
+    files = sorted(chosen_dir.glob("*_tls.h5"), key=os.path.getmtime, reverse=True)
+    rows = []
+    skipped = []
+    for fp in files:
+        try:
+            data = h5io.load(str(fp))
+        except Exception as e:
+            skipped.append({"name": fp.name, "error": str(e)})
+            continue
+
+        stem = fp.stem  # foo_s12_pdcsap_sc_tls
+        png_name = stem[: -len("_tls")] + ".png" if stem.endswith("_tls") else stem + ".png"
+
+        # Emit /static/outputs/... URLs only when the file lives inside
+        # OUTPUT_DIR; otherwise show the absolute path as plain text so we
+        # don't have to add a generic file-streaming endpoint.
+        try:
+            fp_resolved = fp.resolve()
+            external = not fp_resolved.is_relative_to(output_root)
+        except (OSError, ValueError):
+            external = True
+            fp_resolved = fp
+
+        if external:
+            png_path = None
+            h5_path = None
+            disk_path = str(fp_resolved)
+        else:
+            png_path = f"/static/outputs/{png_name}" if (OUTPUT_DIR / png_name).exists() else None
+            h5_path = f"/static/outputs/{fp.name}"
+            disk_path = None
+
+        def first(seq):
+            try:
+                return seq[0] if seq is not None and len(seq) > 0 else None
+            except Exception:
+                return None
+
+        ptc = data.get("per_transit_count")
+        try:
+            ptc_str = ",".join(str(int(x)) for x in ptc) if ptc is not None else ""
+        except Exception:
+            ptc_str = str(ptc) if ptc is not None else ""
+
+        # Filename-based fallbacks for older h5 files that pre-date the
+        # "save pipeline/flux_type/exptime/cadence" fix in tql.py.
+        fallback = _parse_tls_filename(stem)
+        pipeline = _coerce_scalar(data.get("pipeline")) or fallback["pipeline"]
+        flux_type = _coerce_scalar(data.get("flux_type")) or fallback["flux_type"]
+        exptime = _coerce_scalar(data.get("exptime"))
+        if exptime is None and fallback["cadence"] == "short":
+            # Use a hint, not a hard claim; surface in the table so users
+            # know it's inferred. 120s is the typical SPOC 2-min cadence.
+            exptime_hint = 120 if pipeline == "spoc" else None
+            exptime = exptime_hint
+
+        depth = data.get("depth")
+        duration_days = _coerce_scalar(data.get("duration"))
+        rows.append(
+            {
+                "filename": fp.name,
+                "stem": stem,
+                "png": png_path,
+                "h5": h5_path,
+                "external": external,
+                "disk_path": disk_path,
+                "mtime": os.path.getmtime(fp),
+                "toi": _coerce_scalar(data.get("toiid")),
+                "tic": _coerce_scalar(data.get("ticid")),
+                "gaiaid": _coerce_scalar(data.get("gaiaid")),
+                "pipeline": pipeline,
+                "flux_type": flux_type,
+                "exptime": exptime,
+                "sector": _coerce_scalar(data.get("sector")),
+                "Porb": _coerce_scalar(data.get("period")),
+                "duration_hr": duration_days * 24.0 if duration_days is not None else None,
+                "rp_rs": _coerce_scalar(data.get("rp_rs")),
+                "SDE": _coerce_scalar(data.get("SDE")),
+                "snr": _coerce_scalar(data.get("snr")),
+                "FAP": _coerce_scalar(data.get("FAP")),
+                "odd_even": _coerce_scalar(data.get("odd_even_mismatch")),
+                "n_tr": _coerce_scalar(data.get("distinct_transit_count")),
+                "depth_ppt": (1 - depth) * 1e3 if depth is not None else None,
+                "Prot_gls": first(data.get("Prot_gls")),
+                "amp_gls": first(data.get("amp_gls")),
+                "power_gls": first(data.get("power_gls")),
+                "per_transit_count": ptc_str,
+                "simbad_obj": _coerce_scalar(data.get("simbad_obj")),
+            }
+        )
+
+    return render_template(
+        "tls_summary.html",
+        rows=rows,
+        total=len(rows),
+        skipped=skipped,
+        current_dir=str(chosen_dir),
+        is_default_dir=is_default_dir,
+        dir_error=dir_error,
     )
 
 

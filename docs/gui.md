@@ -22,8 +22,9 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
 1. Enter a target name (TOI, TIC, or common name)
 2. Adjust pipeline parameters (sector, pipeline, flux type, etc.)
-3. Click **Run QuickLook**
-4. Watch live progress with step-by-step updates and ETA
+3. Optionally toggle **Show SIMBAD** to overlay nearby non-stellar SIMBAD objects on the archival image (on by default in the GUI)
+4. Click **Run QuickLook**
+5. Watch live progress with step-by-step updates and ETA
 
 ### Each-sector mode
 
@@ -51,7 +52,9 @@ Completed jobs display the output figure inline. Click to view full size. Result
 
 ### Gallery
 
-The `/gallery` page shows all previously generated output figures with search, sorting, and pagination.
+The `/gallery` page shows all previously generated output figures with search, sorting, and pagination. Click a thumbnail to open it in a zoomable modal -- pan by dragging, and use the **left/right arrow keys** to step between figures without closing the viewer.
+
+![QuickLook Gallery](img/ql-gui-gallery.png)
 
 ### Cancelling jobs
 

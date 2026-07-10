@@ -6,6 +6,7 @@ https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c5
 """
 
 import math
+import re
 import sys
 import traceback
 import textwrap
@@ -53,6 +54,14 @@ from quicklook.tglc import get_tglc_lc
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
 warnings.filterwarnings("ignore", category=Warning, message=".*obsfix.*")
 
+# Pipeline registry is centralized in quicklook.pipelines; these
+# re-exports preserve the old import path for callers (and notebooks).
+from quicklook.pipelines import (  # noqa: E402
+    ALL_TESS_PIPELINES,
+    FULL_FRAME_TESS_PIPELINES,
+)
+
+
 DATA_PATH = files("quicklook").joinpath("data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
@@ -81,6 +90,7 @@ class TessQuickLook:
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
         archival_survey="dss1",
+        show_simbad: bool = False,
         show_plot: bool = True,
         verbose: bool = True,
         savefig: bool = False,
@@ -90,6 +100,9 @@ class TessQuickLook:
         quality_bitmask: str = "default",
         outdir: str = ".",
         tls_use_threads: int = None,
+        use_star_priors: bool = False,
+        phase_xlim: float = None,
+        cancel_check=None,
     ):
         # start timer
         self.timer_start = timer()
@@ -110,11 +123,19 @@ class TessQuickLook:
         self.quality_bitmask = quality_bitmask
         self.flatten_method = flatten_method
         self.tls_use_threads = tls_use_threads
+        self.use_star_priors = use_star_priors
+        self.phase_xlim = phase_xlim
+        # Optional zero-arg callable polled inside the long TGLC ePSF loop;
+        # returning truthy raises InterruptedError so the worker thread
+        # actually stops when the GUI Cancel button is clicked.
+        self.cancel_check = cancel_check
+        self._check_cancel("before light-curve download")
         self.raw_lc = self.get_lc(
             author=pipeline,
             sector=sector,
             exptime=self.exptime,  # cadence=cadence
         )
+        self._check_cancel("after light-curve download")
         self.overwrite = overwrite
         self.outdir = outdir
         self.suffix = suffix
@@ -145,8 +166,10 @@ class TessQuickLook:
             self.raw_lc = self.raw_lc[~self.tmask]
             # update tmask
             self.tmask = self.get_transit_mask()
+        self._check_cancel("before flattening light curve")
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
+        self._check_cancel("after flattening light curve")
         self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
         flat_time = self.flat_lc.time.value
         self._flat_time_min = flat_time.min()
@@ -156,7 +179,9 @@ class TessQuickLook:
             if Porb_limits is None
             else Porb_limits[1]
         )
+        self._check_cancel("before TLS transit search")
         self.run_tls()
+        self._check_cancel("after TLS transit search")
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period,
             epoch_time=self.tls_results.T0,
@@ -168,6 +193,18 @@ class TessQuickLook:
         self.savefig = savefig
         self.savetls = savetls
         self.archival_survey = archival_survey
+        self.show_simbad = show_simbad
+
+    def _check_cancel(self, phase=""):
+        """Raise InterruptedError if the GUI's cancel button was pressed.
+
+        Called at phase boundaries so a cancel issued mid-pipeline (e.g.
+        during a slow MAST download or a multi-minute TLS run) is honoured
+        as soon as the current blocking call returns, instead of running
+        the rest of the pipeline to completion.
+        """
+        if self.cancel_check is not None and self.cancel_check():
+            raise InterruptedError(f"Job cancelled ({phase})" if phase else "Job cancelled")
 
     def __repr__(self):
         """Override to print a readable string representation of class.
@@ -212,9 +249,8 @@ class TessQuickLook:
         """
         self.star_names = np.array(self.exofop_data.get("basic_info")["star_names"].split(", "))
         if self.verbose:
-            print("Catalog names:")
-            for n in self.star_names:
-                print(f"\t{n}")
+            names_block = "\n".join(f"\t{n}" for n in self.star_names)
+            logger.info(f"Catalog names:\n{names_block}")
         self.gaia_name = self.star_names[
             np.array([i[:4].lower() == "gaia" for i in self.star_names])
         ][0]
@@ -287,7 +323,16 @@ class TessQuickLook:
         name = self.target_name.replace(" ", "")
         if name.lower()[:3] == "toi":
             name = f"TOI{str(self.toiid).zfill(4)}"
-        lctype = self.flux_type if self.pipeline == "spoc" else self.pipeline
+        # Filename "lctype" token. For SPOC it's the flux column (pdcsap/sap);
+        # for TGLC with an explicit aperture/PSF choice it's "tglc_aper" or
+        # "tglc_psf" so the two products of the same target/sector don't
+        # overwrite each other on disk. Otherwise it's just the pipeline name.
+        if self.pipeline == "spoc":
+            lctype = self.flux_type
+        elif self.pipeline == "tglc" and self.flux_type in ("aperture", "psf"):
+            lctype = "tglc_aper" if self.flux_type == "aperture" else "tglc_psf"
+        else:
+            lctype = self.pipeline
         fp = Path(
             self.outdir,
             f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
@@ -410,17 +455,26 @@ class TessQuickLook:
         # Display available light curves
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available lightcurves:")
-            print(search_result_all_lcs.table.to_pandas()[cols])
+            lc_table = search_result_all_lcs.table.to_pandas()[cols]
+            logger.info(f"All available lightcurves:\n{lc_table.to_string()}")
 
-        # Validate the requested sector
+        # Validate the requested sector. If the user asked for a specific
+        # sector that the MAST search did not return (e.g. a stale value
+        # left over in the GUI from a different target), fall back to the
+        # latest available sector instead of raising — much friendlier
+        # than killing the job, and the warning still surfaces in the log.
         if kwargs.get("sector") is None:
             if self.verbose:
-                print(f"Available sectors: {self.all_sectors}")
+                logger.info(f"Available sectors: {self.all_sectors}")
         else:
             if kwargs.get("sector") not in self.all_sectors:
-                err_msg = f"sector={kwargs.get('sector')} not in {self.all_sectors}"
-                raise NoDataError(err_msg)
+                logger.warning(
+                    f"Requested sector={kwargs.get('sector')} is not in the "
+                    f"available sectors {self.all_sectors} for {self.query_name}; "
+                    "falling back to the latest available sector."
+                )
+                sector_orig = -1
+                kwargs["sector"] = None
 
         # Validate the requested author
         if kwargs.get("author") is None:
@@ -449,7 +503,11 @@ class TessQuickLook:
                     for m in tbl["mission"]
                 ]
             )
-        if kwargs.get("exptime") is not None:
+        # Falsy exptime (None, "", 0) means "no filter" — otherwise the
+        # comparison `tbl["t_exptime"] == ""` evaluates to False on every
+        # row and zeros out the search, which then falsely triggered the
+        # TGLC ePSF fallback even when MAST had products.
+        if kwargs.get("exptime"):
             mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
         search_result = search_result_all_lcs[mask]
         if len(search_result) == 0:
@@ -462,15 +520,20 @@ class TessQuickLook:
         # Download and return light curve
         if sector_orig == "all":
             if self.verbose:
-                print(f"Filtered lightcurves based on query ({kwargs}):")
-                print(search_result.table.to_pandas()[cols])
+                filtered_table = search_result.table.to_pandas()[cols]
+                logger.info(
+                    f"Filtered lightcurves based on query ({kwargs}):\n"
+                    f"{filtered_table.to_string()}"
+                )
             msg = f"Downloading all {kwargs.get('author')} lcs..."
             if self.verbose:
                 logger.info(msg)
             filtered_sectors = self.get_unique_sectors(search_result)
             if len(filtered_sectors) <= 1:
                 raise NoDataError(f"Only {len(filtered_sectors)} sector is available.")
-            lc = search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
+            lc = self._download_with_retry(
+                lambda: search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
+            )
             self.sector = self.all_sectors
 
             if self.pipeline in ["spoc"]:
@@ -489,7 +552,9 @@ class TessQuickLook:
             if self.verbose:
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
-            lc = search_result[idx].download(quality_bitmask=self.quality_bitmask)
+            lc = self._download_with_retry(
+                lambda: search_result[idx].download(quality_bitmask=self.quality_bitmask)
+            )
 
             if self.pipeline in ["spoc"]:
                 # exptime = int(lc.meta["EXPOSURE"] / 10) * 10
@@ -503,9 +568,15 @@ class TessQuickLook:
                 logger.info(msg)
             self.sector = lc.sector
 
-        # Select flux type for SPOC data
-        if lc.meta["AUTHOR"].lower() == "spoc":
+        # Select flux type / photometry for pipelines that expose a choice.
+        author = lc.meta["AUTHOR"].lower()
+        if author == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
+        elif author == "tglc" and self.flux_type in ("aperture", "psf"):
+            # MAST TGLC HLSP files carry both calibrated flux columns.
+            tglc_col = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}[self.flux_type]
+            if tglc_col in lc.colnames:
+                lc = lc.select_flux(tglc_col)
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -541,16 +612,154 @@ class TessQuickLook:
         all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
         return sorted(set(all_sectors))
 
+    def _download_with_retry(self, download_callable, max_retries=1):
+        """Run a lightkurve download; if it fails with a "may be corrupt"
+        error, diagnose the failure (FITS truncation vs. lightkurve
+        adapter error), quarantine the suspect file, and retry once if
+        retrying could plausibly help.
+
+        Lightkurve's ``io/read.py`` re-labels *any* exception from its
+        format-specific reader as "this file may be corrupt — remove
+        it." That message is misleading: a file that passes
+        ``astropy.io.fits.verify('exception')`` is not corrupt — the
+        adapter just failed, and retrying with the same versions will
+        fail the same way. Distinguish the two cases:
+
+        * **truncated** — astropy verify also fails. Genuine partial
+          download. Quarantine and retry.
+        * **adapter_error** — astropy verify passes. Lightkurve's
+          adapter is at fault (schema drift, version skew). Quarantine
+          for post-mortem and raise immediately; no retry.
+        * **missing** — file already gone (e.g. previous quarantine
+          step ran). Treat like truncated for retry purposes.
+
+        Quarantined files are renamed to
+        ``<original>.bad-<unix_ts>`` so the on-disk evidence survives
+        the next run.
+
+        Parameters
+        ----------
+        download_callable : Callable
+            Zero-arg callable that performs the lightkurve download.
+        max_retries : int
+            How many times to retry after a quarantine. Defaults to 1.
+        """
+        from lightkurve.utils import LightkurveError
+        from astropy.io import fits
+        from time import time as _now
+
+        def _diagnose(path):
+            if not path.exists():
+                return "missing"
+            try:
+                with fits.open(path) as hdul:
+                    for hdu in hdul:
+                        hdu.verify("exception")
+                return "adapter_error"
+            except Exception:
+                return "truncated"
+
+        def _quarantine(path):
+            ts = int(_now())
+            dest = path.with_suffix(path.suffix + f".bad-{ts}")
+            try:
+                path.rename(dest)
+                return dest
+            except OSError as rename_err:
+                logger.warning(f"Could not quarantine {path}: {rename_err}. Deleting instead.")
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+                return None
+
+        for attempt in range(max_retries + 1):
+            try:
+                return download_callable()
+            except LightkurveError as e:
+                msg = str(e)
+                # Lightkurve's exact text:
+                #   "Error in reading Data product <PATH> of type <TYPE> .
+                #    This file may be corrupt due to an interrupted download.
+                #    Please remove it from your disk and try again."
+                m = re.search(r"Error in reading Data product\s+(\S+)", msg)
+                if not m:
+                    # Unrecognised error shape — nothing to clean up.
+                    raise
+
+                bad_path = Path(m.group(1))
+                verdict = _diagnose(bad_path)
+
+                if verdict == "adapter_error":
+                    # File is structurally valid. Lightkurve's TGLC/SPOC
+                    # adapter raised something the read wrapper turned
+                    # into a "corrupt" message. Retrying won't help.
+                    quarantined = _quarantine(bad_path)
+                    where = (
+                        f"Quarantined the suspect file at: {quarantined}"
+                        if quarantined is not None
+                        else "Quarantine failed; file removed from cache"
+                    )
+                    raise LightkurveError(
+                        f"Lightkurve reported '{bad_path.name}' as corrupt, but "
+                        f"astropy.io.fits.verify('exception') passes — the FITS "
+                        f"file is structurally valid. This is an adapter-level "
+                        f"failure (likely a lightkurve/astropy version skew or an "
+                        f"upstream HLSP schema change), not an interrupted "
+                        f"download. Retrying with the same package versions will "
+                        f"fail the same way. {where}. "
+                        f"Next steps: (1) inspect the quarantined file with "
+                        f"astropy.io.fits.info() to confirm the schema, "
+                        f"(2) check for a lightkurve update, or "
+                        f"(3) for TGLC, use the local ePSF fallback "
+                        f"(_get_tglc_lc_fallback) which bypasses the HLSP adapter."
+                    ) from e
+
+                # verdict in ("truncated", "missing") — quarantine and retry.
+                if verdict == "truncated":
+                    quarantined = _quarantine(bad_path)
+                    if quarantined is not None:
+                        logger.warning(
+                            f"FITS verify failed (truncated/corrupt). "
+                            f"Quarantined to {quarantined}."
+                        )
+                else:
+                    logger.info(f"Suspect cache file already missing on disk: {bad_path}")
+
+                if attempt >= max_retries:
+                    attempts = max_retries + 1
+                    raise LightkurveError(
+                        f"MAST returned a truncated/corrupt {bad_path.name} on all "
+                        f"{attempts} attempt(s). Suspect copies have been "
+                        f"quarantined alongside the cache as "
+                        f"<name>.bad-<timestamp> for inspection. "
+                        f"This usually means the upstream HLSP product is "
+                        f"temporarily unavailable or the network dropped mid-download. "
+                        f"Try: (1) re-run the same command in a few minutes, "
+                        f"(2) pick a different sector with --sector, or "
+                        f"(3) for TGLC, the local ePSF fallback "
+                        f"(_get_tglc_lc_fallback) can recompute the light curve "
+                        f"directly from the FFI cutout."
+                    ) from e
+                logger.info(f"Retrying download (attempt " f"{attempt + 2}/{max_retries + 1})...")
+
     def _get_tglc_lc_fallback(self, sector):
         """Run local TGLC ePSF extraction when MAST has no TGLC products."""
         logger.info("No TGLC products on MAST; running local ePSF extraction...")
         self.pipeline = "tglc"
         self.all_pipelines = {"TGLC"}
-        sector_arg = None if sector in (None, -1) else int(sector)
+        # Pass the request through to get_tglc_lc unchanged: None -> first
+        # available, -1 -> latest available, positive int -> that sector.
+        sector_arg = None if sector is None else int(sector)
+        # flux_type carries the GUI's aperture/psf choice for TGLC; anything
+        # else (e.g. a stale "pdcsap") falls back to automatic selection.
+        photometry = self.flux_type if self.flux_type in ("aperture", "psf", "auto") else "auto"
         lc = get_tglc_lc(
             self.query_name,
             sector=sector_arg,
+            photometry=photometry,
             verbose=self.verbose,
+            cancel_check=getattr(self, "cancel_check", None),
         )
         self.sector = lc.sector
         self.all_sectors = [lc.sector]
@@ -591,8 +800,8 @@ class TessQuickLook:
 
         cols = ["author", "mission", "t_exptime"]
         if self.verbose:
-            print("All available TPFs:")
-            print(search_result_all_tpfs.table.to_pandas()[cols])
+            tpf_table = search_result_all_tpfs.table.to_pandas()[cols]
+            logger.info(f"All available TPFs:\n{tpf_table.to_string()}")
         tpf_authors = search_result_all_tpfs.table.to_pandas()["author"].unique()
         if kwargs.get("author").upper() not in tpf_authors:
             if self.verbose:
@@ -689,7 +898,7 @@ class TessQuickLook:
         if planet_params is None:
             return (None, None, None, None)
         if self.verbose:
-            print(f"Parameters for {planet_params.get('name', 'unknown')}:")
+            logger.info(f"Parameters for {planet_params.get('name', 'unknown')}:")
 
         # Initialize variables
         toi_epoch = None
@@ -705,7 +914,7 @@ class TessQuickLook:
             err = planet_params.get(p + "_e")
             err = float(err) if err else 0.1
             if self.verbose:
-                print(f"{p}: {val}, {err} {unit}")
+                logger.info(f"{p}: {val}, {err} {unit}")
             if p == "epoch":
                 toi_epoch = np.array((val, err))
                 toi_epoch[0] -= TESS_TIME_OFFSET
@@ -754,12 +963,71 @@ class TessQuickLook:
         }
         if self.tls_use_threads is not None:
             power_kwargs["use_threads"] = self.tls_use_threads
+        if self.use_star_priors:
+            logger.info(
+                "use_priors=True: fetching ExoFOP stellar parameters (R_star, M_star) for TLS"
+            )
+            power_kwargs.update(self._stellar_prior_kwargs())
+        else:
+            logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
         self.tls_results = tls(
             self.flat_lc.time.value,
             self.flat_lc.flux.value,
             flux_err,
             verbose=self.verbose,
         ).power(**power_kwargs)
+
+    def _stellar_prior_kwargs(self):
+        """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
+
+        Returns a dict of TLS ``.power()`` kwargs. Any value that is missing
+        or non-finite is omitted, letting TLS fall back to its Sun-like
+        default for that parameter alone.
+        """
+        try:
+            star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters", idx=1)
+        except (KeyError, TypeError, ValueError, IndexError):
+            try:
+                star_params = get_params_from_exofop(self.exofop_data, name="stellar_parameters")
+            except (KeyError, TypeError, ValueError, IndexError) as e:
+                logger.warning(f"No ExoFOP stellar params available ({e}); skipping priors")
+                return {}
+
+        def _as_float(key):
+            try:
+                v = float(star_params.get(key))
+            except (TypeError, ValueError):
+                return None
+            return v if np.isfinite(v) else None
+
+        kwargs = {}
+        # R_star and ±1σ bounds (R_star ± srad_e), clipped to TLS's allowed range.
+        r = _as_float("srad")
+        r_err = _as_float("srad_e")
+        if r is not None:
+            kwargs["R_star"] = r
+            if r_err is not None and r_err > 0:
+                kwargs["R_star_min"] = max(r - r_err, 0.13)
+                kwargs["R_star_max"] = r + r_err
+        # M_star and ±1σ bounds (M_star ± mass_e).
+        m = _as_float("mass")
+        m_err = _as_float("mass_e")
+        if m is not None:
+            kwargs["M_star"] = m
+            if m_err is not None and m_err > 0:
+                kwargs["M_star_min"] = max(m - m_err, 0.1)
+                kwargs["M_star_max"] = m + m_err
+
+        if not kwargs:
+            logger.warning("ExoFOP stellar params present but unusable; skipping priors")
+        else:
+            # Logged unconditionally (not gated on verbose) so users can always
+            # verify which prior values reached TLS when they enabled --use_priors.
+            # Round to 2 significant figures for readability (display only; the
+            # full-precision kwargs are still returned to TLS).
+            pretty = {k: float(f"{v:.2g}") for k, v in kwargs.items()}
+            logger.info(f"Using ExoFOP stellar priors for TLS: {pretty}")
+        return kwargs
 
     def init_gls(self):
         masked_lc = self.raw_lc[~self.tmask]
@@ -904,15 +1172,20 @@ class TessQuickLook:
             tmask = np.zeros_like(self.raw_lc.time.value, dtype=bool)
         return tmask
 
-    def make_summary_info(self):
-        """
-        Generate a summary string with the TLS results, stellar params,
-        and other useful information.
+    def _summary_sections(self):
+        """Build the summary as structured (label, value) rows per section.
+
+        Single source of truth for both the plain-text summary
+        (:meth:`make_summary_info`) and the rendered panel
+        (:meth:`_render_summary_panel`). Units use mathtext so they render
+        cleanly in matplotlib. TOI/TFOP reference values are emitted as their
+        own rows (rather than appended to the TLS value) so each row stays
+        short and the label/value columns line up.
 
         Returns
         -------
-        msg : str
-            A summary string with the results.
+        list of (str, list of (str, str))
+            ``[(section_title, [(label, value), ...]), ...]``
         """
         try:
             # Use the TIC stellar parameters as default
@@ -947,108 +1220,235 @@ class TessQuickLook:
         meta = self.raw_lc.meta
         # Calculate the planet radius
         Rp = self.tls_results["rp_rs"] * params["srad"] * u.Rsun.to(u.Rearth)
-        # If the pipeline is Spoc or Tess-Spoc, correct for dilution
+        # If the pipeline is Spoc or Tess-Spoc, correct for dilution. Keep the
+        # applied contamination factor so it can be shown in the summary panel.
         if self.pipeline in ["spoc", "tess-spoc"]:
-            Rp_true = Rp * np.sqrt(1 + meta["CROWDSAP"])
+            contam_factor = np.sqrt(1 + meta["CROWDSAP"])
+            Rp_true = Rp * contam_factor
         else:
             # Otherwise, use the raw radius
+            contam_factor = None
             Rp_true = Rp
-        # Create the summary string
-        msg = "\nCandidate Properties\n"
-        msg += "-" * 30 + "\n"
-        text = f"SDE={self.tls_results.SDE:.4f} (sector={self.sector}"
-        text += f" in {self.all_sectors})"
-        msg += "\n".join(textwrap.wrap(text, 60))
-        msg += f"\nPeriod={self.tls_results.period:.4f}" + r"$\pm$"
-        msg += f"{self.tls_results.period_uncertainty:.4f} d (TLS)"
-        if self.toi_period is not None:
-            msg += f", {self.toi_period[0]:.4f}" + r"$\pm$"
-            msg += f"{self.toi_period[1]:.4f} d ({self.ephem_source})\n"
-        else:
-            msg += "\n"
-        msg += f"T0={self.tls_results.T0:.4f} "
-        if self.toi_period is not None:
-            msg += f"(TLS), {self.toi_epoch[0]:.4f}" + r"$\pm$"
-            msg += f"{self.toi_epoch[1]:.4f} "
-            msg += f"BJD-{TESS_TIME_OFFSET} ({self.ephem_source})\n"
-        else:
-            msg += f"BJD-{TESS_TIME_OFFSET} (TLS)\n"
-        msg += f"Duration={self.tls_results.duration * 24:.2f} hr (TLS)"
-        if self.toi_dur is not None:
-            msg += f", {self.toi_dur[0] * 24:.2f}" + r"$\pm$"
-            msg += f"{self.toi_dur[1] * 24:.2f} hr ({self.ephem_source})\n"
-        else:
-            msg += "\n"
-        msg += f"Depth={(1 - self.tls_results.depth) * 1e3:.2f} ppt (TLS)"
-        if self.toi_depth is not None:
-            msg += f", {self.toi_depth[0]:.1f}" + r"$\pm$"
-            msg += f"{self.toi_depth[1]:.1f} ppt (TFOP)\n"
-        else:
-            msg += "\n"
-        if (
-            (meta["FLUX_ORIGIN"].lower() == "pdcsap")
-            or (meta["FLUX_ORIGIN"].lower() == "sap")
-            or self.pipeline == "tglc"
-        ):
-            # msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted)" + " " * 5
-            msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$ "
-            msg += f"= {Rp_true * u.Rearth.to(u.Rjup):.2f}" + r"R$_{\rm{Jup}}$" + "\n"
-        else:
-            msg += f"Rp={Rp:.2f} " + r"R$_{\oplus}$" + "(diluted), "
-            msg += f"Rp={Rp_true:.2f} " + r"R$_{\oplus}$" + "(undiluted)\n"
 
-        if self.toi_rp is not None:
-            msg += (
-                f"Rp={self.toi_rp[0]:.2f}"
-                + r"$\pm$"
-                + f"{self.toi_rp[1]:.2f} "
-                + r"R$_{\oplus}$ "
-                + "(TFOP)\n"
+        pm = r"$\pm$"
+        r_earth = r"R$_{\oplus}$"
+        r_sun = r"R$_{\odot}$"
+        m_sun = r"M$_{\odot}$"
+        tls = self.tls_results
+
+        # --- Candidate properties ---
+        candidate = [
+            ("SDE", f"{tls.SDE:.2f}"),
+            ("Period (TLS)", f"{tls.period:.4f}{pm}{tls.period_uncertainty:.4f} d"),
+        ]
+        if self.toi_period is not None:
+            candidate.append(
+                (
+                    f"Period ({self.ephem_source})",
+                    f"{self.toi_period[0]:.4f}{pm}{self.toi_period[1]:.4f} d",
+                )
             )
-        msg += f"Odd-Even mismatch={self.tls_results.odd_even_mismatch:.2f}" + r"$\sigma$"
-        msg += "\n" * 2
-        msg += "Stellar Properties\n"
-        msg += "-" * 30 + "\n"
-        msg += (
-            f"Rstar={params['srad']:.2f}"
-            + r"$\pm$"
-            + f"{params['srad_e']:.2f} "
-            + r"R$_{\odot}$"
-            + " " * 5
+        # BTJD = BJD - TESS_TIME_OFFSET (2457000); compact unit keeps the value
+        # short enough for the half-width column.
+        candidate.append(("T0 (TLS)", f"{tls.T0:.4f} BTJD"))
+        if self.toi_period is not None:
+            candidate.append(
+                (
+                    f"T0 ({self.ephem_source})",
+                    f"{self.toi_epoch[0]:.4f}{pm}{self.toi_epoch[1]:.4f}",
+                )
+            )
+        candidate.append(("Duration (TLS)", f"{tls.duration * 24:.2f} hr"))
+        if self.toi_dur is not None:
+            candidate.append(
+                (
+                    f"Duration ({self.ephem_source})",
+                    f"{self.toi_dur[0] * 24:.2f}{pm}{self.toi_dur[1] * 24:.2f} hr",
+                )
+            )
+        candidate.append(("Depth (TLS)", f"{(1 - tls.depth) * 1e3:.2f} ppt"))
+        if self.toi_depth is not None:
+            candidate.append(
+                ("Depth (TFOP)", f"{self.toi_depth[0]:.1f}{pm}{self.toi_depth[1]:.1f} ppt")
+            )
+        # Contamination factor actually applied to undilute Rp (sqrt(1+CROWDSAP)
+        # for SPOC-family light curves); shown so the correction is auditable.
+        if contam_factor is not None:
+            candidate.append(("Contamination", f"{contam_factor:.2g}"))
+        is_undiluted = (meta["FLUX_ORIGIN"].lower() in ("pdcsap", "sap")) or (
+            self.pipeline == "tglc"
         )
-        msg += f"Teff={params.get('teff')}" + r"$\pm$" + f"{params.get('teff_e')} K" + "\n"
-        msg += (
-            f"Mstar={params['mass']:.2f}"
-            + r"$\pm$"
-            + f"{params['mass_e']:.2f} "
-            + r"M$_{\odot}$"
-            + " " * 5
-        )
-        msg += f"logg={params['logg']:.2f}" + r"$\pm$" + f"{params['logg_e']:.2f} cgs\n"
-        msg += f"Rotation period={self.Prot_ls:.2f} d" + " " * 5
+        if is_undiluted:
+            candidate.append(("Rp (TLS)", f"{Rp_true:.2f} {r_earth}"))
+        else:
+            candidate.append(("Rp (diluted)", f"{Rp:.2f} {r_earth}"))
+            candidate.append(("Rp (undiluted)", f"{Rp_true:.2f} {r_earth}"))
+        if self.toi_rp is not None:
+            candidate.append(
+                ("Rp (TFOP)", f"{self.toi_rp[0]:.2f}{pm}{self.toi_rp[1]:.2f} {r_earth}")
+            )
+        candidate.append(("Odd-Even", f"{tls.odd_even_mismatch:.2f} " + r"$\sigma$"))
+        candidate.append(("Sector", self._format_sector_summary(self.sector, self.all_sectors)))
+
+        # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
-        msg += f"Vsini={per / t:.2f} km/s\n"
-        msg += f"Gaia DR2 ID={self.gaiaid}\n"
-        # msg += f"TIC ID={self.ticid}" + " " * 5
         coords = self.target_coord.to_string("decimal").split()
-        msg += f"RA,Dec={float(coords[0]), float(coords[1])}"
         mags = self.exofop_data["magnitudes"][0]
-        msg += f", {mags['band']}mag={float(mags['value']):.1f}\n"
-        msg += f"Distance={params['dist']:.1f}" + r"$\pm$" + f"{params['dist_e']:.1f} pc\n"
-        # msg += f"GOF_AL={astrometric_gof_al:.2f} (hints binarity if >20)\n"
-        # D = gp.astrometric_excess_noise_sig
-        # msg += f"astro. excess noise sig={D:.2f} (hints binarity if >5)\n"
+        stellar = [
+            ("Rstar", f"{params['srad']:.2f}{pm}{params['srad_e']:.2f} " + r_sun),
+            ("Mstar", f"{params['mass']:.2f}{pm}{params['mass_e']:.2f} " + m_sun),
+            ("Teff", f"{params.get('teff')}{pm}{params.get('teff_e')} K"),
+            ("logg", f"{params['logg']:.2f}{pm}{params['logg_e']:.2f} cgs"),
+            ("Distance", f"{params['dist']:.1f}{pm}{params['dist_e']:.1f} pc"),
+            ("Prot", f"{self.Prot_ls:.2f} d"),
+            ("Vsini", f"{per / t:.2f} km/s"),
+            ("RA, Dec", f"{float(coords[0])}, {float(coords[1])}"),
+            (f"{mags['band']}mag", f"{float(mags['value']):.1f}"),
+            ("Gaia DR2 ID", f"{self.gaiaid}"),
+        ]
         if self.nearby_star_sep is not None:
             if self.nearby_star_sep < 1 * u.arcmin:
                 val = self.nearby_star_sep.to(u.arcsec)
             else:
                 val = self.nearby_star_sep
-            msg += f"Nearby star sep={val:.1f}\n"
+            stellar.append(("Nearby sep", f"{val:.1f}"))
         if self.simbad_obj_type is not None:
-            msg += f"Simbad Object: {self.simbad_obj_type}"
-        # msg += f"met={feh:.2f}"+r"$\pm$"+f"{feh_err:.2f} dex " + " " * 6
-        return msg
+            stellar.append(("SIMBAD type", f"{self.simbad_obj_type}"))
+
+        return [
+            ("Candidate Properties", candidate),
+            ("Stellar Properties", stellar),
+        ]
+
+    @staticmethod
+    def _format_sector_summary(sector, all_sectors, max_listed=20, sectors_per_line=4):
+        """Format sector availability for the summary panel.
+
+        Keep the selected sector visible, but avoid long inline sector lists
+        because they can run into the neighbouring summary column.
+        """
+        if all_sectors is None:
+            return str(sector)
+        try:
+            sectors = list(all_sectors)
+        except TypeError:
+            sectors = [all_sectors]
+        if len(sectors) == 0:
+            return str(sector)
+        if len(sectors) == 1 and str(sectors[0]) == str(sector):
+            return str(sector)
+        if len(sectors) > max_listed:
+            return f"{sector}\n{len(sectors)} sectors available"
+
+        sector_chunks = [
+            sectors[i : i + sectors_per_line] for i in range(0, len(sectors), sectors_per_line)
+        ]
+        lines = [str(sector)]
+        for i, chunk in enumerate(sector_chunks):
+            prefix = "available: " if i == 0 else ""
+            lines.append(prefix + ", ".join(str(s) for s in chunk))
+        return "\n".join(lines)
+
+    def make_summary_info(self):
+        """
+        Generate a plain-text summary of the TLS results, stellar params,
+        and other useful information.
+
+        Returns
+        -------
+        msg : str
+            A summary string with the results.
+        """
+        lines = []
+        for title, rows in self._summary_sections():
+            lines.append(title)
+            lines.append("-" * 30)
+            for label, value in rows:
+                lines.append(f"{label}: {value}")
+            lines.append("")
+        return "\n".join(lines)
+
+    def _render_summary_panel(self, ax):
+        """Render the summary as aligned label/value rows grouped by section.
+
+        Each section is placed in its own column (side by side) so the two
+        stacks stay short enough to fit the panel without overflowing the
+        bottom edge. Everything is positioned in axes-fraction coordinates
+        (robust to figure size), with bold section headers, a thin divider,
+        and a monospace value column so units and uncertainties line up. Font
+        size follows the figure default so the panel matches the neighbouring
+        plots; the row pitch is sized to the longest column so the content
+        always fits regardless of how many optional rows appear.
+        """
+        sections = self._summary_sections()
+        ax.axis("off")
+        n_cols = len(sections)
+        col_w = 1.0 / n_cols
+        header_fs = pl.rcParams["font.size"]
+        row_fs = header_fs - 1
+
+        # Pitch is set by the longest column plus generous overhead (header,
+        # divider and a comfortable bottom margin) so the final row of the
+        # tallest section stays clear of the panel's bottom edge instead of
+        # being clipped when the figure is compressed (e.g. by the suptitle).
+        def row_units(rows):
+            return sum(
+                max(str(label).count("\n"), str(value).count("\n")) + 1 for label, value in rows
+            )
+
+        max_units = max(row_units(rows) for _, rows in sections) + 5.0
+        top, bottom = 0.99, 0.03
+        dy = (top - bottom) / max_units
+        # Nudge each column leftward: the first (Candidate) column into the left
+        # margin so its labels line up with the "DEC" ylabel of the archival
+        # panel directly above, and the second (Stellar) column slightly left so
+        # it isn't pushed hard against the right edge.
+        col_pads = (-0.195, -0.10)
+        for col, (title, rows) in enumerate(sections):
+            x0 = col * col_w + (col_pads[col] if col < len(col_pads) else 0.0)
+            label_x = x0 + 0.01
+            value_x = x0 + 0.25
+            y = top
+            ax.text(
+                x0,
+                y,
+                title,
+                transform=ax.transAxes,
+                fontsize=header_fs,
+                fontweight="bold",
+                va="top",
+            )
+            y -= dy * 0.8
+            ax.plot(
+                [x0, x0 + col_w - 0.03],
+                [y, y],
+                transform=ax.transAxes,
+                color="0.7",
+                lw=0.8,
+            )
+            y -= dy * 0.9
+            for label, value in rows:
+                units = max(str(label).count("\n"), str(value).count("\n")) + 1
+                ax.text(
+                    label_x,
+                    y,
+                    label,
+                    transform=ax.transAxes,
+                    fontsize=row_fs,
+                    color="0.30",
+                    va="top",
+                )
+                ax.text(
+                    value_x,
+                    y,
+                    value,
+                    transform=ax.transAxes,
+                    fontsize=row_fs,
+                    family="monospace",
+                    va="top",
+                )
+                y -= dy * units
 
     def append_tls_results(self):
         """
@@ -1062,10 +1462,10 @@ class TessQuickLook:
         None
         """
         # Append meta
-        # self.tls_results["meta"] = self.raw_lc._meta
-        # self.tls_results["pipeline"] = self.pipeline
-        # self.tls_results["flux_type"] = self.flux_type
-        # self.tls_results["exptime"] = self.exptime
+        self.tls_results["pipeline"] = self.pipeline
+        self.tls_results["flux_type"] = self.flux_type
+        self.tls_results["exptime"] = self.exptime
+        self.tls_results["cadence"] = self.cadence
 
         # Append the raw light curve
         self.tls_results["time_raw"] = self.raw_lc.time.value
@@ -1099,6 +1499,14 @@ class TessQuickLook:
         # Append baseline model used to flatten raw flux
         self.tls_results["flatten_method"] = self.flatten_method
         self.tls_results["window_length"] = self.window_length
+
+        # Record whether ExoFOP stellar parameters were used as TLS priors,
+        # and (if so) which prior values reached the search. Stored in the
+        # HDF5 output so downstream analysis can tell prior-informed runs
+        # apart from Sun-like-default runs.
+        self.tls_results["use_star_priors"] = bool(self.use_star_priors)
+        if self.use_star_priors:
+            self.tls_results["star_prior_kwargs"] = self._stellar_prior_kwargs()
 
         # Append exofop data (TICv8)
         self.tls_results["exofop_data"] = self.exofop_data
@@ -1224,7 +1632,16 @@ class TessQuickLook:
                 show_colorbar=False,
             )
         )
-        model_folded = pg.model(self.raw_lc[~self.tmask].time).fold(
+        # Evaluate the model sinusoid at the *fold* period. In the GLS path the
+        # fold period (self.Prot_ls) comes from the Gls object, which can differ
+        # from this lightkurve periodogram's own peak frequency; without pinning
+        # the frequency here pg.model() builds a sine at pg.period_at_max_power,
+        # which then drifts across phase when folded at Prot_ls instead of
+        # closing into a single clean sine wave.
+        model_folded = pg.model(
+            self.raw_lc[~self.tmask].time,
+            frequency=(1.0 / self.Prot_ls) / u.day,
+        ).fold(
             self.Prot_ls,
             normalize_phase=False,
             wrap_phase=self.Prot_ls / 2,
@@ -1274,7 +1691,7 @@ class TessQuickLook:
             err_msg = "Pipeline to be added soon."
             logger.info(err_msg)
             raise NotImplementedError(err_msg)
-        elif self.pipeline in ["qlp", "cdips", "tasoc", "pathos", "tglc", "t16"]:
+        elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
             if self.verbose:
                 logger.info("Getting TPF with tesscut...")
             self.tpf = self.get_tpf_tesscut()
@@ -1324,6 +1741,7 @@ class TessQuickLook:
                 sap_mask=self.sap_mask,
                 aper_radius=2,
                 survey=self.archival_survey,
+                show_simbad=self.show_simbad,
                 verbose=self.verbose,
                 ax=ax,
             )
@@ -1347,22 +1765,32 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting odd-even transit...")
         ax = axes.flatten()[6]
-        _ = plot_odd_even_transit(self.fold_lc, self.tls_results, bin_mins=10, markersize=6, ax=ax)
+        _ = plot_odd_even_transit(
+            self.fold_lc,
+            self.tls_results,
+            bin_mins=10,
+            markersize=6,
+            ax=ax,
+            phase_xlim=self.phase_xlim,
+        )
 
         if self.verbose:
             logger.info("Plotting secondary eclipse...")
         ax = axes.flatten()[7]
         _ = plot_secondary_eclipse(
-            self.flat_lc, self.tls_results, tmask2, bin_mins=10, markersize=6, ax=ax
+            self.flat_lc,
+            self.tls_results,
+            tmask2,
+            bin_mins=10,
+            markersize=6,
+            ax=ax,
+            phase_xlim=self.phase_xlim,
         )
 
         if self.verbose:
             logger.info("Creating summary panel...")
         ax = axes.flatten()[8]
-        ax.axis([0, 10, 0, 10])
-        msg = self.make_summary_info()
-        ax.text(-1, 11, msg, ha="left", va="top", fontsize=10, wrap=True)
-        ax.axis("off")
+        self._render_summary_panel(ax)
         title = ""
         if self.toiid is not None:
             title = f"TOI {self.toiid} | "
@@ -1447,7 +1875,7 @@ if __name__ == "__main__":
             # Take a snapshot and find any unclosed resources
             snapshot = tracemalloc.take_snapshot()
             for stat in snapshot.statistics("lineno"):
-                print(stat)
+                logger.debug(stat)
 
         else:
             fig = ql.plot_tql()

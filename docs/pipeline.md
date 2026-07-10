@@ -63,7 +63,7 @@ The [Transit Least Squares](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..
 
 **Panel 6: Archival image + Gaia overlay**
 
-The TESS aperture (blue polygon) overlaid on an archival sky survey image (DSS by default). Orange and red circles show nearby Gaia sources, scaled by brightness. This panel helps identify:
+The TESS aperture (blue polygon) overlaid on an archival sky survey image (DSS by default). Orange and red circles show nearby Gaia sources, scaled by brightness. With `-show_simbad` (CLI) or the GUI checkbox, nearby non-stellar SIMBAD objects within the field of view are also labelled by their condensed object type (e.g. `EclBin`), which helps flag known eclipsing binaries or other variables near the target. DSS cutouts are cached under `~/.astropy/cache` so repeated runs of the same field do not re-download the image. This panel helps identify:
 
 - Blended neighbors that could be the true source of the signal
 - Background eclipsing binaries contaminating the aperture
@@ -115,5 +115,7 @@ When `-save` is used, QuickLook produces:
 | `TARGET_sSECTOR_FLUX_CADENCE_tls.h5` | HDF5 file with full TLS results |
 
 Example: `WASP-21_s56_pdcsap_sc.png` and `WASP-21_s56_pdcsap_sc_tls.h5`
+
+For TGLC runs, the flux token encodes the photometry method: `--fluxtype aperture` writes `tglc_aper` and `--fluxtype psf` writes `tglc_psf` (e.g. `TIC123_s11_tglc_psf_lc.png`). This keeps aperture and PSF runs of the same target/sector from overwriting each other on disk. SPOC stems and default (auto) TGLC stems are unchanged.
 
 The HDF5 file contains the TLS periodogram, best-fit parameters, stellar parameters, and metadata. Use `read_tls` to extract a summary CSV from a directory of these files.

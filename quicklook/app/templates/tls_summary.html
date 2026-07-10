@@ -1,0 +1,900 @@
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}summary{% endblock %}
+{% block title %}TLS Results Summary{% endblock %}
+{% block head %}
+  <style>
+    /* Theme vars, * box-sizing, .btn*, .theme-toggle, @keyframes spin
+       and .page-loading family live in static/css/quicklook.css. */
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      max-width: 1400px; margin: 0 auto; padding: 24px 20px;
+      color: var(--text); background: var(--bg); line-height: 1.5;
+      transition: background-color 0.3s, color 0.3s;
+      /* Override: brighter row-hover for the dense table view. */
+      --hover-bg: #eef1ff;
+    }
+    [data-theme="dark"] body { --hover-bg: #1f2342; }
+    a { text-decoration: none; }  /* override default underline */
+    a:hover { text-decoration: underline; }
+    h1 { text-align: center; font-size: 1.5rem; margin: 0 0 4px; }
+    .subtitle { text-align: center; color: var(--text-sec); font-size: 0.88rem; margin-bottom: 18px; }
+
+    .top-bar {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 14px;
+    }
+
+    .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+    .search {
+      padding: 7px 12px; border: 1px solid var(--input-border); border-radius: 6px;
+      font-size: 0.9rem; min-width: 240px; background: var(--input-bg); color: var(--text);
+    }
+    .search:focus { outline: none; border-color: var(--primary); }
+    .count {
+      font-size: 0.82rem; color: var(--text-sec); white-space: nowrap;
+    }
+
+    .table-wrap {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+      overflow: auto; max-height: 78vh;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; min-width: 1500px; }
+
+    /* Freeze the Target column so it stays visible while scrolling horizontally. */
+    table.tls-table thead th:first-child,
+    table.tls-table tbody td:first-child {
+      position: sticky; left: 0; z-index: 2;
+      background: var(--card-bg);
+      box-shadow: 1px 0 0 var(--border);
+    }
+    table.tls-table thead th:first-child { background: var(--thead-bg); z-index: 3; }
+    table.tls-table thead tr.col-filter-row th:first-child { background: var(--card-bg); }
+    table.tls-table tbody tr:nth-child(even) td:first-child { background: var(--row-alt); }
+    table.tls-table tbody tr:hover td:first-child { background: var(--hover-bg); }
+    thead { position: sticky; top: 0; z-index: 1; }
+    thead th {
+      background: var(--thead-bg); color: var(--text);
+      font-weight: 700; font-size: 0.78rem; text-transform: uppercase;
+      letter-spacing: 0.3px;
+      padding: 10px 12px; text-align: left; cursor: pointer; user-select: none;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th .arrow { color: var(--text-sec); margin-left: 4px; font-size: 0.75rem; opacity: 0.4; }
+    thead th.sort-asc  .arrow::before { content: "\25B2"; opacity: 1; color: var(--primary); }
+    thead th.sort-desc .arrow::before { content: "\25BC"; opacity: 1; color: var(--primary); }
+    thead th .arrow::before { content: "\25C7"; }
+
+    /* Per-column filter row — distinct class (`.col-filter-row`) to avoid
+       colliding with the modal's `.filter-row` (flex layout). Padding
+       matches the header (12px) and body (12px) cells so each input sits
+       flush under its column header. */
+    thead tr.col-filter-row th {
+      cursor: default; padding: 4px 12px; background: var(--card-bg);
+      text-transform: none; letter-spacing: normal; font-weight: normal;
+      vertical-align: middle;
+    }
+    thead tr.col-filter-row th:hover { background: var(--card-bg); }
+    .col-filter-row input {
+      width: 100%; min-width: 0; box-sizing: border-box;
+      padding: 4px 6px; border: 1px solid var(--input-border); border-radius: 4px;
+      font-size: 0.75rem; background: var(--input-bg); color: var(--text);
+      font-family: inherit; margin: 0;
+    }
+    .col-filter-row input:focus { outline: none; border-color: var(--primary); }
+    .col-filter-row input.has-value {
+      border-color: var(--primary); background: var(--hover-bg); font-weight: 600;
+    }
+    .filter-hint {
+      font-size: 0.75rem; color: var(--text-sec);
+      margin: 0 0 6px 4px;
+    }
+    .filter-hint code {
+      background: var(--input-bg); border: 1px solid var(--border-light);
+      border-radius: 3px; padding: 0 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.72rem;
+    }
+
+    tbody td {
+      padding: 8px 12px; border-bottom: 1px solid var(--border-light);
+      vertical-align: middle; white-space: nowrap;
+    }
+    tbody tr:nth-child(even) { background: var(--row-alt); }
+    tbody tr:hover { background: var(--hover-bg); }
+    .num { font-variant-numeric: tabular-nums; text-align: right; }
+    .target { font-weight: 600; }
+    .pill {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700;
+      background: var(--pill-bg); color: var(--pill-fg);
+      text-transform: lowercase;
+    }
+    .muted { color: var(--text-sec); }
+    .actions { display: flex; gap: 6px; }
+    .actions a { font-size: 0.78rem; color: var(--primary); }
+    .empty {
+      padding: 60px 20px; text-align: center; color: var(--text-sec);
+      font-size: 0.95rem;
+    }
+    .skipped {
+      margin-top: 12px; font-size: 0.78rem; color: var(--text-sec);
+    }
+    .skipped details summary { cursor: pointer; }
+    /* Directory chooser */
+    .dir-bar {
+      display: flex; flex-direction: column; gap: 6px;
+      margin-bottom: 14px;
+    }
+    .dir-form {
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px;
+    }
+    .dir-form label {
+      font-size: 0.82rem; color: var(--text-sec); white-space: nowrap;
+    }
+    .dir-form input[type="text"] {
+      flex: 1; min-width: 280px;
+      padding: 7px 12px; border: 1px solid var(--input-border);
+      border-radius: 6px; font-size: 0.85rem;
+      background: var(--input-bg); color: var(--text);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .dir-form input[type="text"]:focus { outline: none; border-color: var(--primary); }
+    .dir-form .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    .dir-error {
+      padding: 8px 12px; background: #fef2f2; color: #b91c1c;
+      border: 1px solid #fecaca; border-radius: 6px; font-size: 0.85rem;
+    }
+    [data-theme="dark"] .dir-error {
+      background: #7f1d1d; color: #fca5a5; border-color: #b91c1c;
+    }
+    /* @keyframes spin + .page-loading base live in shared CSS. We only
+       override the path text to be monospace so long dirs wrap nicely. */
+    .page-loading .text small {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      word-break: break-all;
+    }
+
+    /* Browse modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+      display: none; align-items: center; justify-content: center; z-index: 1000;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      background: var(--card-bg); border: 1px solid var(--border);
+      border-radius: 10px; width: 92%; max-width: 720px; max-height: 80vh;
+      display: flex; flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { margin: 0; font-size: 1rem; }
+    .modal-close {
+      background: none; border: none; cursor: pointer;
+      font-size: 1.4rem; color: var(--text-sec); line-height: 1; padding: 0 4px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 12px 16px; overflow: auto; flex: 1; }
+    .modal-footer {
+      display: flex; gap: 8px; justify-content: flex-end;
+      padding: 12px 16px; border-top: 1px solid var(--border);
+    }
+    .breadcrumb {
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+      font-size: 0.82rem; margin-bottom: 10px;
+    }
+    .breadcrumb a {
+      color: var(--primary); cursor: pointer; padding: 2px 4px; border-radius: 3px;
+    }
+    .breadcrumb a:hover { background: var(--hover-bg); text-decoration: underline; }
+    .breadcrumb .sep { color: var(--text-sec); }
+    .modal-current {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.78rem; color: var(--text-sec);
+      padding: 6px 10px; background: var(--input-bg);
+      border-radius: 4px; margin-bottom: 10px; word-break: break-all;
+    }
+    .modal-current .badge {
+      background: var(--pill-bg); color: var(--pill-fg);
+      font-size: 0.7rem; padding: 2px 6px; border-radius: 10px;
+      font-weight: 700; margin-left: 8px; text-transform: uppercase;
+    }
+    .dir-list { display: flex; flex-direction: column; gap: 2px; }
+    .dir-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 6px; cursor: pointer;
+      transition: background-color 0.1s;
+    }
+    .dir-row:hover { background: var(--hover-bg); }
+    .dir-row .icon { color: var(--text-sec); }
+    .dir-row .name {
+      flex: 1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .dir-row .tls-badge {
+      background: var(--pill-bg); color: var(--pill-fg);
+      font-size: 0.68rem; padding: 1px 6px; border-radius: 10px; font-weight: 700;
+      text-transform: uppercase;
+    }
+    .dir-row .chev { color: var(--text-sec); font-size: 1rem; }
+    .modal-empty {
+      padding: 20px; text-align: center; color: var(--text-sec); font-size: 0.85rem;
+    }
+    .modal-error:empty { display: none; }
+    .modal-error {
+      margin-bottom: 10px; padding: 8px 12px;
+      background: #fef2f2; color: #b91c1c;
+      border: 1px solid #fecaca; border-radius: 6px; font-size: 0.82rem;
+    }
+    [data-theme="dark"] .modal-error {
+      background: #7f1d1d; color: #fca5a5; border-color: #b91c1c;
+    }
+    /* "Only folders with TLS files" filter */
+    .filter-row {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.82rem; color: var(--text-sec);
+      margin-bottom: 8px; user-select: none;
+    }
+    .filter-row label { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .dir-list.tls-only .dir-row:not(.has-tls) { display: none; }
+    .dir-list.tls-only .dir-row.has-tls .tls-badge { display: none; } /* redundant when filtered */
+
+    .ext-path {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.75rem; color: var(--text-sec);
+      max-width: 360px; overflow: hidden; text-overflow: ellipsis;
+      display: inline-block; vertical-align: middle;
+    }
+
+    @media (max-width: 800px) {
+      .controls { width: 100%; }
+      .search { min-width: 0; flex: 1; }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="top-bar">
+  <div class="controls">
+    <input type="search" id="search" class="search" placeholder="Filter by target, pipeline, anything..." autofocus>
+    <button type="button" class="btn btn-outline btn-sm" id="resetFiltersBtn" title="Clear the global search and every per-column filter">Reset</button>
+    <span class="count" id="count">{{ total }} result{{ '' if total == 1 else 's' }}</span>
+  </div>
+</div>
+
+<div class="dir-bar">
+  <form method="get" action="{{ url_for('tls_summary') }}" class="dir-form" id="dirForm"
+        data-current-dir="{{ current_dir }}"
+        data-is-default="{{ 'true' if is_default_dir else 'false' }}"
+        data-has-dir-param="{{ 'true' if request.args.get('dir') else 'false' }}">
+    <label for="dirInput">TLS directory:</label>
+    <input type="text" id="dirInput" name="dir" value="{{ current_dir }}"
+           list="recent-dirs" spellcheck="false" autocomplete="off"
+           placeholder="absolute path to *_tls.h5 directory">
+    <datalist id="recent-dirs"></datalist>
+    <button type="button" class="btn btn-outline btn-sm" id="browseBtn" title="Browse a tree of directories on this machine">Browse&hellip;</button>
+    <button type="submit" class="btn btn-outline btn-sm">Load</button>
+    {% if not is_default_dir %}
+    <a href="{{ url_for('tls_summary') }}" class="btn btn-outline btn-sm" title="Reset to the app's default outputs folder">Reset</a>
+    {% endif %}
+  </form>
+  {% if dir_error %}
+  <div class="dir-error">&#9888; {{ dir_error }} &mdash; showing default folder.</div>
+  {% endif %}
+</div>
+
+<h1>TLS Results Summary</h1>
+<p class="subtitle">All saved TLS HDF5 outputs &mdash; click a column to sort, type to filter.</p>
+<p class="filter-hint">
+  Per-column filter syntax: <code>&gt;5</code>, <code>&lt;10</code>, <code>&gt;=2</code>, <code>&lt;=1</code>, <code>=5</code>, <code>3..7</code> (range) for numbers;
+  <code>==exact</code> for full match, else substring for text.
+</p>
+
+{% if rows %}
+<div class="table-wrap">
+  <table id="tlsTable" class="tls-table">
+    <thead>
+      <tr>
+        <th data-key="target" data-type="str">Target <span class="arrow"></span></th>
+        <th data-key="pipeline" data-type="str">Pipeline <span class="arrow"></span></th>
+        <th data-key="exptime" data-type="num">Exp (s) <span class="arrow"></span></th>
+        <th data-key="sector" data-type="num">Sector <span class="arrow"></span></th>
+        <th data-key="Porb" data-type="num">Porb [d] <span class="arrow"></span></th>
+        <th data-key="duration_hr" data-type="num">Dur [hr] <span class="arrow"></span></th>
+        <th data-key="rp_rs" data-type="num">Rp/Rs <span class="arrow"></span></th>
+        <th data-key="depth_ppt" data-type="num">Depth [ppt] <span class="arrow"></span></th>
+        <th data-key="SDE" data-type="num">SDE <span class="arrow"></span></th>
+        <th data-key="snr" data-type="num">SNR <span class="arrow"></span></th>
+        <th data-key="FAP" data-type="num">FAP <span class="arrow"></span></th>
+        <th data-key="odd_even" data-type="num">Odd-even &Delta; <span class="arrow"></span></th>
+        <th data-key="n_tr" data-type="num">N_tr <span class="arrow"></span></th>
+        <th data-key="Prot_gls" data-type="num">Prot [d] <span class="arrow"></span></th>
+        <th data-key="power_gls" data-type="num">GLS power <span class="arrow"></span></th>
+        <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
+        <th data-key="tic" data-type="num">TIC <span class="arrow"></span></th>
+        <th>Files</th>
+      </tr>
+      <tr class="col-filter-row">
+        <th><input type="text" data-col="0"  data-type="str" placeholder="text"></th>
+        <th><input type="text" data-col="1"  data-type="str" placeholder="text"></th>
+        <th><input type="text" data-col="2"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="3"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="4"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="5"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="6"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="7"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="8"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="9"  data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="10" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="11" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="12" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="13" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="14" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="15" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="16" data-type="num" placeholder="> < .."></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="target" data-target="{{ r.stem }}">
+          {% if r.png %}<a href="{{ r.png }}" target="_blank">{{ r.stem }}</a>{% else %}{{ r.stem }}{% endif %}
+        </td>
+        <td>{% if r.pipeline %}<span class="pill">{{ r.pipeline }}</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+        <td class="num" data-v="{{ r.exptime if r.exptime is not none else '' }}">
+          {% if r.exptime is not none %}{{ "%.0f"|format(r.exptime) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.sector if r.sector is not none else '' }}">
+          {% if r.sector is not none %}{{ r.sector }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.Porb if r.Porb is not none else '' }}">
+          {% if r.Porb is not none %}{{ "%.4f"|format(r.Porb) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.duration_hr if r.duration_hr is not none else '' }}">
+          {% if r.duration_hr is not none %}{{ "%.2f"|format(r.duration_hr) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.rp_rs if r.rp_rs is not none else '' }}">
+          {% if r.rp_rs is not none %}{{ "%.4f"|format(r.rp_rs) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.depth_ppt if r.depth_ppt is not none else '' }}">
+          {% if r.depth_ppt is not none %}{{ "%.2f"|format(r.depth_ppt) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.SDE if r.SDE is not none else '' }}">
+          {% if r.SDE is not none %}{{ "%.2f"|format(r.SDE) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.snr if r.snr is not none else '' }}">
+          {% if r.snr is not none %}{{ "%.2f"|format(r.snr) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.FAP if r.FAP is not none else '' }}">
+          {% if r.FAP is not none %}{{ "%.2e"|format(r.FAP) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.odd_even if r.odd_even is not none else '' }}">
+          {% if r.odd_even is not none %}{{ "%.2f"|format(r.odd_even) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.n_tr if r.n_tr is not none else '' }}">
+          {% if r.n_tr is not none %}{{ r.n_tr }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.Prot_gls if r.Prot_gls is not none else '' }}">
+          {% if r.Prot_gls is not none %}{{ "%.3f"|format(r.Prot_gls) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.power_gls if r.power_gls is not none else '' }}">
+          {% if r.power_gls is not none %}{{ "%.4f"|format(r.power_gls) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.toi if r.toi is not none else '' }}">{{ r.toi if r.toi is not none else '' }}</td>
+        <td class="num" data-v="{{ r.tic if r.tic is not none else '' }}">{{ r.tic if r.tic is not none else '' }}</td>
+        <td class="actions">
+          {% if r.external %}
+            <span class="ext-path" title="{{ r.disk_path }}">{{ r.disk_path }}</span>
+          {% else %}
+            {% if r.png %}<a href="{{ r.png }}" target="_blank">PNG</a>{% endif %}
+            {% if r.h5 %}<a href="{{ r.h5 }}" download>H5</a>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  No TLS results in this directory yet. <a href="{{ url_for('index') }}">Run a target on the home page</a> with <em>Save outputs</em> enabled and the resulting <code>*_tls.h5</code> files will appear here.
+</div>
+{% endif %}
+
+{% if skipped %}
+<div class="skipped">
+  <details>
+    <summary>{{ skipped|length }} file{{ '' if skipped|length == 1 else 's' }} could not be parsed</summary>
+    <ul>
+      {% for s in skipped %}
+      <li><code>{{ s.name }}</code> &mdash; {{ s.error }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* =========================================================================
+   Persist the selected TLS directory across page navigations.
+   - Save the *current* dir to localStorage whenever the page is rendered
+     with a valid non-default dir.
+   - On a clean visit (no ?dir= in URL), rehydrate from storage by
+     redirecting to /tls-summary?dir=<saved> exactly once.
+   - The "Reset" link explicitly clears the saved value (handler below).
+   ========================================================================= */
+(function persistSelectedDir() {
+  const KEY = 'tls-summary-current-dir';
+  const form = document.getElementById('dirForm');
+  if (!form) return;
+  const currentDir = form.dataset.currentDir || '';
+  const isDefault = form.dataset.isDefault === 'true';
+  const urlHasDir = form.dataset.hasDirParam === 'true';
+
+  if (!urlHasDir) {
+    // Fresh page load (no ?dir=); rehydrate if we have a saved one.
+    let saved = null;
+    try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
+    if (saved && saved !== currentDir) {
+      window.location.replace('/tls-summary?dir=' + encodeURIComponent(saved));
+      return; // The new navigation will re-run this script.
+    }
+  } else if (!isDefault && currentDir) {
+    // Server confirmed a custom dir is loaded — remember it.
+    try { localStorage.setItem(KEY, currentDir); } catch (e) {}
+  }
+  // Note: when URL had ?dir= but server fell back to default (bad path),
+  // we intentionally leave the previously-saved value untouched.
+})();
+
+/* Theme handling lives in static/js/quicklook.js. */
+
+/* Directory input — persist recently-used paths in localStorage */
+const DIR_HISTORY_KEY = 'tls-summary-dir-history';
+const DIR_HISTORY_MAX = 10;
+const dirInput = document.getElementById('dirInput');
+const dirDatalist = document.getElementById('recent-dirs');
+const dirForm = document.getElementById('dirForm');
+
+function loadDirHistory() {
+  try { return JSON.parse(localStorage.getItem(DIR_HISTORY_KEY) || '[]'); }
+  catch (e) { return []; }
+}
+function saveDirHistory(list) {
+  localStorage.setItem(DIR_HISTORY_KEY, JSON.stringify(list.slice(0, DIR_HISTORY_MAX)));
+}
+function renderDirHistory() {
+  const list = loadDirHistory();
+  if (dirDatalist) {
+    dirDatalist.innerHTML = list.map(p => {
+      const v = p.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      return '<option value="' + v + '">';
+    }).join('');
+  }
+}
+if (dirForm) {
+  dirForm.addEventListener('submit', () => {
+    const v = dirInput.value.trim();
+    if (v) {
+      const list = loadDirHistory().filter(p => p !== v);
+      list.unshift(v);
+      saveDirHistory(list);
+    }
+    // Show loading overlay; the form submission triggers a full-page
+    // navigation, so this stays visible until the new page renders.
+    const overlay = document.getElementById('pageLoading');
+    const overlayPath = document.getElementById('pageLoadingPath');
+    if (overlay) {
+      if (overlayPath) overlayPath.textContent = v || '(default folder)';
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+  });
+}
+renderDirHistory();
+
+/* Also show the loading overlay when the "Reset" link is clicked, and
+   clear the persisted dir so we don't immediately rehydrate from it. */
+document.querySelectorAll('.dir-form a[href]').forEach(a => {
+  a.addEventListener('click', () => {
+    try { localStorage.removeItem('tls-summary-current-dir'); } catch (e) {}
+    const overlay = document.getElementById('pageLoading');
+    const overlayPath = document.getElementById('pageLoadingPath');
+    if (overlay) {
+      if (overlayPath) overlayPath.textContent = '(default folder)';
+      overlay.classList.add('show');
+      overlay.setAttribute('aria-hidden', 'false');
+    }
+  });
+});
+
+/* Search (live filter across all visible columns) */
+const table = document.getElementById('tlsTable');
+const search = document.getElementById('search');
+const countEl = document.getElementById('count');
+const rows = table ? Array.from(table.tBodies[0].rows) : [];
+
+/* Parse a per-column filter expression into a predicate.
+   Numeric: >n, <n, >=n, <=n, =n / ==n, a..b ; bare text → substring on cell.
+   String:  ==text → exact (case-insensitive) ; else substring. */
+const NUM_RE = '-?\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?';
+function parseFilterExpr(expr, type) {
+  expr = (expr || '').trim();
+  if (!expr) return null;
+  if (type === 'num') {
+    let m;
+    m = expr.match(new RegExp('^>=\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v >= n; }
+    m = expr.match(new RegExp('^<=\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v <= n; }
+    m = expr.match(new RegExp('^>\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v > n; }
+    m = expr.match(new RegExp('^<\\s*(' + NUM_RE + ')$'));
+    if (m) { const n = parseFloat(m[1]); return (v) => !isNaN(v) && v < n; }
+    m = expr.match(new RegExp('^==?\\s*(' + NUM_RE + ')$'));
+    if (m) {
+      const n = parseFloat(m[1]);
+      return (v) => !isNaN(v) && Math.abs(v - n) <= 1e-9 * Math.max(1, Math.abs(n));
+    }
+    m = expr.match(new RegExp('^(' + NUM_RE + ')\\s*\\.\\.\\s*(' + NUM_RE + ')$'));
+    if (m) {
+      const a = parseFloat(m[1]), b = parseFloat(m[2]);
+      return (v) => !isNaN(v) && v >= Math.min(a, b) && v <= Math.max(a, b);
+    }
+    // Fallback for numeric column: substring on displayed text.
+    const needle = expr.toLowerCase();
+    return (v, text) => text.includes(needle);
+  }
+  // String
+  const exact = expr.match(/^==?\s*(.+)$/);
+  if (exact) {
+    const target = exact[1].trim().toLowerCase();
+    return (_v, text) => text === target;
+  }
+  const needle = expr.toLowerCase();
+  return (_v, text) => text.includes(needle);
+}
+
+const filterInputs = document.querySelectorAll('.col-filter-row input');
+
+/* Header data-keys aligned to each filter input's data-col index. The
+   key is the `data-key` of the <th> in the first thead row. We use it
+   to (1) read `f_<key>` from the URL and (2) write current values back. */
+const headerCells = table ? Array.from(table.tHead.rows[0].cells) : [];
+function headerKey(colIdx) {
+  const th = headerCells[colIdx];
+  return th && th.dataset.key ? th.dataset.key : null;
+}
+
+function applyFilters({ updateUrl = true } = {}) {
+  if (!table) return;
+  const q = (search ? search.value : '').trim().toLowerCase();
+
+  // Build active per-column predicates.
+  const active = [];
+  filterInputs.forEach((inp) => {
+    const expr = inp.value.trim();
+    inp.classList.toggle('has-value', expr !== '');
+    if (!expr) return;
+    const colIdx = parseInt(inp.dataset.col, 10);
+    const type = inp.dataset.type || 'str';
+    const pred = parseFilterExpr(expr, type);
+    if (pred) active.push({ colIdx, type, pred });
+  });
+
+  let visible = 0;
+  for (const row of rows) {
+    let show = q === '' || row.textContent.toLowerCase().includes(q);
+    if (show) {
+      for (const { colIdx, type, pred } of active) {
+        const td = row.cells[colIdx];
+        if (!td) { show = false; break; }
+        const text = td.textContent.trim().toLowerCase();
+        const raw = (type === 'num')
+          ? parseFloat(td.dataset.v !== undefined && td.dataset.v !== '' ? td.dataset.v : td.textContent)
+          : text;
+        if (!pred(raw, text)) { show = false; break; }
+      }
+    }
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  }
+  countEl.textContent = visible + ' / ' + rows.length + ' results';
+
+  // Mirror filter state into the URL so the view is shareable / bookmarkable.
+  if (updateUrl && window.history && window.history.replaceState) {
+    const url = new URL(window.location.href);
+    // Drop every existing f_* param, then re-add the current ones.
+    Array.from(url.searchParams.keys()).forEach((k) => {
+      if (k.startsWith('f_')) url.searchParams.delete(k);
+    });
+    filterInputs.forEach((inp) => {
+      const expr = inp.value.trim();
+      if (!expr) return;
+      const key = headerKey(parseInt(inp.dataset.col, 10));
+      if (key) url.searchParams.set('f_' + key, expr);
+    });
+    window.history.replaceState(null, '', url.toString());
+  }
+}
+
+/* Restore filter inputs from URL once at page load. */
+(function restoreFiltersFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  let any = false;
+  filterInputs.forEach((inp) => {
+    const key = headerKey(parseInt(inp.dataset.col, 10));
+    if (!key) return;
+    const v = params.get('f_' + key);
+    if (v != null) { inp.value = v; any = true; }
+  });
+  // Run once with updateUrl=false so we don't immediately rewrite the URL.
+  if (any) applyFilters({ updateUrl: false });
+})();
+
+if (search) search.addEventListener('input', () => applyFilters());
+filterInputs.forEach(inp => inp.addEventListener('input', () => applyFilters()));
+
+/* Reset button: clear every filter, drop every f_* param, re-render. */
+const resetFiltersBtn = document.getElementById('resetFiltersBtn');
+if (resetFiltersBtn) {
+  resetFiltersBtn.addEventListener('click', () => {
+    if (search) search.value = '';
+    filterInputs.forEach((inp) => {
+      inp.value = '';
+      inp.classList.remove('has-value');
+    });
+    applyFilters();
+  });
+}
+
+/* Sort by column (toggle asc/desc, numeric vs string aware) */
+let activeTh = null;
+let activeDir = 1; // 1 = asc, -1 = desc
+
+function cellValue(row, idx, type) {
+  const td = row.cells[idx];
+  if (!td) return type === 'num' ? NaN : '';
+  if (type === 'num') {
+    const v = td.dataset.v ?? td.textContent.trim();
+    if (v === '' || v === null || v === undefined) return NaN;
+    const n = parseFloat(v);
+    return isNaN(n) ? NaN : n;
+  }
+  return td.textContent.trim().toLowerCase();
+}
+
+if (table) {
+  const ths = Array.from(table.tHead.rows[0].cells);
+  ths.forEach((th, idx) => {
+    if (!th.dataset.key) return; // "Files" column has no key
+    th.addEventListener('click', () => {
+      const type = th.dataset.type;
+      if (activeTh === th) {
+        activeDir = -activeDir;
+      } else {
+        if (activeTh) activeTh.classList.remove('sort-asc', 'sort-desc');
+        activeTh = th;
+        activeDir = (type === 'num') ? -1 : 1; // numeric defaults to desc (e.g. high SDE first)
+      }
+      th.classList.toggle('sort-asc', activeDir === 1);
+      th.classList.toggle('sort-desc', activeDir === -1);
+
+      const sorted = rows.slice().sort((a, b) => {
+        const va = cellValue(a, idx, type);
+        const vb = cellValue(b, idx, type);
+        const aMiss = (type === 'num') ? isNaN(va) : va === '';
+        const bMiss = (type === 'num') ? isNaN(vb) : vb === '';
+        if (aMiss && bMiss) return 0;
+        if (aMiss) return 1;
+        if (bMiss) return -1;
+        if (va < vb) return -1 * activeDir;
+        if (va > vb) return  1 * activeDir;
+        return 0;
+      });
+      const tbody = table.tBodies[0];
+      sorted.forEach(r => tbody.appendChild(r));
+    });
+  });
+}
+</script>
+
+{{ components.page_loading('Loading TLS results…', subtitle_id='pageLoadingPath') }}
+
+<div class="modal-backdrop" id="browseModal" role="dialog" aria-modal="true" aria-labelledby="browseTitle">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="browseTitle">Browse for TLS results directory</h2>
+      <button type="button" class="modal-close" id="browseClose" title="Close">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="breadcrumb" id="browseBreadcrumb"></div>
+      <div class="modal-current" id="browseCurrent"></div>
+      <div class="modal-error" id="browseError"></div>
+      <div class="filter-row">
+        <label>
+          <input type="checkbox" id="tlsOnlyToggle">
+          Only show folders with TLS files
+        </label>
+      </div>
+      <div class="dir-list" id="browseList"></div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-outline btn-sm" id="browseCancel">Cancel</button>
+      <button type="button" class="btn btn-outline btn-sm" id="browseSelect">Select this directory</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Browse directory tree (modal). Hits /list-dirs server-side;
+   scoped to ALLOWED_BROWSE_ROOTS (default $HOME).
+   ============================================================ */
+(function () {
+  const modal = document.getElementById('browseModal');
+  const browseBtn = document.getElementById('browseBtn');
+  const closeBtn = document.getElementById('browseClose');
+  const cancelBtn = document.getElementById('browseCancel');
+  const selectBtn = document.getElementById('browseSelect');
+  const breadcrumb = document.getElementById('browseBreadcrumb');
+  const currentEl = document.getElementById('browseCurrent');
+  const errorEl = document.getElementById('browseError');
+  const listEl = document.getElementById('browseList');
+  const dirInputEl = document.getElementById('dirInput');
+  const dirFormEl = document.getElementById('dirForm');
+
+  if (!modal || !browseBtn) return;
+
+  let currentPath = null;
+
+  /* Persist the "Only TLS folders" filter across sessions. */
+  const TLS_ONLY_KEY = 'tls-summary-browse-tls-only';
+  const tlsOnlyToggle = document.getElementById('tlsOnlyToggle');
+  function applyTlsOnly() {
+    if (!listEl || !tlsOnlyToggle) return;
+    listEl.classList.toggle('tls-only', tlsOnlyToggle.checked);
+  }
+  if (tlsOnlyToggle && listEl) {
+    let saved = false;
+    try { saved = localStorage.getItem(TLS_ONLY_KEY) === '1'; } catch (e) {}
+    tlsOnlyToggle.checked = saved;
+    applyTlsOnly();
+    tlsOnlyToggle.addEventListener('change', () => {
+      try {
+        if (tlsOnlyToggle.checked) localStorage.setItem(TLS_ONLY_KEY, '1');
+        else localStorage.removeItem(TLS_ONLY_KEY);
+      } catch (e) {}
+      applyTlsOnly();
+    });
+  }
+
+  async function loadDirs(path) {
+    errorEl.textContent = '';
+    listEl.innerHTML = '<div class="modal-empty">Loading…</div>';
+    const url = '/list-dirs' + (path ? '?path=' + encodeURIComponent(path) : '');
+    let data;
+    try {
+      const res = await fetch(url);
+      data = await res.json();
+    } catch (err) {
+      errorEl.textContent = 'Network error: ' + err.message;
+      listEl.innerHTML = '';
+      return;
+    }
+    if (data.error) {
+      errorEl.textContent = data.error;
+      if (!data.path) { listEl.innerHTML = ''; return; }
+    }
+
+    currentPath = data.path;
+    currentEl.innerHTML = '';
+    const pathSpan = document.createElement('span');
+    pathSpan.textContent = data.path;
+    currentEl.appendChild(pathSpan);
+    if (data.has_tls_here) {
+      const b = document.createElement('span');
+      b.className = 'badge';
+      b.textContent = 'contains _tls.h5';
+      currentEl.appendChild(b);
+    }
+
+    // Breadcrumb
+    breadcrumb.innerHTML = '';
+    (data.breadcrumbs || []).forEach((bc, i, arr) => {
+      const a = document.createElement('a');
+      a.textContent = bc.name || '/';
+      a.title = bc.path;
+      a.onclick = () => loadDirs(bc.path);
+      breadcrumb.appendChild(a);
+      if (i < arr.length - 1) {
+        const sep = document.createElement('span');
+        sep.className = 'sep';
+        sep.textContent = ' › ';
+        breadcrumb.appendChild(sep);
+      }
+    });
+    if (data.parent) {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'btn btn-outline btn-sm';
+      up.style.marginLeft = '8px';
+      up.textContent = '↑ Up';
+      up.onclick = () => loadDirs(data.parent);
+      breadcrumb.appendChild(up);
+    }
+
+    // Entries
+    listEl.innerHTML = '';
+    if (!data.entries || data.entries.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'modal-empty';
+      empty.textContent = 'No subdirectories here.';
+      listEl.appendChild(empty);
+      return;
+    }
+    data.entries.forEach(e => {
+      const row = document.createElement('div');
+      row.className = 'dir-row' + (e.has_tls ? ' has-tls' : '');
+      row.title = e.path;
+      const icon = document.createElement('span');
+      icon.className = 'icon';
+      icon.textContent = '\u{1F4C1}'; // folder
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = e.name;
+      row.appendChild(icon);
+      row.appendChild(name);
+      if (e.has_tls) {
+        const badge = document.createElement('span');
+        badge.className = 'tls-badge';
+        badge.textContent = 'tls';
+        row.appendChild(badge);
+      }
+      const chev = document.createElement('span');
+      chev.className = 'chev';
+      chev.textContent = '›';
+      row.appendChild(chev);
+      row.onclick = () => loadDirs(e.path);
+      listEl.appendChild(row);
+    });
+  }
+
+  function open() {
+    modal.classList.add('open');
+    loadDirs((dirInputEl && dirInputEl.value.trim()) || '');
+  }
+  function close() { modal.classList.remove('open'); }
+
+  browseBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  cancelBtn.addEventListener('click', close);
+  selectBtn.addEventListener('click', () => {
+    if (!currentPath || !dirInputEl) return;
+    selectBtn.disabled = true;
+    selectBtn.textContent = 'Loading…';
+    dirInputEl.value = currentPath;
+    if (dirFormEl) dirFormEl.requestSubmit();
+    // Close happens implicitly once the new page loads; explicit close
+    // here would hide the disabled state too early.
+  });
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('open')) close();
+  });
+})();
+</script>
+{% endblock %}

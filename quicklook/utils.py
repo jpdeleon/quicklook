@@ -48,7 +48,12 @@ def _get_tglc_sectors_via_tesscut(target_name, tic_id=None):
     sector_table = Tesscut.get_sectors(coordinates=coord)
     if len(sector_table) == 0:
         return []
-    return sorted({int(s) for s in sector_table["sector"]})
+    # MAST sometimes returns synthetic/HLSP composite sectorNames whose
+    # ``sector`` value is not a real observing sector (e.g. ``tess-s1751-1-3``
+    # for TOI-5169). Filter those out so they don't pollute each-sector
+    # queues with downstream-incompatible sector numbers.
+    MAX_REAL_SECTOR = 300
+    return sorted({int(s) for s in sector_table["sector"] if 1 <= int(s) <= MAX_REAL_SECTOR})
 
 
 def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
@@ -105,6 +110,49 @@ def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):
                 sectors.append(int(x[-1]))
 
     return sorted(set(sectors))
+
+
+def get_available_pipelines(target_name, tic_id=None):
+    """Query available pipelines (HLSP / mission products) for a target.
+
+    Parameters
+    ----------
+    target_name : str
+        Target name (e.g. "TOI-1234" or "TIC123456").
+    tic_id : int, optional
+        Pre-resolved TIC ID to skip the ExoFOP lookup.
+
+    Returns
+    -------
+    list[str]
+        Sorted list of unique pipeline names (lowercase) available for
+        the target. Always includes ``"tglc"`` because the local ePSF
+        fallback in ``TessQuickLook`` can produce a TGLC light curve
+        even when MAST lists no TGLC HLSP product.
+    """
+    import lightkurve as lk
+
+    if tic_id is not None:
+        query_name = f"TIC{tic_id}"
+    else:
+        try:
+            tic_id = get_tic_id(target_name)
+            query_name = f"TIC{tic_id}"
+        except (ValueError, KeyError, OSError):
+            query_name = target_name
+
+    search = lk.search_lightcurve(query_name)
+    if len(search) == 0:
+        # Local TGLC ePSF fallback is always an option even when MAST
+        # has no products for the target.
+        return ["tglc"]
+
+    df = search.table.to_pandas()
+    pipelines = sorted({p.lower() for p in df["provenance_name"].tolist()})
+    if "tglc" not in pipelines:
+        pipelines.append("tglc")
+        pipelines.sort()
+    return pipelines
 
 
 def get_tois(
@@ -188,7 +236,7 @@ def get_tois(
         msg += f"{keys} planets are removed.\n"
     msg += f"Saved: {fp}\n"
     if verbose:
-        print(msg)
+        logger.info(msg)
     return d.sort_values("TOI")
 
 
@@ -235,7 +283,7 @@ def get_tic_id(target_name: str) -> int:
 
 
 def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> list:
-    print(f"Querying ephemeris for {target_name}:")
+    logger.info(f"Querying ephemeris for {target_name}:")
     r = get_exofop_json(target_name)
     planet_params = r["planet_parameters"][idx]
     vals = []
@@ -244,7 +292,7 @@ def get_toi_ephem(target_name: str, idx=1, params=["epoch", "per", "dur"]) -> li
         val = float(val) if val else 0.1
         err = planet_params.get(p + "_e")
         err = float(err) if err else 0.1
-        print(f"     {p}: {val}, {err}")
+        logger.info(f"     {p}: {val}, {err}")
         vals.append((val, err))
     return vals
 
@@ -289,13 +337,13 @@ def parse_aperture_mask(
     """Parse and make aperture mask"""
     if verbose:
         if sap_mask == "round":
-            print("aperture photometry mask: {} (r={} pix)\n".format(sap_mask, aper_radius))
+            logger.info(f"aperture photometry mask: {sap_mask} (r={aper_radius} pix)")
         elif sap_mask == "square":
-            print("aperture photometry mask: {0} ({1}x{1} pix)\n".format(sap_mask, aper_radius))
+            logger.info(f"aperture photometry mask: {sap_mask} ({aper_radius}x{aper_radius} pix)")
         elif sap_mask == "percentile":
-            print("aperture photometry mask: {} ({}%)\n".format(sap_mask, percentile))
+            logger.info(f"aperture photometry mask: {sap_mask} ({percentile}%)")
         else:
-            print("aperture photometry mask: {}\n".format(sap_mask))
+            logger.info(f"aperture photometry mask: {sap_mask}")
 
     median_img = np.nanmedian(tpf.flux, axis=0).value
     if (sap_mask == "pipeline") or (sap_mask is None):
@@ -346,8 +394,8 @@ def make_round_mask(img, radius, xy_center=None):
         xy_center = [x, y]
         # check if near edge
         if np.any([abs(x - xcen) > offset, abs(y - ycen) > offset]):
-            print("Brightest star is detected far from the center.")
-            print("Aperture mask is placed at the center instead.\n")
+            logger.info("Brightest star is detected far from the center.")
+            logger.info("Aperture mask is placed at the center instead.")
             xy_center = [xcen, ycen]
 
     Y, X = np.ogrid[: img.shape[0], : img.shape[1]]
@@ -383,8 +431,8 @@ def make_square_mask(img, size, xy_center=None):
         xy_center = [x, y]
         # check if near edge
         if np.any([abs(x - xcen) > offset, abs(y - ycen) > offset]):
-            print("Brightest star detected is far from the center.")
-            print("Aperture mask is placed at the center instead.\n")
+            logger.info("Brightest star detected is far from the center.")
+            logger.info("Aperture mask is placed at the center instead.")
             xy_center = [xcen, ycen]
     mask = np.zeros_like(img, dtype=bool)
     mask[ycen - size : ycen + size + 1, xcen - size : xcen + size + 1] = True  # noqa

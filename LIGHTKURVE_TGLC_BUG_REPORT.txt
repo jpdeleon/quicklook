@@ -1,0 +1,202 @@
+# OverflowError reading TGLC light curves with `quality_bitmask='hardest'` under NumPy 2
+
+## Summary
+
+Calling `LightCurve.read(path, format="tglc", quality_bitmask="hardest")` —
+or the equivalent via `search.download(quality_bitmask="hardest")` — fails
+with:
+
+```
+OverflowError: Python integer 65535 out of bounds for int16
+```
+
+which `lightkurve` surfaces to the user as:
+
+```
+LightkurveError: Error in reading Data product <path> of type TGLC.
+This file may be corrupt due to an interrupted download. Please remove it
+from your disk and try again.
+```
+
+The diagnostic is misleading: **the file is not corrupt** — `astropy.io.fits.verify('exception')` passes on it. The failure is in the TGLC reader's quality-mask step, and it is triggered purely by the choice of `quality_bitmask`. `"none"`, `"default"`, and `"hard"` work; `"hardest"` does not.
+
+## Reproducer (synthetic, no network)
+
+```python
+import numpy as np
+from lightkurve.utils import TessQualityFlags
+
+# TGLC HLSP stores ``tess_flags`` as signed int16 (FITS format='I').
+quality = np.zeros(100, dtype=np.int16)
+
+TessQualityFlags.create_quality_mask(
+    quality_array=quality,
+    bitmask=TessQualityFlags.HARDEST_BITMASK,   # 65535
+)
+# -> OverflowError: Python integer 65535 out of bounds for int16
+```
+
+## Reproducer (real data)
+
+```python
+import lightkurve as lk
+
+search = lk.search_lightcurve("TIC 360906004", author="TGLC")
+lc = search[0].download(quality_bitmask="hardest")
+# -> LightkurveError: Error in reading Data product ... of type TGLC.
+```
+
+(Any TGLC HLSP file reproduces this; TIC 360906004 sector 11 is a small one.)
+
+## Full traceback
+
+```
+Traceback (most recent call last):
+  File ".../lightkurve/io/read.py", line 134, in read
+    out = self.registry.read(cls, *args, **kwargs)
+  File ".../astropy/io/registry/core.py", line 221, in read
+    data = reader(*args, **kwargs)
+  File ".../lightkurve/io/tglc.py", line 55, in read_tglc_lightcurve
+    quality_mask = TessQualityFlags.create_quality_mask(
+  File ".../lightkurve/utils.py", line 114, in create_quality_mask
+    quality_mask = (quality_array & bitmask) == 0
+OverflowError: Python integer 65535 out of bounds for int16
+
+The above exception was the direct cause of the following exception:
+
+LightkurveError: Error in reading Data product
+  <cache>/hlsp_tglc_tess_ffi_gaiaid-5842130724965127040-s0011-cam3-ccd1_tess_v1_llc.fits
+  of type TGLC.
+This file may be corrupt due to an interrupted download. Please remove it
+from your disk and try again.
+```
+
+## Root cause
+
+The TGLC HLSP stores `tess_flags` as **signed 16-bit int** (FITS column
+`format='I'`). `read_tglc_lightcurve` feeds that column straight into
+`TessQualityFlags.create_quality_mask`, which performs:
+
+```python
+quality_mask = (quality_array & bitmask) == 0
+```
+
+When `bitmask` is a Python `int` larger than the int16 max (32767), NumPy
+2.0+ refuses the bitwise AND and raises `OverflowError`. NumPy 1.x silently
+truncated this. The relevant `TessQualityFlags` constants:
+
+| Bitmask name      | Value | Fits int16? |
+|-------------------|-------|-------------|
+| `DEFAULT_BITMASK` | 175   | yes         |
+| `HARD_BITMASK`    | 24319 | yes         |
+| `HARDEST_BITMASK` | 65535 | **no**      |
+
+So the bug is exposed for any reader/caller that combines a TGLC quality
+column with `quality_bitmask="hardest"` (or any integer > 32767).
+
+Two notes:
+
+* The reader's user-facing error blames a "corrupt download", which is
+  incorrect and sends users on a futile redownload loop. The cause is an
+  adapter-level dtype mismatch, not a transport issue.
+* Other lightkurve readers that route int32 quality columns through the
+  same helper are unaffected — this is specifically the int16 column the
+  TGLC HLSP exposes.
+
+## Proposed fix
+
+Cast the quality column to int32 before the bitwise AND. One-line change
+in `src/lightkurve/io/tglc.py`:
+
+```diff
+--- a/src/lightkurve/io/tglc.py
++++ b/src/lightkurve/io/tglc.py
+@@
+-    quality_mask = TessQualityFlags.create_quality_mask(
+-        quality_array=lc["quality"], bitmask=quality_bitmask
+-    )
++    # TGLC stores ``tess_flags`` as signed int16. Cast to int32 before the
++    # bitwise AND in create_quality_mask so masks > 32767 (e.g. HARDEST =
++    # 65535) don't raise ``OverflowError`` under NumPy 2.
++    quality_mask = TessQualityFlags.create_quality_mask(
++        quality_array=np.asarray(lc["quality"], dtype=np.int32),
++        bitmask=quality_bitmask,
++    )
+```
+
+`numpy` is already imported in this module (`import numpy as np` at the top).
+The cast is local to the mask computation; the stored `lc["quality"]` column
+keeps its original dtype.
+
+A slightly broader fix would normalize the dtype inside
+`TessQualityFlags.create_quality_mask` itself (e.g. with
+`np.asarray(quality_array, dtype=np.int32)`), which would also protect any
+other reader that ever passes a sub-int32 quality column. Either fix
+resolves the symptom; the reader-local cast is the minimal change.
+
+## Suggested regression test
+
+```python
+def test_tglc_hardest_bitmask_no_int16_overflow():
+    """TGLC reader must not overflow int16 when HARDEST_BITMASK is used.
+
+    The TGLC HLSP stores ``tess_flags`` as int16 (FITS format='I').
+    Under NumPy 2, ``int16_array & 65535`` raises OverflowError; the
+    reader must cast to a wider dtype before the bitwise AND.
+    """
+    import lightkurve as lk
+
+    res = lk.search_lightcurve("TIC 360906004", author="TGLC")
+    assert len(res) > 0, "TIC 360906004 should have at least one TGLC product"
+    lc = res[0].download(quality_bitmask="hardest")
+    assert lc is not None
+    assert len(lc) > 0
+```
+
+A network-free variant using only `lightkurve.utils.TessQualityFlags`:
+
+```python
+def test_create_quality_mask_accepts_int16_quality_array():
+    import numpy as np
+    from lightkurve.utils import TessQualityFlags
+
+    quality = np.zeros(8, dtype=np.int16)
+    mask = TessQualityFlags.create_quality_mask(
+        quality_array=quality,
+        bitmask=TessQualityFlags.HARDEST_BITMASK,
+    )
+    assert mask.all()
+```
+
+## Environment
+
+* Python 3.10
+* lightkurve 2.6.0
+* numpy 2.2.6
+* astropy 6.1.7
+
+The bug is **dtype-driven** (int16 column + Python int > 32767) and the
+behavior change is **NumPy 2** (which rejects out-of-bounds Python ints in
+bitwise ops with smaller-dtype arrays). It will reproduce on any combination
+of lightkurve >= the TGLC reader's introduction with NumPy >= 2.0.
+
+## Impact
+
+Any pipeline that requests `quality_bitmask="hardest"` (or any custom
+integer > 32767) when reading TGLC HLSP light curves fails immediately on
+download/read. The misleading "file may be corrupt" message wastes user time
+on redownload attempts that cannot succeed. Downstream tools that wrap
+lightkurve (e.g. quicklook pipelines that use TGLC for FFI targets) inherit
+the failure.
+
+## Verified locally
+
+Applied the one-line patch to a venv copy of
+`lightkurve/io/tglc.py` and re-ran with `quality_bitmask="hardest"`:
+
+```
+sector: 11   cadences: 1180   finite cal_psf_flux: 1180/1180
+```
+
+i.e. the read now succeeds and produces the same light curve as
+`quality_bitmask="default"`, with the user's selected mask applied.

@@ -1,69 +1,27 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}home{% endblock %}
+{% block title %}TESS QuickLook{% endblock %}
+{% block head %}
   <style>
-    /* --- Theme variables --- */
-    :root {
-      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
-      --border: #e0e0e0; --border-light: #f0f0f0; --input-bg: #fafafa;
-      --input-border: #ccc; --hover-bg: #f5f6fa;
-      --primary: #4a6cf7; --primary-hover: #3451d1;
-      --green: #22c55e; --green-hover: #16a34a;
-      --red: #ef4444; --red-hover: #dc2626;
-      --log-bg: #1a1a2e; --log-text: #e0e0e0;
-      --badge-run-bg: #dbeafe; --badge-run-fg: #1d4ed8;
-      --badge-done-bg: #dcfce7; --badge-done-fg: #15803d;
-      --badge-err-bg: #fee2e2; --badge-err-fg: #b91c1c;
-      --badge-cancel-bg: #f3f4f6; --badge-cancel-fg: #6b7280;
-      --status-run-bg: #eff6ff; --status-run-border: #bfdbfe; --status-run-fg: #1d4ed8;
-      --status-done-bg: #f0fdf4; --status-done-border: #bbf7d0; --status-done-fg: #15803d;
-      --status-err-bg: #fef2f2; --status-err-border: #fecaca; --status-err-fg: #b91c1c;
-      --progress-bg: #e5e7eb;
-      --toast-bg: #333; --toast-fg: #fff;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
-      --border: #2a2a3e; --border-light: #222236; --input-bg: #252538;
-      --input-border: #3a3a4e; --hover-bg: #222236;
-      --primary: #5b7cf9; --primary-hover: #7b96ff;
-      --green: #34d874; --green-hover: #22c55e;
-      --red: #f87171; --red-hover: #ef4444;
-      --log-bg: #0a0a14; --log-text: #c0c0c0;
-      --badge-run-bg: #1e3a5f; --badge-run-fg: #93c5fd;
-      --badge-done-bg: #14532d; --badge-done-fg: #86efac;
-      --badge-err-bg: #7f1d1d; --badge-err-fg: #fca5a5;
-      --badge-cancel-bg: #1f2937; --badge-cancel-fg: #9ca3af;
-      --status-run-bg: #1e3a5f; --status-run-border: #1d4ed8; --status-run-fg: #93c5fd;
-      --status-done-bg: #14532d; --status-done-border: #15803d; --status-done-fg: #86efac;
-      --status-err-bg: #7f1d1d; --status-err-border: #b91c1c; --status-err-fg: #fca5a5;
-      --progress-bg: #2a2a3e;
-      --toast-bg: #e0e0e0; --toast-fg: #1a1a2e;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
+    /* Theme variables, * box-sizing, a colour, .btn*, .theme-toggle base,
+       @keyframes spin, and the .page-loading family all live in
+       static/css/quicklook.css. */
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       max-width: 960px; margin: 0 auto; padding: 24px 20px;
       color: var(--text); background: var(--bg); line-height: 1.5;
       transition: background-color 0.3s, color 0.3s;
     }
-    a { color: var(--primary); }
 
     /* --- Header --- */
     .header { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 4px; position: relative; }
     h1 { text-align: center; font-size: 1.6rem; margin: 0; }
     .subtitle { text-align: center; color: var(--text-sec); font-size: 0.9rem; margin-bottom: 24px; }
-    .theme-toggle {
+    /* Page-specific: pin the toggle to the header's right edge. */
+    .header .theme-toggle {
       position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
-      color: var(--text); transition: background-color 0.2s;
     }
-    .theme-toggle:hover { background: var(--hover-bg); }
 
     /* --- Card --- */
     .card {
@@ -120,25 +78,30 @@
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--card-bg); }
     input.invalid { border-color: var(--red); }
     .validation-msg { color: var(--red); font-size: 0.78rem; margin-top: 2px; display: none; }
+    .sector-hint {
+      margin-top: 4px; font-size: 0.78rem; color: var(--text-sec);
+      display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    }
+    .sector-hint:empty { display: none; }
+    .sector-hint .sector-chip {
+      cursor: pointer; padding: 1px 7px; border-radius: 10px;
+      background: var(--input-bg); border: 1px solid var(--border);
+      color: var(--text); font-variant-numeric: tabular-nums;
+      font-size: 0.75rem; line-height: 1.4;
+    }
+    .sector-hint .sector-chip:hover { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .sector-hint .sector-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .sector-hint .sector-chip.warn { background: var(--red); color: #fff; border-color: var(--red); }
+    .sector-hint .sector-warn { color: var(--red); font-weight: 600; }
     .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
     .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
 
-    /* --- Buttons --- */
-    .btn {
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-      padding: 10px 24px; font-size: 0.95rem; font-weight: 600; border: none; border-radius: 6px;
-      cursor: pointer; transition: background-color 0.2s, opacity 0.2s; text-decoration: none; color: #fff;
-    }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    .btn-primary { background: var(--primary); }
-    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
-    .btn-green { background: var(--green); }
-    .btn-green:hover { background: var(--green-hover); }
-    .btn-red { background: var(--red); }
-    .btn-red:hover { background: var(--red-hover); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: #fff; }
-    .btn-sm { padding: 5px 12px; font-size: 0.8rem; }
+    /* --- Buttons: home page uses chunkier buttons in the form's button
+           row and the result download row; everywhere else (topbar, etc.)
+           the shared .btn padding applies. .btn-sm is excluded so the
+           Reset button stays small. --- */
+    .btn-row .btn:not(.btn-sm),
+    .result-actions .btn { padding: 10px 24px; font-size: 0.95rem; }
     .btn-row { display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
 
     /* --- Batch mode --- */
@@ -188,6 +151,11 @@
       border-radius: 8px; font-size: 0.9rem; font-weight: 600; margin-bottom: 16px;
     }
     .status-bar.running { display: flex; background: var(--status-run-bg); border: 1px solid var(--status-run-border); color: var(--status-run-fg); }
+    /* Queued reuses the running styling so the bar stays visible while the
+       watched job is waiting for the worker — without this rule the
+       missing-class fallback to base `display:none` made the bar flicker
+       every websocket update (~1.5 s). */
+    .status-bar.queued { display: flex; background: var(--status-run-bg); border: 1px solid var(--status-run-border); color: var(--status-run-fg); }
     .status-bar.done { display: flex; background: var(--status-done-bg); border: 1px solid var(--status-done-border); color: var(--status-done-fg); }
     .status-bar.error, .status-bar.cancelled {
       display: flex; background: var(--status-err-bg); border: 1px solid var(--status-err-border); color: var(--status-err-fg);
@@ -196,7 +164,7 @@
       width: 18px; height: 18px; border: 3px solid currentColor; border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    /* @keyframes spin + .page-loading family live in shared CSS */
     .status-bar .btn { margin-left: auto; }
 
     /* --- Progress --- */
@@ -225,8 +193,7 @@
     }
 
     /* --- Result --- */
-    .result-section { display: none; }
-    .result-section.visible { display: block; }
+    /* .result-section show/hide + fade-in live in shared CSS */
     .result-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
     .result-section img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
     .result-actions { display: flex; gap: 12px; margin-top: 12px; justify-content: center; }
@@ -312,15 +279,16 @@
       .header { flex-wrap: wrap; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
 
+{% block before_topbar %}
 <!-- Toast container -->
 <div class="toast-container" id="toastContainer"></div>
+{% endblock %}
 
+{% block content %}
 <div class="header">
   <h1>TESS QuickLook</h1>
-  <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
 </div>
 <p class="subtitle">Transit search pipeline for TESS light curves</p>
 
@@ -347,6 +315,7 @@
             <span class="help-tip" tabindex="0" data-tip="-1 = latest available sector. Ignored when 'Run each available sector' is checked.">?</span>
           </div>
           <input type="number" name="sector" id="sector" value="-1">
+          <div id="sectorHint" class="sector-hint" aria-live="polite"></div>
           <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
             <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
             <span class="help-tip" tabindex="0" data-tip="Submit one job per available sector for this target instead of just the selected one.">?</span>
@@ -358,15 +327,23 @@
             <span class="help-tip" tabindex="0" data-tip="Source of TESS light curves. SPOC = official 2-min cadence; TESS-SPOC/QLP/TGLC/CDIPS/PATHOS/TASOC/T16 are HLSP products from FFIs.">?</span>
           </div>
           <select name="pipeline" id="pipeline">
-            {% for p in ['spoc','tess-spoc','tasoc','cdips','pathos','qlp','tglc','t16'] %}
+            {# Fallback list mirrors quicklook.tql.ALL_TESS_PIPELINES so the
+               dropdown still works if the index() view ever fails to pass
+               `pipelines` (e.g. when the running server hasn't been
+               reloaded after the route was updated). #}
+            {% for p in pipelines | default(['spoc','tess-spoc','qlp','tglc','cdips','pathos','eleanor','t16','gsfc-eleanor-lite','tequila','tica','diamante'], true) %}
             <option value="{{p}}">{{ p | upper }}</option>
             {% endfor %}
           </select>
+          <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
+            <input type="checkbox" name="each_pipeline" id="each_pipeline"> Run each available pipeline
+            <span class="help-tip" tabindex="0" data-tip="Submit one job per available pipeline for this target on the latest sector (mutually exclusive with 'Run each available sector').">?</span>
+          </label>
         </div>
         <div>
           <div class="label-row">
-            <label for="fluxtype">Flux Type</label>
-            <span class="help-tip" tabindex="0" data-tip="PDCSAP = pre-search data conditioned flux, corrected for systematics (recommended). SAP = raw simple aperture photometry.">?</span>
+            <label for="fluxtype">Flux / LC Type</label>
+            <span class="help-tip" tabindex="0" data-tip="SPOC/TESS-SPOC: PDCSAP = systematics-corrected flux (recommended), SAP = raw simple aperture photometry. TGLC: APERTURE vs PSF photometry. Ignored for other pipelines.">?</span>
           </div>
           <select name="fluxtype" id="fluxtype">
             {% for f in ['pdcsap','sap'] %}
@@ -504,9 +481,18 @@
           </div>
           <input type="number" step="0.01" name="period_max" id="period_max" placeholder="baseline/2">
         </div>
+        <div>
+          <div class="label-row">
+            <label for="phase_xlim">Phase Panel Half-Width</label>
+            <span class="help-tip" tabindex="0" data-tip="Optional phase half-width for panels 7 and 8. 0.1 shows transit phase -0.1..0.1 and eclipse phase 0.4..0.6. Leave blank for automatic zoom.">?</span>
+          </div>
+          <input type="number" step="0.01" min="0" max="1" name="phase_xlim" id="phase_xlim" placeholder="auto">
+        </div>
         <div class="full-width checkbox-group" style="margin-top: 4px;">
           <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
           <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
+          <label><input type="checkbox" name="use_priors" id="use_priors" checked> Use star priors (Ms, Rs)</label>
+          <span class="help-tip" tabindex="0" data-tip="Pass R_star and M_star (from ExoFOP, ±1σ) to TLS as priors so the transit search uses the host's real properties instead of Sun-like defaults.">?</span>
         </div>
         <div class="full-width">
           <div class="label-row">
@@ -564,6 +550,10 @@
           <label>
             <input type="checkbox" name="overwrite"> Overwrite
             <span class="help-tip" tabindex="0" data-tip="If an output file for this target already exists, re-run and replace it instead of skipping.">?</span>
+          </label>
+          <label>
+            <input type="checkbox" name="show_simbad" checked> Show SIMBAD
+            <span class="help-tip" tabindex="0" data-tip="Overplot nearby non-stellar SIMBAD objects (within the archival image FOV) on the QuickLook archival image, labelled by object type (e.g. EclBin).">?</span>
           </label>
         </div>
       </div>
@@ -635,7 +625,7 @@
 </div>
 
 <!-- Recent results -->
-<div id="recentSection" class="recent-section" {% if not recent_results %}style="display:none;"{% endif %}>
+<div id="recentSection" class="recent-section">
   <h2>Recent Results</h2>
   <div class="recent-grid" id="recentGrid">
     {% for item in recent_results %}
@@ -649,13 +639,20 @@
     </div>
     {% endfor %}
   </div>
+  {% if not recent_results %}
+  <p class="empty-state" id="recentEmpty">
+    No results yet &mdash; submit a target above and the rendered thumbnail will appear here.
+  </p>
+  {% endif %}
 </div>
 
+<!-- Quick link to the full gallery below recent results -->
 <div class="footer-nav">
-  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse All Results</a>
-  <a href="{{ url_for('compare') }}" class="btn btn-outline">Compare Results</a>
+  <a href="{{ url_for('gallery') }}" class="btn btn-outline">Browse all results in Gallery &raquo;</a>
 </div>
+{% endblock %}
 
+{% block scripts %}
 <script>
 /* =========================================================================
    DOM refs
@@ -761,23 +758,8 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-/* =========================================================================
-   Dark mode
-   ========================================================================= */
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  $('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
-  localStorage.setItem('ql-theme', theme);
-}
-(function initTheme() {
-  const saved = localStorage.getItem('ql-theme');
-  if (saved) { applyTheme(saved); return; }
-  if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
-})();
-$('themeToggle').addEventListener('click', () => {
-  const cur = document.documentElement.getAttribute('data-theme');
-  applyTheme(cur === 'dark' ? 'light' : 'dark');
-});
+/* Dark-mode handling (applyTheme + init + toggle click) lives in
+   static/js/quicklook.js, loaded before this script. */
 
 /* =========================================================================
    Toast notifications
@@ -815,9 +797,9 @@ const FORM_STORAGE_KEY = 'ql-form-state';
 const PERSIST_FIELDS = [
   'name','sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
-  'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
+  'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad'];
 
 function saveFormState() {
   const state = {};
@@ -847,7 +829,9 @@ function resetFormDefaults() {
   form.elements['flatten_method'].value = 'biweight';
   form.elements['save'].checked = true;
   form.elements['verbose'].checked = true;
+  form.elements['show_simbad'].checked = true;
   form.elements['each_sector'].checked = false;
+  form.elements['each_pipeline'].checked = false;
   showToast('Form reset to defaults', 'info');
 }
 
@@ -857,25 +841,90 @@ resetBtn.addEventListener('click', resetFormDefaults);
 /* =========================================================================
    Dependent field state — disable inputs whose value would be ignored
    ========================================================================= */
-const FLUXTYPE_PIPELINES = ['spoc', 'tess-spoc'];
+// Options for the Flux / LC-Type dropdown, keyed by pipeline. SPOC-family
+// pipelines choose a flux column; TGLC chooses aperture vs PSF photometry.
+// Pipelines absent from this map expose no such choice.
+const FLUXTYPE_OPTIONS = {
+  'spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tess-spoc': [['pdcsap', 'PDCSAP'], ['sap', 'SAP']],
+  'tglc': [['aperture', 'APERTURE'], ['psf', 'PSF']],
+};
+
+// Rebuild the Flux / LC-Type <option>s to match the selected pipeline,
+// preserving the current selection when it stays valid.
+function syncFluxtypeOptions(pipelineValue) {
+  const fluxtype = form.elements['fluxtype'];
+  if (!fluxtype) return;
+  const opts = FLUXTYPE_OPTIONS[pipelineValue];
+  const prev = fluxtype.value;
+  fluxtype.innerHTML = '';
+  (opts || [['', 'n/a']]).forEach(function (pair) {
+    const o = document.createElement('option');
+    o.value = pair[0];
+    o.textContent = pair[1];
+    fluxtype.appendChild(o);
+  });
+  if (opts && opts.some(function (pair) { return pair[0] === prev; })) {
+    fluxtype.value = prev;
+  }
+}
 
 function updateFieldStates() {
   const eachSector = form.elements['each_sector'];
+  const eachPipeline = form.elements['each_pipeline'];
   const sectorInput = form.elements['sector'];
+  const pipelineInput = form.elements['pipeline'];
+
+  // Mutually exclusive: enabling one forces the other off.
+  if (eachSector && eachPipeline) {
+    if (eachSector.checked && eachPipeline.checked) {
+      // last-edited check would need a flag; simplest: if user clicked
+      // one while the other was on, the change handler below uncheck
+      // the other before this runs. As a safety net, prefer each_sector.
+      eachPipeline.checked = false;
+    }
+  }
+
   if (eachSector && sectorInput) {
-    const disabled = eachSector.checked;
+    const disabled = eachSector.checked || (eachPipeline && eachPipeline.checked);
     sectorInput.disabled = disabled;
-    sectorInput.title = disabled ? 'Ignored — "Run each available sector" is on' : '';
+    sectorInput.title = disabled
+      ? 'Ignored — either "Run each available sector" or "Run each available pipeline" is on'
+      : '';
     sectorInput.style.opacity = disabled ? '0.5' : '';
+  }
+
+  if (eachPipeline && pipelineInput) {
+    const disabled = eachPipeline.checked;
+    pipelineInput.disabled = disabled;
+    pipelineInput.title = disabled ? 'Ignored — "Run each available pipeline" is on' : '';
+    pipelineInput.style.opacity = disabled ? '0.5' : '';
+    if (eachSector) {
+      eachSector.disabled = disabled;
+      eachSector.parentElement.style.opacity = disabled ? '0.5' : '';
+    }
+  }
+  if (eachSector && eachPipeline) {
+    // when each_sector is on, grey-out each_pipeline too
+    if (eachSector.checked) {
+      eachPipeline.disabled = true;
+      eachPipeline.parentElement.style.opacity = '0.5';
+    } else if (!eachPipeline.checked) {
+      eachPipeline.disabled = false;
+      eachPipeline.parentElement.style.opacity = '';
+    }
   }
 
   const pipeline = form.elements['pipeline'];
   const fluxtype = form.elements['fluxtype'];
   if (pipeline && fluxtype) {
-    const disabled = !FLUXTYPE_PIPELINES.includes(pipeline.value);
-    fluxtype.disabled = disabled;
-    fluxtype.title = disabled ? 'Ignored — only SPOC and TESS-SPOC pipelines have a flux-type choice' : '';
-    fluxtype.style.opacity = disabled ? '0.5' : '';
+    syncFluxtypeOptions(pipeline.value);
+    const hasChoice = Object.prototype.hasOwnProperty.call(FLUXTYPE_OPTIONS, pipeline.value);
+    fluxtype.disabled = !hasChoice;
+    fluxtype.title = hasChoice
+      ? ''
+      : 'Ignored — only SPOC, TESS-SPOC, and TGLC pipelines have a flux / LC-type choice';
+    fluxtype.style.opacity = hasChoice ? '' : '0.5';
   }
 
   const flatten = form.elements['flatten_method'];
@@ -888,10 +937,95 @@ function updateFieldStates() {
   }
 }
 
-form.elements['each_sector'].addEventListener('change', updateFieldStates);
+form.elements['each_sector'].addEventListener('change', () => {
+  // Mutually exclusive with each_pipeline.
+  if (form.elements['each_sector'].checked) form.elements['each_pipeline'].checked = false;
+  updateFieldStates();
+});
+form.elements['each_pipeline'].addEventListener('change', () => {
+  if (form.elements['each_pipeline'].checked) form.elements['each_sector'].checked = false;
+  updateFieldStates();
+});
 form.elements['pipeline'].addEventListener('change', updateFieldStates);
 form.elements['flatten_method'].addEventListener('change', updateFieldStates);
 updateFieldStates();
+
+/* =========================================================================
+   Sector hint — live-fetch available sectors for the current target +
+   pipeline so the user can see them before submitting. Click any chip to
+   fill the Sector input. Validation in the submit handler uses the same
+   list to block submissions for sectors that don't exist.
+   ========================================================================= */
+let _availableSectors = null;   // null = unknown, [] = none, [int...] = found
+let _lastSectorQuery = null;    // dedupe identical name+pipeline lookups
+
+function _sectorHintEl() { return document.getElementById('sectorHint'); }
+
+function renderSectorChips() {
+  const hint = _sectorHintEl();
+  if (!hint || !_availableSectors) return;
+  if (_availableSectors.length === 0) {
+    hint.innerHTML = '<span class="sector-warn">No sectors found for this target/pipeline.</span>';
+    return;
+  }
+  const current = parseInt(form.elements['sector'].value, 10);
+  let html = '<span>Available:</span>';
+  _availableSectors.forEach(s => {
+    const cls = (s === current) ? 'sector-chip active' : 'sector-chip';
+    html += ' <button type="button" class="' + cls + '" data-sector="' + s + '" title="Use sector ' + s + '">' + s + '</button>';
+  });
+  hint.innerHTML = html;
+  hint.querySelectorAll('.sector-chip').forEach(btn => {
+    btn.addEventListener('click', () => {
+      form.elements['sector'].value = btn.dataset.sector;
+      saveFormState();
+      renderSectorChips();
+    });
+  });
+}
+
+async function refreshSectorHint() {
+  const hint = _sectorHintEl();
+  if (!hint) return;
+  const name = nameInput.value.trim();
+  const pipeline = form.elements['pipeline'].value || 'spoc';
+  if (!name || name.length < 2) {
+    hint.innerHTML = '';
+    _availableSectors = null;
+    _lastSectorQuery = null;
+    return;
+  }
+  const key = name + '|' + pipeline;
+  if (key === _lastSectorQuery) { renderSectorChips(); return; }
+  _lastSectorQuery = key;
+  hint.innerHTML = '<span>Looking up sectors&hellip;</span>';
+  try {
+    const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+    const data = await res.json();
+    if (!data.ok || !Array.isArray(data.sectors) || data.sectors.length === 0) {
+      _availableSectors = [];
+    } else {
+      _availableSectors = data.sectors.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
+    }
+    renderSectorChips();
+  } catch (err) {
+    hint.innerHTML = '<span class="sector-warn">Could not fetch sectors: ' + err.message + '</span>';
+    _availableSectors = null;
+    _lastSectorQuery = null;
+  }
+}
+
+nameInput.addEventListener('blur', refreshSectorHint);
+form.elements['pipeline'].addEventListener('change', () => {
+  _lastSectorQuery = null;  // force refetch when pipeline changes
+  refreshSectorHint();
+});
+form.elements['sector'].addEventListener('input', renderSectorChips);
+// Auto-fetch once if the form was restored from localStorage with a name.
+if (nameInput.value.trim().length >= 2) {
+  // Defer so the rest of the page has a chance to settle.
+  setTimeout(refreshSectorHint, 100);
+}
 
 /* Batch textarea persistence (independent of the main form) */
 const BATCH_STORAGE_KEY = 'ql-batch-targets';
@@ -984,10 +1118,15 @@ logToggle.addEventListener('click', () => {
    ========================================================================= */
 function setStatus(state, message) {
   statusBar.className = 'status-bar ' + state;
+  // Spin only while the job is actively executing.
   statusSpinner.style.display = state === 'running' ? 'block' : 'none';
   statusText.textContent = message;
-  cancelBtn.style.display = state === 'running' ? '' : 'none';
-  cancelAllBtn.style.display = state === 'running' ? '' : 'none';
+  // Cancel is also valid for a queued job (the backend accepts it), and
+  // showing the buttons consistently across running/queued avoids any
+  // flicker when status alternates between the two on websocket updates.
+  const inFlight = state === 'running' || state === 'queued';
+  cancelBtn.style.display = inFlight ? '' : 'none';
+  cancelAllBtn.style.display = inFlight ? '' : 'none';
 }
 
 function formatETA(seconds) {
@@ -1014,11 +1153,39 @@ function setProgress(pct, label, state, eta) {
 /* =========================================================================
    Cancel
    ========================================================================= */
-cancelBtn.addEventListener('click', () => {
+cancelBtn.addEventListener('click', async () => {
+  const target = activeTarget;
+  // Fast path over the websocket; HTTP path works even if it has dropped.
   if (activeWs && activeWs.readyState === WebSocket.OPEN) {
     activeWs.send(JSON.stringify({action: 'cancel'}));
   }
-  if (activeTarget) fetch('/cancel/' + activeTarget, {method: 'POST'});
+  if (!target) return;
+  cancelBtn.disabled = true;
+  let cancelled = true;
+  try {
+    const res = await fetch('/cancel/' + target, {method: 'POST'});
+    cancelled = res.ok;
+  } catch (err) {
+    /* network error — still tear down the running UI below */
+  }
+  // Close the socket so its 'finish' handler does not double-fire, then
+  // update the GUI directly. This also recovers the case where the socket
+  // had already dropped during a long job, leaving the GUI stuck.
+  if (activeWs) {
+    try { activeWs.close(); } catch (e) { /* already closed */ }
+    activeWs = null;
+  }
+  jobRunning = false;
+  sessionStorage.removeItem('ql-active-target');
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Run QuickLook';
+  if (cancelled) {
+    setStatus('cancelled', 'Cancelled ' + target);
+    setProgress(100, 'Cancelled', 'cancelled', null);
+    showToast('Cancelled: ' + target, 'info');
+  }
+  refreshQueue();
+  cancelBtn.disabled = false;
 });
 
 cancelAllBtn.addEventListener('click', async () => {
@@ -1056,11 +1223,80 @@ form.addEventListener('submit', async (e) => {
     return;
   }
 
+  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+
+  // Pre-flight: if we have a known list of available sectors and the user
+  // asked for a specific sector that isn't in it, block the submit. (-1
+  // means "latest available" and is always valid; each-sector mode picks
+  // sectors server-side.)
+  const requestedSector = parseInt(form.elements['sector'].value, 10);
+  if (!eachSector
+      && Number.isInteger(requestedSector)
+      && requestedSector !== -1
+      && Array.isArray(_availableSectors)
+      && _availableSectors.length > 0
+      && !_availableSectors.includes(requestedSector)) {
+    showToast(
+      'Sector ' + requestedSector + ' is not available for ' + name +
+      '. Available: ' + _availableSectors.join(', '),
+      'error', 8000
+    );
+    form.elements['sector'].focus();
+    form.elements['sector'].classList.add('invalid');
+    setTimeout(() => form.elements['sector'].classList.remove('invalid'), 2500);
+    return;
+  }
+
   submitBtn.disabled = true;
   submitBtn.textContent = 'Submitting...';
   resultSection.classList.remove('visible');
 
-  const eachSector = form.elements['each_sector'] && form.elements['each_sector'].checked;
+  const eachPipeline = form.elements['each_pipeline'] && form.elements['each_pipeline'].checked;
+
+  if (eachPipeline) {
+    // Each-pipeline mode: query available pipelines, then submit one job
+    // per pipeline (each with sector=-1 = latest available for it).
+    try {
+      const fd = new FormData(form);
+      const params = {};
+      for (const [key, val] of fd.entries()) {
+        if (key !== 'name' && key !== 'each_pipeline' && key !== 'each_sector' && key !== 'pipeline') {
+          params[key] = val;
+        }
+      }
+      submitBtn.textContent = 'Querying pipelines...';
+      const res = await fetch('/available-pipelines?name=' + encodeURIComponent(name));
+      const pipeData = await res.json();
+      if (!pipeData.ok || !pipeData.pipelines || pipeData.pipelines.length === 0) {
+        showToast(pipeData.reason || 'No pipelines found for ' + name, 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Run QuickLook';
+        return;
+      }
+      const pipelines = pipeData.pipelines;
+      showToast('Found ' + pipelines.length + ' pipelines: ' + pipelines.join(', '), 'info', 6000);
+      submitBtn.textContent = 'Submitting ' + pipelines.length + ' jobs...';
+
+      const batchRes = await fetch('/each-pipeline-submit', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: name, pipelines: pipelines, params: params }),
+      });
+      const batchData = await batchRes.json();
+      if (batchData.ok) {
+        showToast(batchData.submitted.length + ' pipeline jobs submitted', 'success');
+        refreshQueue();
+        if (batchData.submitted.length > 0) connectWs(batchData.submitted[0]);
+      } else {
+        showToast(batchData.reason || 'Each-pipeline submission failed', 'error');
+      }
+    } catch (err) {
+      showToast('Network error: ' + err.message, 'error');
+    }
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Run QuickLook';
+    return;
+  }
 
   if (eachSector) {
     // Each-sector mode: query available sectors, then submit one job per sector
@@ -1113,6 +1349,11 @@ form.addEventListener('submit', async (e) => {
     if (data.ok) {
       showToast('Job submitted: ' + data.name, 'info');
       connectWs(data.name);
+      // Re-enable Submit immediately so additional jobs can be queued while
+      // this one runs. Cancel still cancels the currently-watched job
+      // (running or queued); Cancel All clears the whole queue.
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Run QuickLook';
     } else {
       showToast(data.reason || 'Submission failed', 'error');
       submitBtn.disabled = false;
@@ -1184,7 +1425,10 @@ async function showResults(target) {
     const res = await fetch('/results-json/' + target);
     const data = await res.json();
     if (data.image) {
-      resultImage.src = data.image;
+      // Cache-bust so re-runs with the same target name show the fresh PNG
+      // instead of a browser-cached copy of the previous run's image.
+      const bust = '?t=' + Date.now();
+      resultImage.src = data.image + bust;
       downloadImg.href = data.image;
       downloadImg.download = data.image.split('/').pop();
       if (data.h5) {
@@ -1195,10 +1439,73 @@ async function showResults(target) {
         downloadH5.style.display = 'none';
       }
       resultSection.classList.add('visible');
+
+      // Live-update the Recent Results grid so newly-finished jobs appear
+      // immediately without needing a page reload.
+      updateRecentResults(data.image, bust);
     }
   } catch (e) {
     console.error('Failed to load results:', e);
   }
+}
+
+function updateRecentResults(imagePath, cacheBust) {
+  const recentGrid = document.getElementById('recentGrid');
+  const recentSection = document.getElementById('recentSection');
+  if (!recentGrid) return;
+  const filename = imagePath.split('/').pop();
+  const bustedSrc = imagePath + cacheBust;
+
+  // Prefer updating an existing card for this target so the thumbnail
+  // refreshes in place; otherwise build a new card matching the Jinja
+  // template that the server rendered on initial page load.
+  let card = recentGrid.querySelector(
+    '.recent-card[data-filename="' + (window.CSS && CSS.escape ? CSS.escape(filename) : filename) + '"]'
+  );
+  if (card) {
+    const img = card.querySelector('img');
+    if (img) img.src = bustedSrc;
+  } else {
+    card = document.createElement('div');
+    card.className = 'recent-card';
+    card.dataset.filename = filename;
+
+    const img = document.createElement('img');
+    img.src = bustedSrc;
+    img.alt = filename;
+    img.loading = 'lazy';
+    img.style.cursor = 'pointer';
+    img.addEventListener('click', () => window.open(imagePath, '_blank'));
+    card.appendChild(img);
+
+    const footer = document.createElement('div');
+    footer.className = 'card-footer';
+
+    const label = document.createElement('span');
+    label.className = 'card-label';
+    label.title = filename;
+    label.textContent = filename;
+    footer.appendChild(label);
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'delete-btn';
+    delBtn.title = 'Delete';
+    delBtn.innerHTML = '&times;';
+    delBtn.addEventListener('click', () => deleteOutput(filename, delBtn));
+    footer.appendChild(delBtn);
+
+    card.appendChild(footer);
+  }
+
+  // Always move (or insert) at the top so the newest result is first.
+  if (recentGrid.firstChild !== card) {
+    recentGrid.insertBefore(card, recentGrid.firstChild);
+  }
+
+  // First card knocks out the empty-state placeholder if it was rendered.
+  const empty = document.getElementById('recentEmpty');
+  if (empty) empty.remove();
+  if (recentSection) recentSection.style.display = '';
 }
 
 /* =========================================================================
@@ -1243,6 +1550,10 @@ async function refreshQueue() {
     if (jobs.length === 0) { queueSection.style.display = 'none'; return; }
 
     queueSection.style.display = '';
+    // Track the currently-running job so the "Queued: X (waiting for worker)"
+    // status line can name *which* job the single worker is busy on.
+    const runningJob = jobs.find(j => j.status === 'running');
+    window._runningJobName = runningJob ? runningJob.name : null;
     const pendingCount = jobs.filter(j => isPending(j.status)).length;
     const folded = resolveFolded(jobs.length);
     const visibleJobs = folded ? jobs.filter(j => isPending(j.status)) : jobs;
@@ -1274,6 +1585,35 @@ async function refreshQueue() {
         watchBtn.textContent = 'Watch';
         watchBtn.onclick = () => connectWs(job.name);
         li.appendChild(watchBtn);
+      }
+
+      // Remove-from-queue button (rightmost). Hidden for running jobs —
+      // user must cancel them first via the status bar's Cancel.
+      if (job.status !== 'running') {
+        const delBtn = document.createElement('button');
+        delBtn.className = 'delete-btn';
+        delBtn.title = 'Remove this entry from the queue';
+        delBtn.setAttribute('aria-label', 'Remove ' + job.name + ' from the queue');
+        delBtn.innerHTML = '&times;';
+        delBtn.onclick = async (e) => {
+          e.stopPropagation();
+          if (!confirm('Remove "' + job.name + '" from the queue?')) return;
+          try {
+            const res = await fetch('/delete-job/' + encodeURIComponent(job.name), {
+              method: 'POST',
+            });
+            const data = await res.json();
+            if (data.ok) {
+              showToast('Removed "' + job.name + '" from queue', 'info');
+              refreshQueue();
+            } else {
+              showToast(data.reason || 'Failed to remove from queue', 'error');
+            }
+          } catch (err) {
+            showToast('Network error: ' + err.message, 'error');
+          }
+        };
+        li.appendChild(delBtn);
       }
 
       queueList.appendChild(li);
@@ -1330,6 +1670,16 @@ function connectWs(target) {
       setProgress(msg.progress, msg.step, msg.status, msg.eta);
       if (msg.status === 'running') {
         setStatus('running', 'Running analysis for ' + target + '...');
+      } else if (msg.status === 'queued') {
+        // Reflect queued state honestly instead of leaving the optimistic
+        // "Running analysis ..." text from connectWs() in place. If the
+        // single worker is busy on another job, name it so the user knows
+        // why their queued job isn't starting.
+        const busy = window._runningJobName;
+        const tail = (busy && busy !== target)
+          ? ' (worker busy on ' + busy + ')'
+          : ' (waiting for worker)';
+        setStatus('queued', 'Queued: ' + target + tail);
       }
     } else if (msg.type === 'finish') {
       jobRunning = false;
@@ -1396,8 +1746,18 @@ async function deleteOutput(filename, btnElem) {
     if (data.ok) {
       const card = btnElem.closest('.recent-card');
       if (card) card.remove();
-      if ($('recentGrid') && $('recentGrid').children.length === 0) {
-        $('recentSection').style.display = 'none';
+      const grid = $('recentGrid');
+      const section = $('recentSection');
+      if (grid && section && grid.children.length === 0) {
+        // Last card removed — restore the empty-state placeholder
+        // (cheaper than reloading the page).
+        if (!document.getElementById('recentEmpty')) {
+          const p = document.createElement('p');
+          p.id = 'recentEmpty';
+          p.className = 'empty-state';
+          p.innerHTML = 'No results yet &mdash; submit a target above and the rendered thumbnail will appear here.';
+          section.appendChild(p);
+        }
       }
       showToast('Deleted ' + filename, 'info');
     } else {
@@ -1497,6 +1857,24 @@ if ('Notification' in window && Notification.permission === 'default') {
 })();
 
 setInterval(refreshQueue, 5000);
+
+/* Show a full-page loading overlay when the user clicks "TLS Summary".
+   /tls-summary walks every *_tls.h5 in the chosen folder and can take a
+   few seconds, so we give immediate visual feedback. */
+(function () {
+  const link = document.getElementById('summaryLink');
+  if (!link) return;
+  link.addEventListener('click', (e) => {
+    // Ignore modifier-click / middle-click (new-tab) so we don't flash
+    // the overlay on the current page when the user opens it elsewhere.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+    // Look up the overlay lazily — it sits after this <script> in the
+    // source, so it doesn't exist when the IIFE first runs.
+    const overlay = document.getElementById('pageLoading');
+    if (overlay) overlay.classList.add('show');
+  });
+})();
 </script>
-</body>
-</html>
+
+{{ components.page_loading('Loading TLS Summary…', 'Scanning saved results') }}
+{% endblock %}

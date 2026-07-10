@@ -1,30 +1,17 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TESS QuickLook - Compare</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+{% extends "base.html" %}
+{% import 'partials/_components.html' as components %}
+{% block topbar_current %}compare{% endblock %}
+{% block title %}TESS QuickLook - Compare{% endblock %}
+{% block head %}
   <style>
-    :root {
-      --bg: #f5f6fa; --card-bg: #fff; --text: #1a1a2e; --text-sec: #666;
-      --border: #e0e0e0; --input-bg: #fafafa; --input-border: #ccc; --hover-bg: #f5f6fa;
-      --primary: #4a6cf7; --primary-hover: #3451d1;
-    }
-    [data-theme="dark"] {
-      --bg: #0f0f1a; --card-bg: #1a1a2e; --text: #e0e0e0; --text-sec: #999;
-      --border: #2a2a3e; --input-bg: #252538; --input-border: #3a3a4e; --hover-bg: #222236;
-      --primary: #5b7cf9; --primary-hover: #7b96ff;
-    }
-
-    *, *::before, *::after { box-sizing: border-box; }
+    /* Page-specific (theme vars, buttons, theme-toggle, page-loading
+       and @keyframes spin live in static/css/quicklook.css). */
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       max-width: 1400px; margin: 0 auto; padding: 24px 20px;
       color: var(--text); background: var(--bg); line-height: 1.5;
       transition: background-color 0.3s, color 0.3s;
     }
-    a { color: var(--primary); }
     h1 { text-align: center; font-size: 1.5rem; margin-bottom: 16px; }
 
     .top-bar {
@@ -32,23 +19,6 @@
       flex-wrap: wrap; gap: 10px; margin-bottom: 20px;
     }
     .top-bar-left { display: flex; gap: 8px; align-items: center; }
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 8px 16px; font-size: 0.9rem; font-weight: 600; border: none;
-      border-radius: 6px; cursor: pointer; text-decoration: none; color: #fff;
-      transition: background-color 0.2s;
-    }
-    .btn-primary { background: var(--primary); }
-    .btn-primary:hover { background: var(--primary-hover); }
-    .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
-    .btn-outline:hover { background: var(--primary); color: #fff; }
-    .btn-sm { padding: 5px 10px; font-size: 0.78rem; }
-    .theme-toggle {
-      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
-      padding: 6px 10px; cursor: pointer; font-size: 1rem; line-height: 1;
-      color: var(--text); transition: background-color 0.2s;
-    }
-    .theme-toggle:hover { background: var(--hover-bg); }
 
     /* Selectors */
     .selectors {
@@ -109,7 +79,7 @@
       width: 14px; height: 14px; border: 2px solid var(--primary); border-top-color: transparent;
       border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    /* @keyframes spin + .page-loading family live in shared CSS */
     .running-banner a { color: var(--primary); font-weight: 600; text-decoration: none; }
     .running-banner a:hover { text-decoration: underline; }
     .running-banner .job-list { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -119,24 +89,19 @@
       .compare-area { grid-template-columns: 1fr; }
     }
   </style>
-</head>
-<body>
+{% endblock %}
+
+{% block before_topbar %}
   <!-- Running jobs banner -->
   <div class="running-banner" id="runningBanner">
     <div class="spinner"></div>
     <span>Running:</span>
     <div class="job-list" id="runningJobList"></div>
   </div>
+{% endblock %}
 
+{% block content %}
   <h1>Compare Results</h1>
-
-  <div class="top-bar">
-    <div class="top-bar-left">
-      <a href="{{ url_for('index') }}" class="btn btn-primary">&larr; Back</a>
-      <a href="{{ url_for('gallery') }}" class="btn btn-outline">Gallery</a>
-      <button class="theme-toggle" id="themeToggle" title="Toggle dark mode">&#9790;</button>
-    </div>
-  </div>
 
   <!-- Image selectors -->
   <div class="selectors">
@@ -196,23 +161,10 @@
     <img id="overlayTop" class="overlay-img" src="" alt="Overlay">
   </div>
 
-  <script>
-    /* --- Theme --- */
-    function applyTheme(theme) {
-      document.documentElement.setAttribute('data-theme', theme);
-      document.getElementById('themeToggle').textContent = theme === 'dark' ? '\u2600' : '\u263E';
-      localStorage.setItem('ql-theme', theme);
-    }
-    (function() {
-      const saved = localStorage.getItem('ql-theme');
-      if (saved) { applyTheme(saved); return; }
-      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) applyTheme('dark');
-    })();
-    document.getElementById('themeToggle').addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme');
-      applyTheme(cur === 'dark' ? 'light' : 'dark');
-    });
+{% endblock %}
 
+{% block scripts %}
+  <script>
     /* --- Elements --- */
     const leftSelect = document.getElementById('leftSelect');
     const rightSelect = document.getElementById('rightSelect');
@@ -297,6 +249,20 @@
     }
     pollRunningJobs();
     setInterval(pollRunningJobs, 5000);
+
+    /* Show the shared loading overlay when navigating to the (potentially
+       slow) TLS Summary page. The overlay markup is parsed after this
+       script, so we look it up lazily inside the click handler. */
+    (function () {
+      const link = document.getElementById('summaryLink');
+      if (!link) return;
+      link.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        const overlay = document.getElementById('pageLoading');
+        if (overlay) overlay.classList.add('show');
+      });
+    })();
   </script>
-</body>
-</html>
+
+  {{ components.page_loading('Loading TLS Summary…', 'Scanning saved results') }}
+{% endblock %}

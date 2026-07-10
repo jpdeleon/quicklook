@@ -11,11 +11,12 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 
 ## Features
 
-- **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC
+- **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC, T16
+- **Flux / light-curve type** -- PDCSAP or SAP for SPOC; aperture or PSF photometry for TGLC, with an automatic best-quality default
 - **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection** -- Transit Least Squares (TLS) periodogram
-- **Neighbor check** -- Gaia source overlay on archival sky images
+- **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Web GUI** -- Flask-based interface with live progress, job queue, and gallery
 - **HDF5 output** -- full TLS results saved for downstream filtering
@@ -69,6 +70,12 @@ ql --name TOI-125.01 --each-sector -save
 
 # Run all sectors with 4 parallel workers
 ql --name TOI-125.01 --each-sector -j 4 -save
+
+# Run every available pipeline on the latest sector
+ql --name TOI-125.01 --each-pipeline -save
+
+# TGLC PSF photometry with nearby SIMBAD objects overlaid
+ql --name TOI-125.01 --pipeline tglc --fluxtype psf -show_simbad -save
 ```
 
 ### Python API
@@ -91,6 +98,12 @@ print(f"Rotation period: {ql.Prot_ls:.2f} days")
 print(f"TLS period: {ql.tls_results.period:.4f} days")
 print(f"TLS SDE: {ql.tls_results.SDE:.1f}")
 ```
+
+For **SPOC**, `flux_type` selects `"pdcsap"` or `"sap"`. For **TGLC**, the same
+argument selects the photometry method -- `"aperture"` or `"psf"`; any other
+value (including the default) uses automatic selection of the less-contaminated,
+lower-scatter light curve. TGLC light curves absent from MAST are extracted
+locally via effective-PSF (ePSF) photometry.
 
 ### Web GUI
 
@@ -119,7 +132,7 @@ The 9-panel figure shows:
 | 3 | Phase-folded light curve at rotation period |
 | 4 | Flattened light curve + detected transits |
 | 5 | TLS periodogram (orbital period) |
-| 6 | TESS aperture + Gaia sources on archival image |
+| 6 | TESS aperture + Gaia sources (and optional SIMBAD objects) on archival image |
 | 7 | Phase-folded transit (odd/even comparison) |
 | 8 | Secondary eclipse check at phase 0.5 |
 | 9 | Summary of stellar and companion parameters |

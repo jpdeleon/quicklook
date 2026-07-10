@@ -19,8 +19,8 @@ ql --name TARGET [options]
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--sector SECTOR` | `-1` (latest) | TESS sector number |
-| `--pipeline PIPELINE` | `spoc` | Light curve pipeline: `spoc`, `tess-spoc`, `qlp`, `cdips`, `pathos`, `tglc`, `tasoc` |
-| `--fluxtype TYPE` | `pdcsap` | Flux column: `pdcsap` or `sap` |
+| `--pipeline PIPELINE` | `spoc` | Light curve pipeline: `spoc`, `tess-spoc`, `qlp`, `cdips`, `pathos`, `tglc`, `tasoc`, `t16` |
+| `--fluxtype TYPE` | `pdcsap` | Light-curve type. SPOC: `pdcsap` or `sap`. TGLC: `aperture`, `psf`, or `auto` (best-quality default) |
 | `--exptime SECONDS` | auto | Exposure time in seconds |
 | `--quality_bitmask MASK` | `default` | Quality mask: `none`, `default`, `hard`, `hardest` |
 
@@ -55,16 +55,20 @@ ql --name TARGET [options]
 | `--outdir DIR` | `.` | Output directory |
 | `--suffix TEXT` | none | Suffix appended to output filenames |
 | `--survey NAME` | `dss1` | Archival image survey for overlay |
+| `-show_simbad` | off | Overplot nearby non-stellar SIMBAD objects on the archival image |
 | `-save` | off | Save figure (.png) and TLS results (.h5) |
 | `-verbose` | off | Print detailed progress |
 | `-overwrite` | off | Overwrite existing output files |
 
-### Multi-sector mode
+### Multi-sector / multi-pipeline mode
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--each-sector` | off | Run on every available sector individually |
+| `--each-pipeline` | off | Run on every available pipeline for the latest sector (mutually exclusive with `--each-sector`) |
 | `-j, --jobs N` | `1` | Number of parallel jobs for `--each-sector` |
+| `--nice INC` | unchanged | Lower CPU priority by this increment (POSIX; e.g. `19` = lowest) |
+| `--cores N` | auto | CPU cores used by TLS per run (default: `cpu_count // 2` single run, `cpu_count // jobs` for `--each-sector`) |
 
 ### Examples
 
@@ -86,6 +90,12 @@ ql --name TOI-125.01 --each-sector -save
 
 # Run all sectors with 4 parallel workers
 ql --name TOI-125.01 --each-sector -j 4 -save
+
+# Run every available pipeline on the latest sector
+ql --name TOI-125.01 --each-pipeline -save
+
+# TGLC PSF photometry with nearby SIMBAD objects overlaid
+ql --name TOI-125.01 --pipeline tglc --fluxtype psf -show_simbad -save
 
 # Pipe output to a log file
 ql --name TIC-52368076 -verbose -save | tee output.log

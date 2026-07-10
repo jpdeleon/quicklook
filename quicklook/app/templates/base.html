@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}TESS QuickLook{% endblock %}</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%234a6cf7'/><circle cx='8' cy='8' r='2' fill='white'/></svg>">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/quicklook.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+{% block before_topbar %}{% endblock %}
+{% set current = self.topbar_current()|trim %}
+{% include 'partials/topbar.html' %}
+{% block content %}{% endblock %}
+<script src="{{ url_for('static', filename='js/quicklook.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
+{# Pages override topbar_current to highlight the active nav link.
+   Values: home | gallery | compare | summary
+   Wrapped in `if false` so the block is defined for self.topbar_current()
+   (used above) and child overrides, but never rendered inline here — without
+   this guard a page's value (e.g. "home") leaks as stray text after </html>. #}
+{% if false %}{% block topbar_current %}{% endblock %}{% endif %}

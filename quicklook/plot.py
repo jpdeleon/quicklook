@@ -1,4 +1,6 @@
+#!/usr/bin/env python
 import importlib.resources as pkg_resources
+import warnings
 from typing import List, Tuple
 import matplotlib.pyplot as pl
 import numpy as np
@@ -8,6 +10,7 @@ from astropy.wcs import WCS
 from astropy.time import Time
 from astropy.coordinates import SkyCoord
 from astropy.visualization import ZScaleInterval
+from astropy.utils.data import download_file
 import astropy.units as u
 
 # from astroplan.plots import plot_finder_image
@@ -31,6 +34,7 @@ __all__ = [
     "plot_periodogram",
     "plot_gaia_sources_on_tpf",
     "plot_gaia_sources_on_survey",
+    "query_simbad_region",
     "plot_archival_images",
     "plot_tls",
 ]
@@ -55,50 +59,137 @@ def use_style(name="science"):
         pl.style.use(str(style_path))
 
 
-def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=None):
+def _strip_for_bin(lc):
+    """Drop non-numeric extra columns before calling LightCurve.bin().
+
+    LightCurve.bin() delegates to astropy.timeseries.aggregate_downsample(),
+    which sums every column. HLSP products such as QLP, TGLC, CDIPS, and
+    pathos carry string-typed columns (e.g. "quality" tags, sector strings)
+    that crash with::
+
+        the resolved dtypes are not compatible with add.reduce.
+
+    Stripping non-numeric extras keeps time/flux/flux_err and any numeric
+    extras (cadenceno, etc.), so binning produces real even/odd panels
+    instead of silently failing.
+    """
+    drop = []
+    for col in list(lc.colnames):
+        if col in ("time", "flux", "flux_err"):
+            continue
+        dtype = getattr(lc[col], "dtype", None)
+        if dtype is None:
+            # e.g. astropy Time/Quantity-like columns without a plain dtype;
+            # aggregate_downsample cannot reduce them, so drop them.
+            drop.append(col)
+            continue
+        try:
+            is_numeric = np.issubdtype(dtype, np.number)
+        except TypeError:
+            is_numeric = False
+        if not is_numeric:
+            drop.append(col)
+    if drop:
+        lc.remove_columns(drop)
+    return lc
+
+
+def _validate_phase_xlim_delta(phase_xlim):
+    """Return a validated phase half-width, or None for automatic zoom."""
+    if phase_xlim is None:
+        return None
+    phase_xlim = float(phase_xlim)
+    if not 0 < phase_xlim <= 1:
+        raise ValueError("phase_xlim must be > 0 and <= 1")
+    return phase_xlim
+
+
+def _phase_window(center, auto_delta, phase_xlim=None):
+    delta = _validate_phase_xlim_delta(phase_xlim)
+    if delta is None:
+        delta = auto_delta
+    return center - delta, center + delta
+
+
+def _as_values(col):
+    return col.value if hasattr(col, "value") else np.asarray(col)
+
+
+def _plot_binned_phase_lc(lc, x_transform, bin_mins, ax, **kwargs):
+    binned = _strip_for_bin(lc.copy()).bin(time_bin_size=bin_mins * u.minute)
+    x = x_transform(_as_values(binned.time))
+    y = _as_values(binned.flux)
+    yerr = None
+    if hasattr(binned, "flux_err") and binned.flux_err is not None:
+        yerr = _as_values(binned.flux_err)
+    ax.errorbar(x, y, yerr=yerr, **kwargs)
+
+
+def plot_odd_even_transit(
+    fold_lc, tls_results, bin_mins=10, markersize=6, ax=None, phase_xlim=None
+):
     if ax is None:
         _, ax = pl.subplots()
     yline = tls_results.depth
     t14 = tls_results.duration
+    period = tls_results.period
+    t14_phase = t14 / period
     # Clip to transit window before binning to avoid creating thousands of
     # empty bins for long-period planets (phase range = period, not just t14).
-    phase_cut = t14 * 2
-    near_transit = (fold_lc.time.value >= -phase_cut) & (fold_lc.time.value <= phase_cut)
+    phase_lo, phase_hi = _phase_window(0, t14_phase * 2, phase_xlim)
+    folded_phase = fold_lc.time.value / period
+    near_transit = (folded_phase >= phase_lo) & (folded_phase <= phase_hi)
     clipped_lc = fold_lc[near_transit]
-    clipped_lc.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
+    clipped_phase = folded_phase[near_transit]
+    ax.scatter(
+        clipped_phase,
+        _as_values(clipped_lc.flux),
+        c="k",
+        alpha=0.5,
+        label="_nolegend_",
+        zorder=1,
+    )
 
     # Force writeable deep copies; stacked boolean slices on the folded
     # LightCurve leave the underlying flux/time buffers non-writeable, which
     # breaks the in-place ufuncs used by LightCurve.bin() under numpy >= 2.0.
-    even_lc = clipped_lc[clipped_lc.even_mask].copy()
-    odd_lc = clipped_lc[clipped_lc.odd_mask].copy()
+    # Strip non-numeric extra columns so aggregate_downsample doesn't choke
+    # on string-typed columns carried by HLSP pipelines (QLP, TGLC, CDIPS).
+    even_lc = _strip_for_bin(clipped_lc[clipped_lc.even_mask].copy())
+    odd_lc = _strip_for_bin(clipped_lc[clipped_lc.odd_mask].copy())
 
     if len(even_lc) > 0:
         try:
-            even_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            _plot_binned_phase_lc(
+                even_lc,
+                lambda t: t / period,
+                bin_mins,
+                ax,
                 label="even transit",
-                c="#1f77b4",
+                color="#1f77b4",
                 marker="o",
                 lw=2,
                 markersize=markersize,
-                ax=ax,
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
-            logger.debug(f"Could not bin even-transit data: {e}")
+            logger.warning(f"Could not bin even-transit data: {e}")
     if len(odd_lc) > 0:
         try:
-            odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            _plot_binned_phase_lc(
+                odd_lc,
+                lambda t: t / period,
+                bin_mins,
+                ax,
                 label="odd transit",
-                c="#d62728",
+                color="#d62728",
                 marker="o",
                 lw=2,
                 markersize=markersize,
-                ax=ax,
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
-            logger.debug(f"Could not bin odd-transit data: {e}")
+            logger.warning(f"Could not bin odd-transit data: {e}")
 
     ax.plot(
         (tls_results.model_folded_phase - 0.5) * tls_results.period,
@@ -109,39 +200,49 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
         label="TLS model",
     )
     ax.axhline(yline, 0, 1, lw=2, ls="--", c="k")
-    ax.axvline(-t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
-    ax.axvline(t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(-t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(-phase_cut, phase_cut)
+    ax.set_xlim(phase_lo, phase_hi)
     ax.legend()
     return ax
 
 
-def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=6, ax=None):
+def plot_secondary_eclipse(
+    flat_lc, tls_results, tmask, bin_mins=10, markersize=6, ax=None, phase_xlim=None
+):
     if ax is None:
         _, ax = pl.subplots()
     # mask transit and shift phase
     fold_lc2 = flat_lc[~tmask].fold(
         period=tls_results.period,
         epoch_time=tls_results.T0 + tls_results.period / 2,
-        # normalize_phase=False,
-        # wrap_phase=tls_results.period
+        normalize_phase=True,
+        wrap_phase=0.5,
     )
-    half_phase = 0.5  # tls_results.period/2
-    fold_lc2.time = fold_lc2.time + half_phase * u.day
+    half_phase = 0.5
+    eclipse_phase = fold_lc2.time.value + half_phase
     yline = tls_results.depth
     t14 = tls_results.duration
+    t14_phase = t14 / tls_results.period
     try:
-        secthresh = compute_secthresh(fold_lc2, t14)
+        secthresh = compute_secthresh(fold_lc2, t14_phase)
     except (ValueError, ZeroDivisionError, IndexError) as e:
         logger.debug(f"Could not compute secondary eclipse threshold: {e}")
         secthresh = np.nan
     # Clip to eclipse window before binning to avoid thousands of empty bins
-    phase_lo = half_phase - t14 * 2
-    phase_hi = half_phase + t14 * 2
-    near_eclipse = (fold_lc2.time.value >= phase_lo) & (fold_lc2.time.value <= phase_hi)
+    phase_lo, phase_hi = _phase_window(half_phase, t14_phase * 2, phase_xlim)
+    near_eclipse = (eclipse_phase >= phase_lo) & (eclipse_phase <= phase_hi)
     clipped_lc2 = fold_lc2[near_eclipse]
-    clipped_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
+    clipped_phase = eclipse_phase[near_eclipse]
+    ax.scatter(
+        clipped_phase,
+        _as_values(clipped_lc2.flux),
+        c="k",
+        alpha=0.5,
+        label="_nolegend_",
+        zorder=1,
+    )
     ax.axhline(
         yline,
         0,
@@ -151,12 +252,15 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
         c="k",
         ls="--",
     )
-    ax.axvline(half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
-    ax.axvline(half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(half_phase - t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(half_phase + t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     try:
         if len(clipped_lc2) > 0:
-            clipped_lc2.bin(time_bin_size=bin_mins * u.minute).errorbar(
-                ax=ax,
+            _plot_binned_phase_lc(
+                clipped_lc2,
+                lambda t: t + half_phase,
+                bin_mins,
+                ax,
                 marker="o",
                 markersize=markersize,
                 lw=2,
@@ -164,7 +268,7 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
                 zorder=2,
             )
     except (ValueError, TypeError) as e:
-        logger.debug(f"Could not bin secondary eclipse data: {e}")
+        logger.warning(f"Could not bin secondary eclipse data: {e}")
     ax.set_xlabel("Orbital Phase")
     ax.set_xlim(phase_lo, phase_hi)
     ax.legend()
@@ -218,7 +322,7 @@ def plot_periodogram(
     ax.set_xlim(xmin, period_max)
     ax.legend(title="Prot peaks [d]")
     if verbose:
-        print(pg.show_properties())
+        logger.info(pg.show_properties())
     return pg
 
 
@@ -458,7 +562,7 @@ def plot_gaia_sources_on_tpf(
     survey image and Gaia DR2 positions
     """
     if verbose:
-        print("Plotting nearby Gaia sources on tpf.")
+        logger.info("Plotting nearby Gaia sources on tpf.")
     assert target_gaiaid is not None
     img = np.nanmedian(tpf.flux, axis=0)
     # make aperture mask
@@ -472,7 +576,7 @@ def plot_gaia_sources_on_tpf(
 
     if gaia_sources is None:
         if verbose:
-            print("Querying Gaia sources around the target.")
+            logger.info("Querying Gaia sources around the target.")
         target_coord = SkyCoord(
             ra=tpf.get_header()["RA_OBJ"],
             dec=tpf.get_header()["DEC_OBJ"],
@@ -504,9 +608,9 @@ def plot_gaia_sources_on_tpf(
         # sources_inside_aperture.append(isinside)
         min_gmag = gaia_sources.loc[isinside, "phot_g_mean_mag"].min()
         if (target_gmag - min_gmag) != 0:
-            print(
-                f"target Gmag={target_gmag:.2f} is not the brightest \
-                within aperture (Gmag={min_gmag:.2f})"
+            logger.warning(
+                f"target Gmag={target_gmag:.2f} is not the brightest "
+                f"within aperture (Gmag={min_gmag:.2f})"
             )
     else:
         min_gmag = gaia_sources.phot_g_mean_mag.min()  # brightest
@@ -608,6 +712,126 @@ def plot_gaia_sources_on_tpf(
     return ax
 
 
+_SIMBAD_OTYPE_LABELS = None
+
+
+def _load_simbad_otype_labels():
+    """Map SIMBAD otype codes to condensed labels.
+
+    SIMBAD returns short otype codes (e.g. ``"EB*"``, ``"*"``), but the
+    bundled ``data/simbad_obj_types.csv`` maps these to readable condensed
+    labels (e.g. ``"EclBin"``, ``"Star"``). Returns ``{code: label}``; an
+    empty dict if the CSV can't be read, in which case callers fall back to
+    the raw code. Cached after first load.
+    """
+    global _SIMBAD_OTYPE_LABELS
+    if _SIMBAD_OTYPE_LABELS is not None:
+        return _SIMBAD_OTYPE_LABELS
+    labels = {}
+    try:
+        csv_path = pkg_resources.files("quicklook").joinpath("data", "simbad_obj_types.csv")
+        df = pd.read_csv(csv_path)
+        for code, label in zip(df["Id"].astype(str), df["Label"].astype(str)):
+            code, label = code.strip(), label.strip()
+            if code and label and label.lower() != "nan":
+                labels[code] = label
+    except Exception as e:  # missing/corrupt CSV must not break plotting
+        logger.warning(f"Could not load SIMBAD otype labels: {e}")
+    _SIMBAD_OTYPE_LABELS = labels
+    return labels
+
+
+def _simbad_radec_deg(df, ra_col, dec_col):
+    """Return SIMBAD ra/dec columns as float degrees.
+
+    astroquery returns ra/dec either as numeric degrees (newer versions) or
+    as sexagesimal strings (older versions); handle both.
+    """
+    ra_vals = df[ra_col]
+    dec_vals = df[dec_col]
+    if np.issubdtype(ra_vals.dtype, np.number):
+        return ra_vals.astype(float).to_numpy(), dec_vals.astype(float).to_numpy()
+    coords = SkyCoord(ra_vals.tolist(), dec_vals.tolist(), unit=(u.hourangle, u.deg))
+    return coords.ra.deg, coords.dec.deg
+
+
+def query_simbad_region(
+    target_coord,
+    radius=3 * u.arcmin,
+    exclude_otypes=("Star",),
+    verbose=True,
+):
+    """Cone-search SIMBAD for objects around a sky position.
+
+    Parameters
+    ----------
+    target_coord : astropy.coordinates.SkyCoord
+        center of the cone search
+    radius : astropy.units.Quantity
+        search radius (default 3 arcmin)
+    exclude_otypes : tuple of str
+        object types to drop from the result (default drops plain ``"Star"``)
+    verbose : bool
+        log progress
+
+    Returns
+    -------
+    pandas.DataFrame or None
+        columns ``main_id``, ``ra``, ``dec`` (deg), ``otype``; ``None`` when
+        the query failed, returned nothing, or everything was excluded.
+
+    See also: https://simbad.cds.unistra.fr/guide/otypes.htx
+    """
+    from astroquery.simbad import Simbad
+
+    simbad = Simbad()
+    try:
+        simbad.add_votable_fields("otype")
+    except Exception:  # field already present / version differences
+        pass
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = simbad.query_region(target_coord, radius=radius)
+    except Exception as e:  # network/parse errors must not break the plot
+        logger.warning(f"SIMBAD region query failed: {e}")
+        return None
+    if result is None or len(result) == 0:
+        return None
+
+    df = result.to_pandas()
+    cols = {c.lower(): c for c in df.columns}
+    ra_col, dec_col = cols.get("ra"), cols.get("dec")
+    otype_col, id_col = cols.get("otype"), cols.get("main_id")
+    if ra_col is None or dec_col is None or otype_col is None:
+        logger.warning(f"Unexpected SIMBAD columns: {list(df.columns)}")
+        return None
+
+    ra_deg, dec_deg = _simbad_radec_deg(df, ra_col, dec_col)
+    # SIMBAD returns short codes (e.g. "EB*"); translate to condensed labels
+    # (e.g. "EclBin"), falling back to the raw code when unmapped.
+    code = df[otype_col].astype(str).str.strip()
+    label_map = _load_simbad_otype_labels()
+    otype_label = code.map(lambda c: label_map.get(c, c))
+    out = pd.DataFrame(
+        {
+            "main_id": df[id_col].astype(str) if id_col else "",
+            "ra": ra_deg,
+            "dec": dec_deg,
+            "otype": otype_label,
+        }
+    )
+    # plot all otypes except the excluded ones (matched on the readable label,
+    # e.g. drop plain "Star")
+    out = out[~out["otype"].isin(set(exclude_otypes))].reset_index(drop=True)
+    if verbose:
+        logger.info(
+            f"SIMBAD returned {len(out)} object(s) within {radius} "
+            f"(excluding {exclude_otypes})."
+        )
+    return out if len(out) else None
+
+
 def plot_gaia_sources_on_survey(
     tpf,
     target_gaiaid,
@@ -619,6 +843,8 @@ def plot_gaia_sources_on_survey(
     sap_mask="pipeline",
     survey="dss1",
     ax=None,
+    show_simbad=True,
+    simbad_radius=3 * u.arcmin,
     color_aper="C0",  # pink
     figsize=None,
     invert_xaxis=False,
@@ -658,7 +884,7 @@ def plot_gaia_sources_on_survey(
     errmsg = f"{survey} not in {list(dss_description.keys())}"
     assert survey in list(dss_description.keys()), errmsg
     if verbose:
-        print("Plotting nearby Gaia sources on survey image.")
+        logger.info("Plotting nearby Gaia sources on survey image.")
     assert target_gaiaid is not None
     ny, nx = tpf.flux.shape[1:]
     if fov_rad is None:
@@ -667,7 +893,7 @@ def plot_gaia_sources_on_survey(
     target_coord = SkyCoord(ra=tpf.ra * u.deg, dec=tpf.dec * u.deg)
     if gaia_sources is None:
         if verbose:
-            print("Querying Gaia sources around the target.")
+            logger.info("Querying Gaia sources around the target.")
         gaia_sources = Catalogs.query_region(
             target_coord,
             radius=fov_rad,
@@ -685,7 +911,7 @@ def plot_gaia_sources_on_survey(
     extent = np.array([-1, nx, -1, ny])
 
     if verbose:
-        print(f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image...")
+        logger.info(f"Querying {survey} ({fov_rad:.2f} x {fov_rad:.2f}) archival image...")
     # -----------create figure---------------#
     if (ax is None) or (hdu is None):
         # get img hdu for subplot projection
@@ -751,6 +977,46 @@ def plot_gaia_sources_on_survey(
             alpha=alpha,
             facecolor="none",
         )
+    # ----- overplot nearby non-stellar SIMBAD objects -----
+    if show_simbad:
+        simbad_objs = query_simbad_region(target_coord, radius=simbad_radius, verbose=verbose)
+        n_shown = 0
+        if simbad_objs is not None:
+            ny_img, nx_img = hdu.data.shape
+            for _, row in simbad_objs.iterrows():
+                pix = imgwcs.all_world2pix(np.c_[row["ra"], row["dec"]], 1)[0]
+                x, y = pix[0], pix[1]
+                # skip objects that fall outside the archival image FOV
+                if not (0 <= x < nx_img and 0 <= y < ny_img):
+                    continue
+                ax.scatter(
+                    x,
+                    y,
+                    marker="x",
+                    s=60,
+                    c="C9",
+                    linewidths=1.5,
+                    alpha=0.9,
+                    zorder=5,
+                )
+                ax.annotate(
+                    row["otype"],
+                    xy=(x, y),
+                    xytext=(5, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                    color="magenta",
+                    zorder=5,
+                )
+                n_shown += 1
+        if n_shown > 0:
+            logger.info(
+                f"Overplotted {n_shown} SIMBAD object(s) within the archival "
+                "image FOV. For description of Simbad object types, see "
+                "https://simbad.cds.unistra.fr/Pages/guide/otypes.htx"
+            )
+        else:
+            logger.info("No SIMBAD objects detected within the archival image FOV.")
     # orient such that north is up; left is east
     if invert_yaxis:
         # ax.invert_yaxis()
@@ -768,7 +1034,7 @@ def plot_gaia_sources_on_survey(
         ylim=(0, my),
     )
     ax.set_title(
-        f"{survey.upper()} survey (FOV={fov_rad.value:.2f}' x {fov_rad.value:.2f}')",
+        f"{survey.upper()} survey (FOV={fov_rad.value:.2g}' x {fov_rad.value:.2g}')",
         y=0.99,
     )
     return ax
@@ -782,6 +1048,7 @@ def get_dss_data(
     height=1,
     width=1,
     epoch="J2000",
+    cache=True,
 ):
     """
     Digitized Sky Survey (DSS)
@@ -794,6 +1061,11 @@ def get_dss_data(
         image cutout height and width [arcmin]
     epoch : str
         default=J2000
+    cache : bool or str
+        cache the downloaded FITS in astropy's download cache
+        (``~/.astropy/cache``, scoped by ``pkgname="quicklook"``) so repeated
+        queries for the same target hit disk instead of the STScI server.
+        Pass ``cache="update"`` to force a re-download (e.g. on overwrite).
     Returns
     -------
     hdu
@@ -805,12 +1077,11 @@ def get_dss_data(
     url = f"{base_url}{survey}&r={ra}&d={dec}&e={epoch}&h={height}&w={width}"
     url += "&f=fits&c=none&s=on&fov=NONE&v3"
     try:
-        hdulist = fits.open(url)
-        # hdulist.info()
-
+        # The full URL encodes survey + coords + size, so it doubles as the
+        # cache key; astropy handles concurrency-safe writes and integrity.
+        path = download_file(url, cache=cache, pkgname="quicklook", show_progress=False)
+        hdulist = fits.open(path)
         hdu = hdulist[0]
-        # data = hdu.data
-        # header = hdu.header
         if plot:
             _ = plot_dss_image(hdu)
         return hdu

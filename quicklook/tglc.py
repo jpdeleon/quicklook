@@ -7,6 +7,9 @@ Changes from the original:
 - Removed unused proper-motion variables in Source.__init__
 - Replaced print()/warnings.warn() with loguru logger calls
 - Added get_tglc_lc() function returning lightkurve.TessLightCurve
+- fit_lc() accepts optional prior + x_all/y_all to run the float-field
+  Gaussian-prior PSF photometry path inline (no separate fit_lc_float_field call)
+- get_tglc_lc() enforces FFI cutsize in [50, 99] and uses prior=0.1
 """
 
 import json
@@ -29,10 +32,19 @@ from astropy.coordinates import SkyCoord
 from astroquery.gaia import Gaia
 from astroquery.mast import Catalogs, Tesscut
 from wotan import flatten
-from tqdm import trange
+from tqdm.auto import tqdm, trange
 
 Gaia.ROW_LIMIT = -1
 Gaia.MAIN_GAIA_TABLE = "gaiadr3.gaia_source"  # TODO: dr3 MJD = 2457388.5, TBJD = 388.5
+
+# astroquery's MAST service connection imposes a 600 s (10 min) request
+# timeout by default, which aborts large TESScut FFI-cutout downloads and
+# slow catalog queries mid-run. Raise it so TGLC jobs are not cut off.
+_MAST_TIMEOUT = 3600
+for _mast_client in (Catalogs, Tesscut):
+    _conn = getattr(_mast_client, "_service_api_connection", None)
+    if _conn is not None:
+        _conn.TIMEOUT = _MAST_TIMEOUT
 
 
 def _gaia_async_query(query_str, max_retries=3, timeout=120):
@@ -64,17 +76,26 @@ def convert_gaia_id(catalogdata_tic):
     logger.info(f"Converting {len(gaia_array)} Gaia DR2 IDs to DR3 via TAP...")
     try:
         segment = (len(gaia_array) - 1) // 10000
-        gaia_tuple = tuple(gaia_array[:10000])
-        results = _gaia_async_query(query.format(gaia_ids=gaia_tuple))
-        for i in range(segment):
-            gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
-            gaia_tuple_cut = tuple(gaia_array_cut)
-            results = vstack(
-                [
-                    results,
-                    _gaia_async_query(query.format(gaia_ids=gaia_tuple_cut)),
-                ]
-            )
+        n_batches = segment + 1
+        with tqdm(
+            total=n_batches,
+            desc=f"Gaia DR2->DR3 ({len(gaia_array)} IDs)",
+            unit="batch",
+            leave=False,
+        ) as pbar:
+            gaia_tuple = tuple(gaia_array[:10000])
+            results = _gaia_async_query(query.format(gaia_ids=gaia_tuple))
+            pbar.update(1)
+            for i in range(segment):
+                gaia_array_cut = gaia_array[((i + 1) * 10000) : ((i + 2) * 10000)]
+                gaia_tuple_cut = tuple(gaia_array_cut)
+                results = vstack(
+                    [
+                        results,
+                        _gaia_async_query(query.format(gaia_ids=gaia_tuple_cut)),
+                    ]
+                )
+                pbar.update(1)
         tic_ids = []
         for j in range(len(results)):
             tic_ids.append(
@@ -1060,6 +1081,9 @@ def fit_lc(
     psf_size=11,
     e_psf=None,
     near_edge=False,
+    prior=None,
+    x_all=None,
+    y_all=None,
 ):
     """
     Produce matrix for least_square fitting without a certain target
@@ -1085,6 +1109,10 @@ def fit_lc(
     whether the star is 2 pixels or closer to the edge of a CCD
     :return: aperture lightcurve, PSF lightcurve, vertical pixel coord, horizontal pixel coord, portion of light in aperture
     """
+    if prior is not None and (x_all is None or y_all is None):
+        raise ValueError(
+            "fit_lc with prior set requires x_all and y_all (full per-star coordinate arrays)."
+        )
     over_size = psf_size * factor + 1
     a = star_info[star_num][1]
     star_info_num = (
@@ -1117,8 +1145,11 @@ def fit_lc(
             A_cut, e_psf[j]
         )
     aperture = aperture.reshape((len(source.time), up - down, right - left))
-    target_5x5 = np.dot(A_target, np.nanmedian(e_psf, axis=0)).reshape(cut_size, cut_size)
-    field_stars_5x5 = np.dot(A_cut, np.nanmedian(e_psf, axis=0)).reshape(cut_size, cut_size)
+    # Reshape to the actual cut-region shape, which is smaller than 5x5 when
+    # the star sits near a cutout edge; the block below pads it back to 5x5.
+    region_shape = (up - down, right - left)
+    target_5x5 = np.dot(A_target, np.nanmedian(e_psf, axis=0)).reshape(region_shape)
+    field_stars_5x5 = np.dot(A_cut, np.nanmedian(e_psf, axis=0)).reshape(region_shape)
     if target_5x5.shape != (cut_size, cut_size):
         # Pad with nans to get to 5x5 shape
         # Pad amount in a direction is (expected_num_pix) - (actual_num_pix)
@@ -1141,7 +1172,7 @@ def fit_lc(
     over_size = psf_size * factor + 1
     if near_edge:  # TODO: near_edge
         psf_lc = np.zeros(len(source.time))
-        psf_lc[:] = np.NaN
+        psf_lc[:] = np.nan
         e_psf_1d = np.nanmedian(e_psf[:, : over_size**2], axis=0).reshape(over_size, over_size)
         portion = (
             (36 / 49) * np.nansum(e_psf_1d[8:15, 8:15]) / np.nansum(e_psf_1d)
@@ -1155,59 +1186,137 @@ def fit_lc(
             target_5x5,
             field_stars_5x5,
         )
-    left_ = left - x + 5
-    right_ = right - x + 5
-    down_ = down - y + 5
-    up_ = up - y + 5
+    if prior is None:
+        left_ = left - x + 5
+        right_ = right - x + 5
+        down_ = down - y + 5
+        up_ = up - y + 5
 
-    left_11 = np.maximum(-x + 5, 0)
-    right_11 = np.minimum(size - x + 5, 11)
-    down_11 = np.maximum(-y + 5, 0)
-    up_11 = np.minimum(size - y + 5, 11)
-    coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
-    index = coord[down_11:up_11, left_11:right_11]
-    if isinstance(source, Source):
-        bg_dof = 6
-    else:
-        bg_dof = 3
-    A = np.zeros((psf_size**2, over_size**2 + bg_dof))
-    A[np.repeat(index, 4), star_info_num[1]] = star_info_num[2]
-    psf_shape = np.dot(e_psf, A.T).reshape(len(source.time), psf_size, psf_size)
-    psf_sim = psf_shape[:, down_:up_, left_:right_]
-    # psf_sim = np.transpose(psf_shape[:, down_:up_, left_: right_], (0, 2, 1))
-
-    psf_lc = np.zeros(len(source.time))
-    A_ = np.zeros((cut_size**2, 4))
-    xx, yy = np.meshgrid(
-        (np.arange(cut_size) - (cut_size - 1) / 2),
-        (np.arange(cut_size) - (cut_size - 1) / 2),
-    )
-    A_[:, -1] = np.ones(cut_size**2)
-    A_[:, -2] = yy.flatten()
-    A_[:, -3] = xx.flatten()
-    edge_pixel = np.array([0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 19, 20, 21, 22, 23, 24])
-    # edge_pixel = np.array([0, 1, 2, 3, 4, 5, 6,
-    #                        7, 8, 9, 10, 11, 12, 13,
-    #                        14, 15, 19, 20,
-    #                        21, 22, 26, 27,
-    #                        28, 29, 33, 34,
-    #                        35, 36, 37, 38, 39, 40, 41,
-    #                        42, 43, 44, 45, 46, 47, 48])
-    med_aperture = np.median(aperture, axis=0).flatten()
-    outliers = np.abs(
-        med_aperture[edge_pixel] - np.nanmedian(med_aperture[edge_pixel])
-    ) > 1 * np.std(med_aperture[edge_pixel])
-    epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
-    for j in range(len(source.time)):
-        if np.isnan(psf_sim[j, :, :]).any():
-            psf_lc[j] = np.nan
+        left_11 = np.maximum(-x + 5, 0)
+        right_11 = np.minimum(size - x + 5, 11)
+        down_11 = np.maximum(-y + 5, 0)
+        up_11 = np.minimum(size - y + 5, 11)
+        coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
+        index = coord[down_11:up_11, left_11:right_11]
+        if isinstance(source, Source):
+            bg_dof = 6
         else:
-            aper_flat = aperture[j, :, :].flatten()
-            A_[:, 0] = psf_sim[j, :, :].flatten() / epsf_sum
-            a = np.delete(A_, edge_pixel[outliers], 0)
-            aper_flat = np.delete(aper_flat, edge_pixel[outliers])
-            psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][0]
-    portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+            bg_dof = 3
+        A = np.zeros((psf_size**2, over_size**2 + bg_dof))
+        A[np.repeat(index, 4), star_info_num[1]] = star_info_num[2]
+        psf_shape = np.dot(e_psf, A.T).reshape(len(source.time), psf_size, psf_size)
+        psf_sim = psf_shape[:, down_:up_, left_:right_]
+
+        psf_lc = np.zeros(len(source.time))
+        A_ = np.zeros((cut_size**2, 4))
+        xx, yy = np.meshgrid(
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+        )
+        A_[:, -1] = np.ones(cut_size**2)
+        A_[:, -2] = yy.flatten()
+        A_[:, -3] = xx.flatten()
+        edge_pixel = np.array([0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 19, 20, 21, 22, 23, 24])
+        med_aperture = np.median(aperture, axis=0).flatten()
+        outliers = np.abs(
+            med_aperture[edge_pixel] - np.nanmedian(med_aperture[edge_pixel])
+        ) > 1 * np.std(med_aperture[edge_pixel])
+        epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
+        for j in range(len(source.time)):
+            if np.isnan(psf_sim[j, :, :]).any():
+                psf_lc[j] = np.nan
+            else:
+                aper_flat = aperture[j, :, :].flatten()
+                A_[:, 0] = psf_sim[j, :, :].flatten() / epsf_sum
+                a = np.delete(A_, edge_pixel[outliers], 0)
+                aper_flat = np.delete(aper_flat, edge_pixel[outliers])
+                psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][0]
+        portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+    else:
+        # Float-field PSF photometry: each nearby field star gets its own free
+        # amplitude column, regularized by a Gaussian prior centred on its
+        # Gaia-predicted brightness. `prior` (usually <1) scales the prior
+        # width: smaller -> tighter (closer to Gaia), larger -> looser.
+        if isinstance(source, Source):
+            bg_dof = 6
+        else:
+            bg_dof = 3
+        field_star_num = []
+        for j in range(len(source.gaia)):
+            if np.abs(x_all[j] - x_all[star_num]) < 5 and np.abs(y_all[j] - y_all[star_num]) < 5:
+                field_star_num.append(j)
+
+        psf_lc = np.zeros(len(source.time))
+        A_ = np.zeros((cut_size**2 + len(field_star_num), len(field_star_num) + 3))
+        xx, yy = np.meshgrid(
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+        )
+        A_[: (cut_size**2), -1] = np.ones(cut_size**2)
+        A_[: (cut_size**2), -2] = yy.flatten()
+        A_[: (cut_size**2), -3] = xx.flatten()
+        psf_sim = np.zeros((len(source.time), 11**2 + len(field_star_num), len(field_star_num)))
+        portion = np.nan
+        for j, star in enumerate(field_star_num):
+            a = star_info[star][1]
+            star_info_star = (
+                np.repeat(star_info[star][0], 4),
+                np.array([a, a + 1, a + over_size, a + over_size + 1]).flatten(order="F"),
+                np.tile(star_info[star][2], len(a)),
+            )
+            delta_x = x_all[star_num] - x_all[star]
+            delta_y = y_all[star_num] - y_all[star]
+            left_shift = np.maximum(delta_x, 0)
+            right_shift = np.minimum(11 + delta_x, 11)
+            down_shift = np.maximum(delta_y, 0)
+            up_shift = np.minimum(11 + delta_y, 11)
+            left_shift_ = np.maximum(-delta_x, 0)
+            right_shift_ = np.minimum(11 - delta_x, 11)
+            down_shift_ = np.maximum(-delta_y, 0)
+            up_shift_ = np.minimum(11 - delta_y, 11)
+
+            left_11 = np.maximum(-x_all[star] + 5, 0)
+            right_11 = np.minimum(size - x_all[star] + 5, 11)
+            down_11 = np.maximum(-y_all[star] + 5, 0)
+            up_11 = np.minimum(size - y_all[star] + 5, 11)
+
+            coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
+            index = coord[down_11:up_11, left_11:right_11]
+            A_star = np.zeros((psf_size**2, over_size**2 + bg_dof))
+            A_star[np.repeat(index, 4), star_info_star[1]] = star_info_star[2]
+            psf_shape = np.dot(e_psf, A_star.T).reshape(len(source.time), psf_size, psf_size)
+            epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
+            psf_sim_index = coord[down_shift:up_shift, left_shift:right_shift].flatten()
+            psf_sim[:, psf_sim_index, j] = (
+                psf_shape[:, down_shift_:up_shift_, left_shift_:right_shift_].reshape(
+                    len(source.time), -1
+                )
+                / epsf_sum
+            )
+            if star != star_num:
+                psf_sim[:, 11**2 + j, j] = np.ones(len(source.time)) / (
+                    prior * 1.5e4 * 10 ** ((10 - source.gaia[star]["tess_mag"]) / 2.5)
+                )
+            else:
+                portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+
+        star_index = np.where(np.array(field_star_num) == star_num)[0]
+        for j in range(len(source.time)):
+            if np.isnan(psf_sim[j, :, :]).any():
+                psf_lc[j] = np.nan
+            else:
+                aper_flat = aperture[j, :, :].flatten()
+                aper_flat = np.append(aper_flat, np.zeros(len(field_star_num) - 1))
+                aper_flat[cut_size**2 + star_index] = 0
+                postcards = psf_sim[j, np.arange(11**2).reshape(11, 11)[3:8, 3:8], :].reshape(
+                    cut_size**2, len(field_star_num)
+                )
+                A_[: cut_size**2, : len(field_star_num)] = postcards
+                A_[cut_size**2 :, : len(field_star_num)] = psf_sim[j, 11**2 :, :].reshape(
+                    len(field_star_num), len(field_star_num)
+                )
+                a = np.delete(A_, cut_size**2 + star_index, 0)
+                psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][star_index]
     # print(np.nansum(psf_shape[:, 5, 5]) / np.nansum(psf_shape))
     # np.save(f'toi-5344_psf_{source.sector}.npy', psf_shape)
     return (
@@ -1293,7 +1402,7 @@ def fit_lc_float_field(
     over_size = psf_size * factor + 1
     if near_edge:  # TODO: near_edge
         psf_lc = np.zeros(len(source.time))
-        psf_lc[:] = np.NaN
+        psf_lc[:] = np.nan
         e_psf_1d = np.nanmedian(e_psf[:, : over_size**2], axis=0).reshape(over_size, over_size)
         portion = (
             (36 / 49) * np.nansum(e_psf_1d[8:15, 8:15]) / np.nansum(e_psf_1d)
@@ -1537,6 +1646,40 @@ def bg_mod(
     return local_bg, aper_lc, psf_lc, cal_aper_lc, cal_psf_lc
 
 
+def _fit_epsf_series(
+    A,
+    source,
+    over_size,
+    bg_dof,
+    power=0.8,
+    no_progress_bar=False,
+    cancel_check=None,
+):
+    """Fit the effective PSF at every cadence.
+
+    Shows a tqdm status bar in interactive terminals and additionally emits
+    a loguru progress line every ~5% of cadences, so progress stays visible
+    when stdout is captured to a log file (e.g. the web GUI job log) where
+    the tqdm bar does not render.
+
+    If ``cancel_check`` is provided and returns truthy at any cadence, the
+    loop aborts immediately with ``InterruptedError`` so an external
+    cancellation (e.g. the web GUI's Cancel button) actually stops the
+    compute instead of waiting for it to finish naturally.
+    """
+    ntime = len(source.time)
+    e_psf = np.zeros((ntime, over_size**2 + bg_dof))
+    log_every = max(1, ntime // 20)
+    for i in trange(ntime, desc="Fitting ePSF", disable=no_progress_bar):
+        if cancel_check is not None and cancel_check():
+            raise InterruptedError(f"ePSF fitting cancelled at cadence {i}/{ntime}")
+        e_psf[i] = fit_psf(A, source, over_size, power=power, time=i)
+        done = i + 1
+        if not no_progress_bar and (done % log_every == 0 or done == ntime):
+            logger.info(f"ePSF fitting: {done}/{ntime} ({100 * done // ntime}%)")
+    return e_psf
+
+
 def epsf(
     source,
     psf_size=11,
@@ -1548,7 +1691,7 @@ def epsf(
     sector=0,
     limit_mag=16,
     edge_compression=1e-4,
-    power=1.4,
+    power=0.8,
     name=None,
     save_aper=False,
     no_progress_bar=False,
@@ -1583,7 +1726,7 @@ def epsf(
     )
     lc_directory = f"{local_directory}lc/{source.camera}-{source.ccd}/"
     epsf_loc = f"{local_directory}epsf/{source.camera}-{source.ccd}/epsf_{target}_sector_{sector}_{source.camera}-{source.ccd}.npy"
-    if isinstance(Source_cut, source):
+    if isinstance(source, Source_cut):
         bg_dof = 3
         lc_directory = f"{local_directory}lc/"
         epsf_loc = f"{local_directory}epsf/epsf_{target}_sector_{sector}.npy"
@@ -1600,9 +1743,9 @@ def epsf(
         e_psf = np.load(epsf_loc)
         logger.info(f"Loaded ePSF {target} from directory.")
     else:
-        e_psf = np.zeros((len(source.time), over_size**2 + bg_dof))
-        for i in trange(len(source.time), desc="Fitting ePSF", disable=no_progress_bar):
-            e_psf[i] = fit_psf(A, source, over_size, power=power, time=i)
+        e_psf = _fit_epsf_series(
+            A, source, over_size, bg_dof, power=power, no_progress_bar=no_progress_bar
+        )
         if np.isnan(e_psf).any():
             logger.warning(
                 f"TESS FFI cut includes NaN values. Please shift the center of the cutout to remove NaN near edge. Target: {target}"
@@ -1618,7 +1761,7 @@ def epsf(
     index_1 = np.where(np.array(source.quality) == 0)[0]
     index_2 = np.where(quality_raw == 0)[0]
     index = np.intersect1d(index_1, index_2)
-    if isinstance(Source_cut, source):
+    if isinstance(source, Source_cut):
         in_frame = np.where(np.invert(np.isnan(source.flux[0])))
         x_left = np.min(in_frame[1]) - 0.5
         x_right = source.size - np.max(in_frame[1]) + 0.5
@@ -1811,36 +1954,244 @@ def epsf(
                     )
 
 
-def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
+def _point_to_point_scatter(flux):
+    """Robust white-noise estimate: MAD of successive flux differences / sqrt(2).
+
+    Unlike a plain MAD of the light curve, the first-difference scatter
+    isolates high-frequency (instrumental / photon) noise and is *not*
+    inflated by genuine astrophysical variability.  This makes it safe to use
+    when picking the less-noisy of two light curves: a plain MAD would
+    systematically penalise the light curve of a truly variable star.
+
+    Parameters
+    ----------
+    flux : np.ndarray
+        Light curve flux (NaNs allowed).
+
+    Returns
+    -------
+    float
+        Point-to-point scatter, or ``np.nan`` if there are <3 finite points.
+    """
+    finite = flux[np.isfinite(flux)]
+    if finite.size < 3:
+        return np.nan
+    diff = np.diff(finite)
+    return 1.4826 * np.nanmedian(np.abs(diff - np.nanmedian(diff))) / np.sqrt(2)
+
+
+def _choose_photometry(
+    cal_aper_lc,
+    cal_psf_lc,
+    near_edge,
+    contamination,
+    tess_mag,
+    contam_high=1.0,
+    contam_low=0.05,
+    bright_mag=12.0,
+    faint_mag=13.0,
+    margin=0.05,
+):
+    """Decide whether the aperture or PSF light curve is the better product.
+
+    The decision is deterministic and applied in priority order:
+
+    1. Hard eliminations -- if the PSF light curve is undefined (target near
+       a CCD edge) or has too few valid cadences, aperture is the only option.
+    2. Crowding -- a high contamination ratio favours PSF photometry, whose
+       explicit forward model decontaminates better than a fixed 3x3 aperture;
+       a bright, isolated star favours the simpler aperture photometry.
+    3. Precision -- otherwise pick the light curve with the lower
+       point-to-point scatter, requiring a margin to avoid noise-driven
+       flip-flopping (see :func:`_point_to_point_scatter`).
+    4. Soft default -- faint stars favour PSF; otherwise aperture, which is
+       the upstream convention (TGLC plotting helpers default to
+       ``cal_aper_flux``).
+
+    Returns
+    -------
+    tuple(str, str, dict)
+        ``(choice, reason, metrics)`` where ``choice`` is ``"aperture"`` or
+        ``"psf"``, ``reason`` is a human-readable explanation, and ``metrics``
+        holds the scalar values behind the decision.
+    """
+    aper_p2p = _point_to_point_scatter(cal_aper_lc)
+    psf_p2p = _point_to_point_scatter(cal_psf_lc)
+    aper_valid = int(np.sum(np.isfinite(cal_aper_lc)))
+    psf_valid = int(np.sum(np.isfinite(cal_psf_lc)))
+    metrics = {
+        "APER_P2P": aper_p2p,
+        "PSF_P2P": psf_p2p,
+        "APER_NVALID": aper_valid,
+        "PSF_NVALID": psf_valid,
+        "CONTAMRT": contamination,
+    }
+
+    # 1. Hard eliminations: PSF unusable -> must use aperture.
+    if near_edge:
+        return "aperture", "near edge: PSF light curve is undefined", metrics
+    if psf_valid == 0 or not np.isfinite(psf_p2p):
+        return "aperture", "PSF light curve has no valid cadences", metrics
+    if aper_valid > 0 and psf_valid < 0.5 * aper_valid:
+        return (
+            "aperture",
+            f"PSF has too few valid cadences ({psf_valid} < 50% of {aper_valid})",
+            metrics,
+        )
+
+    # 2. Crowding: explicit forward model decontaminates better.
+    if np.isfinite(contamination) and contamination >= contam_high:
+        return (
+            "psf",
+            f"high contamination ({contamination:.3f} >= {contam_high})",
+            metrics,
+        )
+    if (
+        np.isfinite(contamination)
+        and contamination <= contam_low
+        and np.isfinite(tess_mag)
+        and tess_mag <= bright_mag
+    ):
+        return (
+            "aperture",
+            f"bright (T={tess_mag:.1f}) and isolated "
+            f"(contamination {contamination:.3f} <= {contam_low})",
+            metrics,
+        )
+
+    # 3. Precision tie-break on point-to-point scatter.
+    if np.isfinite(aper_p2p) and np.isfinite(psf_p2p):
+        if psf_p2p < aper_p2p * (1.0 - margin):
+            return (
+                "psf",
+                f"lower point-to-point scatter " f"(PSF {psf_p2p:.5f} < aperture {aper_p2p:.5f})",
+                metrics,
+            )
+        if aper_p2p < psf_p2p * (1.0 - margin):
+            return (
+                "aperture",
+                f"lower point-to-point scatter " f"(aperture {aper_p2p:.5f} < PSF {psf_p2p:.5f})",
+                metrics,
+            )
+
+    # 4. Soft default: faint stars favour PSF; otherwise aperture.
+    if np.isfinite(tess_mag) and tess_mag >= faint_mag:
+        return "psf", f"faint star (T={tess_mag:.1f}); metrics within margin", metrics
+    return "aperture", "default (aperture, upstream convention)", metrics
+
+
+def get_tglc_lc(
+    target_name,
+    sector=None,
+    size=50,
+    limit_mag=16,
+    photometry="auto",
+    cache_dir=None,
+    use_cache=True,
+    verbose=True,
+    cancel_check=None,
+):
     """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
 
     This function downloads an FFI cutout via TESScut, runs the TGLC effective
-    PSF photometry pipeline, and packages the calibrated PSF light curve as a
-    ``lightkurve.TessLightCurve`` object.
+    PSF photometry pipeline, and packages the light curve as a
+    ``lightkurve.TessLightCurve`` object.  Both the aperture and PSF products
+    are attached as extra columns; ``photometry`` selects which one becomes
+    the primary ``flux`` column.
 
     Parameters
     ----------
     target_name : str
         Target identifier resolved by MAST (e.g. "TIC 12345", "TOI-1234").
     sector : int or None
-        TESS sector.  ``None`` uses the first available sector.
+        TESS sector to extract.  ``None`` selects the first available
+        sector, ``-1`` the latest available sector, and a positive
+        integer that specific sector.
     size : int
-        Side length in pixels of the TESScut FFI cutout (default 25).
+        Side length in pixels of the TESScut FFI cutout (default 50).
     limit_mag : float
         Faintest TESS magnitude to include in the PSF model (default 16).
+    photometry : str
+        Which light curve becomes the primary ``flux`` column:
+        ``"auto"`` (default) lets :func:`_choose_photometry` decide,
+        ``"aperture"`` or ``"psf"`` force a specific product.
+    cache_dir : str or None
+        Directory for cached FFI cutouts and ePSF models.  ``None`` uses
+        ``~/.tglc``.  Re-running the same target/sector/size reloads the
+        cached ``Source_cut`` pickle and ``e_psf`` array instead of
+        re-downloading and re-fitting (the ePSF fit dominates runtime).
+    use_cache : bool
+        Read from and write to ``cache_dir`` (default ``True``).  Set
+        ``False`` to force a fresh download and ePSF fit.
     verbose : bool
         Print progress information.
 
     Returns
     -------
     lightkurve.TessLightCurve
-        Calibrated PSF light curve with BTJD times and normalized flux.
+        Calibrated light curve with BTJD times and normalized flux.  The
+        primary ``flux`` column is the chosen product; ``cal_aper_flux``,
+        ``cal_psf_flux``, ``aperture_flux`` and ``psf_flux`` are attached as
+        extra columns.  ``meta`` records the selection (``FLUX_ORIGIN``,
+        ``PHOT_SEL``, ``PHOT_RSN``, ``CONTAMRT``, ``APER_P2P``, ``PSF_P2P``).
     """
+    valid_modes = ("auto", "aperture", "psf")
+    if photometry not in valid_modes:
+        raise ValueError(f"photometry must be one of {valid_modes}, got {photometry!r}")
+    if not (50 <= int(size) <= 99):
+        raise ValueError(f"FFI cutsize must be between 50 and 99 pixels, got {size}")
+    # Field-star Gaussian-prior width; tighter values pull field-star amplitudes
+    # closer to their Gaia-predicted brightness.
+    prior = 0.1
     import lightkurve as lk
     from astropy.time import Time
 
-    # 1. Build the Source_cut object (downloads FFI cutout + Gaia catalog)
-    source = Source_cut(target_name, size=size, sector=sector, limit_mag=limit_mag)
+    # Resolve cache locations.  Re-running the same target/sector/size reuses
+    # the cached FFI cutout and ePSF model instead of re-downloading and
+    # re-fitting.
+    if cache_dir is None:
+        cache_dir = os.path.expanduser("~/.tglc")
+    source_dir = os.path.join(cache_dir, "source")
+    epsf_dir = os.path.join(cache_dir, "epsf")
+    if use_cache:
+        os.makedirs(source_dir, exist_ok=True)
+        os.makedirs(epsf_dir, exist_ok=True)
+    slug = target_name.replace(" ", "")
+    # Resolve the sector request. None -> first available, -1 -> latest
+    # available (matching the GUI's "-1 = latest" convention), a positive
+    # integer -> that specific sector. Passing "first"/"last" (rather than
+    # None) makes TESScut download only that one sector's cutout instead of
+    # one cutout per observed sector.
+    if sector is None:
+        source_sector_arg = "first"
+        sector_tag = "first"
+    elif int(sector) == -1:
+        source_sector_arg = "last"
+        sector_tag = "last"
+    else:
+        source_sector_arg = int(sector)
+        sector_tag = f"s{int(sector)}"
+    source_pkl = os.path.join(source_dir, f"source_{slug}_{sector_tag}_size{size}.pkl")
+
+    # 1. Build (or load) the Source_cut object (downloads FFI cutout + Gaia).
+    source = None
+    if use_cache and exists(source_pkl) and os.path.getsize(source_pkl) > 0:
+        try:
+            with open(source_pkl, "rb") as fh:
+                source = pickle.load(fh)
+            if verbose:
+                logger.info(f"Loaded cached TGLC source from {source_pkl}")
+        except (pickle.UnpicklingError, EOFError, AttributeError, ImportError) as e:
+            logger.warning(f"Cached source unreadable ({e}); rebuilding.")
+            source = None
+    if source is None:
+        source = Source_cut(target_name, size=size, sector=source_sector_arg, limit_mag=limit_mag)
+        if use_cache:
+            try:
+                with open(source_pkl, "wb") as fh:
+                    pickle.dump(source, fh, pickle.HIGHEST_PROTOCOL)
+            except Exception as e:  # cache write is best-effort
+                logger.warning(f"Could not cache source ({e}).")
 
     # 2. Build the PSF model
     A, star_info, over_size, x_round, y_round = get_psf(source)
@@ -1848,10 +2199,37 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
     # Determine background degrees of freedom
     bg_dof = 3
 
-    # 3. Fit the ePSF at every cadence
-    e_psf = np.zeros((len(source.time), over_size**2 + bg_dof))
-    for i in trange(len(source.time), desc="Fitting ePSF", disable=not verbose):
-        e_psf[i] = fit_psf(A, source, over_size, power=0.8, time=i)
+    # 3. Fit (or load) the ePSF at every cadence.  Keyed on the resolved
+    #    sector so explicit and "auto" sector requests share the cache.
+    epsf_npy = os.path.join(epsf_dir, f"epsf_{slug}_s{source.sector}_size{size}.npy")
+    expected_shape = (len(source.time), over_size**2 + bg_dof)
+    e_psf = None
+    if use_cache and exists(epsf_npy) and os.path.getsize(epsf_npy) > 0:
+        try:
+            cached = np.load(epsf_npy)
+            if cached.shape == expected_shape:
+                e_psf = cached
+                if verbose:
+                    logger.info(f"Loaded cached ePSF from {epsf_npy}")
+            else:
+                logger.warning("Cached ePSF shape mismatch; refitting.")
+        except (OSError, ValueError, EOFError) as e:
+            logger.warning(f"Cached ePSF unreadable ({e}); refitting.")
+    if e_psf is None:
+        e_psf = _fit_epsf_series(
+            A,
+            source,
+            over_size,
+            bg_dof,
+            power=0.8,
+            no_progress_bar=not verbose,
+            cancel_check=cancel_check,
+        )
+        if use_cache:
+            try:
+                np.save(epsf_npy, e_psf)
+            except Exception as e:  # cache write is best-effort
+                logger.warning(f"Could not cache ePSF ({e}).")
 
     # 4. Quality flags
     quality_raw = np.zeros(len(source.time), dtype=np.int16)
@@ -1878,7 +2256,7 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
     )
 
     # 6. Extract the light curve for the target star
-    aperture, psf_lc, star_y, star_x, portion, _, _ = fit_lc(
+    aperture, psf_lc, star_y, star_x, portion, target_5x5, field_stars_5x5 = fit_lc(
         A,
         source,
         star_info=star_info,
@@ -1887,6 +2265,9 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
         star_num=star_idx,
         e_psf=e_psf,
         near_edge=near_edge,
+        prior=prior,
+        x_all=x_round,
+        y_all=y_round,
     )
     aper_lc = np.sum(
         aperture[
@@ -1919,12 +2300,43 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
         star_num=star_idx,
     )
 
-    # 8. Build the TessLightCurve
-    flux = cal_psf_lc  # cal_aper_lc
+    # 8. Choose between aperture and PSF photometry
+    contamination = float(np.nansum(field_stars_5x5[1:4, 1:4]) / np.nansum(target_5x5[1:4, 1:4]))
+    tess_mag = float(source.gaia[star_idx]["tess_mag"])
+
+    if photometry == "auto":
+        choice, reason, metrics = _choose_photometry(
+            cal_aper_lc, cal_psf_lc, near_edge, contamination, tess_mag
+        )
+    else:
+        choice = photometry
+        reason = f"user-specified photometry='{photometry}'"
+        metrics = {
+            "APER_P2P": _point_to_point_scatter(cal_aper_lc),
+            "PSF_P2P": _point_to_point_scatter(cal_psf_lc),
+        }
+
+    if choice == "psf":
+        flux = cal_psf_lc
+        flux_origin = "cal_psf_flux"
+    else:
+        flux = cal_aper_lc
+        flux_origin = "cal_aper_flux"
+
+    if choice == "psf" and not np.any(np.isfinite(cal_psf_lc)):
+        logger.warning(
+            "Selected PSF light curve has no valid cadences (target near edge?); "
+            "use photometry='aperture' or 'auto'."
+        )
+
+    # 9. Build the TessLightCurve
     flux_err = np.full_like(flux, 1.4826 * np.nanmedian(np.abs(flux - np.nanmedian(flux))))
 
-    # BTJD times (TESS Barycentric Julian Date, BJD - 2457000)
-    btjd = Time(source.time + 2457000, format="jd", scale="tdb")
+    # BTJD times (TESS Barycentric Julian Date, BJD - 2457000).
+    # source.time is already BTJD, so use the btjd format directly rather than
+    # adding 2457000 and labelling it "jd" (which left lc.time.value in full JD
+    # and mis-aligned it against HLSP TGLC products that report BTJD).
+    btjd = Time(source.time, format="btjd", scale="tdb")
 
     lc = lk.TessLightCurve(
         time=btjd,
@@ -1937,14 +2349,26 @@ def get_tglc_lc(target_name, sector=None, size=50, limit_mag=16, verbose=True):
             "CAMERA": source.camera,
             "CCD": source.ccd,
             "EXPOSURE": exposure_time,
-            "FLUX_ORIGIN": "cal_psf_flux",
+            "FLUX_ORIGIN": flux_origin,
+            "PHOT_SEL": photometry,
+            "PHOT_RSN": reason,
+            "CONTAMRT": contamination,
+            "NEAREDGE": near_edge,
+            "APER_P2P": metrics["APER_P2P"],
+            "PSF_P2P": metrics["PSF_P2P"],
         },
     )
+    # Keep both photometry products available on the returned light curve.
+    lc["cal_aper_flux"] = cal_aper_lc
+    lc["cal_psf_flux"] = cal_psf_lc
+    lc["aperture_flux"] = aper_lc / portion
+    lc["psf_flux"] = psf_lc
     lc.sector = source.sector
 
     if verbose:
         logger.info(
-            f"TGLC light curve for {target_name} (sector {source.sector}): {len(lc)} cadences"
+            f"TGLC light curve for {target_name} (sector {source.sector}): "
+            f"{len(lc)} cadences; photometry={choice} ({reason})"
         )
 
     return lc
@@ -1957,13 +2381,12 @@ if __name__ == "__main__":
     sector = None
     prior = None
     transient = None
-    if not exists():
-        os.makedirs("~/.tglc")
-    data_path = f"~/.tglc/{target.replace(' ', '')}"
-    os.makedirs(data_path + "logs/", exist_ok=True)
-    os.makedirs(data_path + "lc/", exist_ok=True)
-    os.makedirs(data_path + "epsf/", exist_ok=True)
-    os.makedirs(data_path + "source/", exist_ok=True)
+
+    # Output directory ~/.tglc/<target>/ -- the trailing separator is required
+    # because the pipeline builds sub-paths via f-string concatenation.
+    data_path = os.path.join(os.path.expanduser("~/.tglc"), target.replace(" ", ""), "")
+    for _sub in ("logs", "lc", "epsf", "source"):
+        os.makedirs(os.path.join(data_path, _sub), exist_ok=True)
 
     target_ = Catalogs.query_object(target, radius=42 * 0.707 / 3600, catalog="Gaia", version=2)
     ra = target_[0]["ra"]
