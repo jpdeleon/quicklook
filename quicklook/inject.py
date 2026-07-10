@@ -8,6 +8,7 @@ A grid search over a list of window lengths
 and transit parameters.
 This is used when --window_length is set to 0 in ql script.
 """
+
 from dataclasses import dataclass
 from typing import List
 import numpy as np
@@ -43,7 +44,6 @@ class InjectionResult:
 # Transit injector
 # --------------------------------------------------------------------
 def inject_transit(time: np.ndarray, flux: np.ndarray, params: InjectionParams) -> np.ndarray:
-
     phase = ((time - params.t0) / params.period) % 1
     in_transit = phase < (params.duration / params.period)
 
@@ -69,7 +69,6 @@ def phase_asymmetry(time, flux, period, t0):
 # One test evaluation
 # --------------------------------------------------------------------
 def evaluate_window(time, flux, window, inj: InjectionParams, method="biweight"):
-
     injected = inject_transit(time, flux, inj)
 
     flat, _ = flatten(
@@ -106,7 +105,6 @@ def run_grid(
     injections: List[InjectionParams],
     method="biweight",
 ):
-
     results = []
 
     for w in tqdm(windows, desc="window"):
@@ -120,7 +118,6 @@ def run_grid(
 # Select optimal window
 # --------------------------------------------------------------------
 def select_best_window(df, depth_min=0.9, duration_tol=0.2, asym_max=0.002):
-
     good = df[
         (df.depth_ratio >= depth_min)
         & (df.duration_ratio.between(1 - duration_tol, 1 + duration_tol))

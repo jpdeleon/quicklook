@@ -503,7 +503,7 @@ def submit_job():
                     jsonify(
                         {
                             "ok": False,
-                            "reason": (f"Job '{name}' with these settings " "is already running"),
+                            "reason": (f"Job '{name}' with these settings is already running"),
                         }
                     ),
                     409,

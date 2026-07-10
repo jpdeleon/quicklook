@@ -826,8 +826,7 @@ def query_simbad_region(
     out = out[~out["otype"].isin(set(exclude_otypes))].reset_index(drop=True)
     if verbose:
         logger.info(
-            f"SIMBAD returned {len(out)} object(s) within {radius} "
-            f"(excluding {exclude_otypes})."
+            f"SIMBAD returned {len(out)} object(s) within {radius} (excluding {exclude_otypes})."
         )
     return out if len(out) else None
 

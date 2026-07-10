@@ -522,8 +522,7 @@ class TessQuickLook:
             if self.verbose:
                 filtered_table = search_result.table.to_pandas()[cols]
                 logger.info(
-                    f"Filtered lightcurves based on query ({kwargs}):\n"
-                    f"{filtered_table.to_string()}"
+                    f"Filtered lightcurves based on query ({kwargs}):\n{filtered_table.to_string()}"
                 )
             msg = f"Downloading all {kwargs.get('author')} lcs..."
             if self.verbose:
@@ -720,8 +719,7 @@ class TessQuickLook:
                     quarantined = _quarantine(bad_path)
                     if quarantined is not None:
                         logger.warning(
-                            f"FITS verify failed (truncated/corrupt). "
-                            f"Quarantined to {quarantined}."
+                            f"FITS verify failed (truncated/corrupt). Quarantined to {quarantined}."
                         )
                 else:
                     logger.info(f"Suspect cache file already missing on disk: {bad_path}")
@@ -741,7 +739,7 @@ class TessQuickLook:
                         f"(_get_tglc_lc_fallback) can recompute the light curve "
                         f"directly from the FFI cutout."
                     ) from e
-                logger.info(f"Retrying download (attempt " f"{attempt + 2}/{max_retries + 1})...")
+                logger.info(f"Retrying download (attempt {attempt + 2}/{max_retries + 1})...")
 
     def _get_tglc_lc_fallback(self, sector):
         """Run local TGLC ePSF extraction when MAST has no TGLC products."""

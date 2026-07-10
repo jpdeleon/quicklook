@@ -137,8 +137,7 @@ def main():
         "--nice",
         type=int,
         default=None,
-        help="lower CPU priority by this increment (POSIX; e.g. 19 = lowest). "
-        "Default: unchanged.",
+        help="lower CPU priority by this increment (POSIX; e.g. 19 = lowest). Default: unchanged.",
     )
     parser.add_argument(
         "--cores",
