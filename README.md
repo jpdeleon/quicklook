@@ -4,6 +4,7 @@
 [![CI](https://github.com/jpdeleon/quicklook/actions/workflows/build-and-test.yml/badge.svg)](https://github.com/jpdeleon/quicklook/actions/workflows/build-and-test.yml)
 [![PyPI](https://img.shields.io/pypi/v/quicklook-package)](https://pypi.org/project/quicklook-package/)
 [![Python](https://img.shields.io/pypi/pyversions/quicklook-package)](https://pypi.org/project/quicklook-package/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/jpdeleon/quicklook)
 
 `quicklook` is a Python pipeline that searches for transit signals in [TESS](https://tess.mit.edu/) light curves. Given a target name, it downloads the light curve, estimates the stellar rotation period, searches for transiting companions using the [Transit Least Squares](https://ui.adsabs.harvard.edu/abs/2019A%26A...623A..39H/abstract) (TLS) algorithm, and produces a publication-ready 9-panel diagnostic figure.
 
