@@ -93,3 +93,68 @@ def test_debug_is_off_unless_env_var_is_set(monkeypatch):
     monkeypatch.setenv("QUICKLOOK_DEBUG", "1")
     app_module.main()
     assert captured["debug"] is True
+
+
+# --- matplotlib figure lifecycle -------------------------------------------
+#
+# pyplot keeps every figure in a global registry. The CLI exits per target, but
+# the GUI worker thread outlives each job, so a figure left open accumulates
+# across a batch.
+
+
+def _drive_one_job(app_module, monkeypatch, tmp_path, plot_fn):
+    """Run run_quicklook_background once against a fake pipeline."""
+    from threading import Event
+
+    name = "FIG-TEST"
+    monkeypatch.setattr(app_module, "LOG_DIR", tmp_path)
+    monkeypatch.setattr(app_module, "_save_job_history", lambda **kw: None)
+
+    class FakeQuickLook:
+        def __init__(self, **kwargs):
+            pass
+
+        plot_tql = staticmethod(plot_fn)
+
+    monkeypatch.setattr(app_module, "TessQuickLook", FakeQuickLook)
+    app_module.jobs[name] = {
+        "status": "queued",
+        "log_file": "",
+        "error": "",
+        "cancel_event": Event(),
+        "submitted_at": 0.0,
+        "params": {},
+        "step_times": {},
+    }
+    app_module.run_quicklook_background(name=name, cancel_event=Event(), save=False)
+    return app_module.jobs[name]
+
+
+def test_worker_closes_figure_on_success(monkeypatch, tmp_path):
+    import matplotlib.pyplot as pl
+    import quicklook.app.app as app_module
+
+    pl.close("all")
+
+    def plot_tql(**kwargs):
+        return pl.figure(), "out.png", "out.h5"
+
+    info = _drive_one_job(app_module, monkeypatch, tmp_path, plot_tql)
+    assert info["status"] == "done"
+    assert pl.get_fignums() == []
+
+
+def test_worker_closes_figure_when_the_job_raises(monkeypatch, tmp_path):
+    """A figure opened before the failure must not survive the job."""
+    import matplotlib.pyplot as pl
+    import quicklook.app.app as app_module
+
+    pl.close("all")
+
+    def plot_tql(**kwargs):
+        pl.figure()
+        raise RuntimeError("boom")
+
+    info = _drive_one_job(app_module, monkeypatch, tmp_path, plot_tql)
+    assert info["status"] == "error"
+    assert pl.get_fignums() == []

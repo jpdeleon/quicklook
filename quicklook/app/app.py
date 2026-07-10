@@ -13,6 +13,7 @@ from collections import OrderedDict
 from pathlib import Path
 from threading import Thread, Event
 
+import matplotlib.pyplot as pl
 from flask import Flask, render_template, request, jsonify, url_for
 from flask_sock import Sock
 from loguru import logger
@@ -354,6 +355,12 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         jobs[name]["error"] = str(e)
         logger.error(f"Job '{name}' failed unexpectedly: {e}\n{tb}")
     finally:
+        # pyplot holds every figure in a global registry, so dropping the local
+        # reference is not enough. The CLI exits after each target, but this
+        # worker outlives the job and would otherwise accumulate a figure per
+        # target across a batch. Jobs run serially on one thread (see
+        # _submit_job), so no other thread owns a figure here.
+        pl.close("all")
         # Tear down in safe order: streams first, then loguru sink, then file
         _tls_stdout.clear_stream()
         _tls_stderr.clear_stream()

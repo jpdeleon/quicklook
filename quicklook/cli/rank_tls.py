@@ -2,6 +2,7 @@
 import os
 import shutil
 import argparse
+import subprocess
 import pandas as pd
 from pathlib import Path
 import numpy as np
@@ -203,7 +204,13 @@ def main():
     if args.csv_path is None:
         csv_path = f"{args.input_dir}_tls.csv"
         if not os.path.exists(csv_path):
-            os.system(f"read_tls {args.input_dir}")
+            # No shell: input_dir is a user-supplied path and would otherwise
+            # be word-split and glob/metachar-expanded by /bin/sh. check=True
+            # so a failed extraction surfaces here rather than as a confusing
+            # "file not found" from the read_csv below.
+            subprocess.run(["read_tls", args.input_dir], check=True)
+    else:
+        csv_path = args.csv_path
     if args.output_dir is None:
         output_dir = f"{args.input_dir}/temp"
     else:
