@@ -1300,7 +1300,9 @@ def fit_lc(
             else:
                 portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
 
-        star_index = np.where(np.array(field_star_num) == star_num)[0]
+        # Keep this a scalar: indexing the lstsq solution with a 1-element array
+        # yields shape (1,), which NumPy >= 2.3 refuses to assign into psf_lc[j].
+        star_index = int(np.where(np.array(field_star_num) == star_num)[0][0])
         for j in range(len(source.time)):
             if np.isnan(psf_sim[j, :, :]).any():
                 psf_lc[j] = np.nan
@@ -1482,7 +1484,8 @@ def fit_lc_float_field(
         else:
             portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
 
-    star_index = np.where(np.array(field_star_num) == star_num)[0]
+    # Scalar for the same reason as in fit_lc: see psf_lc[j] assignment below.
+    star_index = int(np.where(np.array(field_star_num) == star_num)[0][0])
     field_star = (
         psf_sim[0, np.arange(11**2).reshape(11, 11)[3:8, 3:8], :].reshape(
             cut_size**2, len(field_star_num)
@@ -2064,13 +2067,13 @@ def _choose_photometry(
         if psf_p2p < aper_p2p * (1.0 - margin):
             return (
                 "psf",
-                f"lower point-to-point scatter " f"(PSF {psf_p2p:.5f} < aperture {aper_p2p:.5f})",
+                f"lower point-to-point scatter (PSF {psf_p2p:.5f} < aperture {aper_p2p:.5f})",
                 metrics,
             )
         if aper_p2p < psf_p2p * (1.0 - margin):
             return (
                 "aperture",
-                f"lower point-to-point scatter " f"(aperture {aper_p2p:.5f} < PSF {psf_p2p:.5f})",
+                f"lower point-to-point scatter (aperture {aper_p2p:.5f} < PSF {psf_p2p:.5f})",
                 metrics,
             )
 
