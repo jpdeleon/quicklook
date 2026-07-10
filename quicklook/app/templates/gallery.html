@@ -515,7 +515,7 @@
         }
         runningBanner.classList.add('visible');
         runningJobList.innerHTML = running.map(j =>
-          '<a href="/?watch=' + encodeURIComponent(j.name) + '">' + j.name + '</a>'
+          '<a href="' + BASE + '/?watch=' + encodeURIComponent(j.name) + '">' + j.name + '</a>'
         ).join(', ');
       } catch(e) {}
     }
