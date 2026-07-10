@@ -101,6 +101,7 @@ class TessQuickLook:
         outdir: str = ".",
         tls_use_threads: int = None,
         use_star_priors: bool = False,
+        phase_xlim: float = None,
         cancel_check=None,
     ):
         # start timer
@@ -123,6 +124,7 @@ class TessQuickLook:
         self.flatten_method = flatten_method
         self.tls_use_threads = tls_use_threads
         self.use_star_priors = use_star_priors
+        self.phase_xlim = phase_xlim
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
@@ -1286,7 +1288,7 @@ class TessQuickLook:
                 ("Rp (TFOP)", f"{self.toi_rp[0]:.2f}{pm}{self.toi_rp[1]:.2f} {r_earth}")
             )
         candidate.append(("Odd-Even", f"{tls.odd_even_mismatch:.2f} " + r"$\sigma$"))
-        candidate.append(("Sector", f"{self.sector} (in {self.all_sectors})"))
+        candidate.append(("Sector", self._format_sector_summary(self.sector, self.all_sectors)))
 
         # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
@@ -1318,6 +1320,35 @@ class TessQuickLook:
             ("Candidate Properties", candidate),
             ("Stellar Properties", stellar),
         ]
+
+    @staticmethod
+    def _format_sector_summary(sector, all_sectors, max_listed=20, sectors_per_line=4):
+        """Format sector availability for the summary panel.
+
+        Keep the selected sector visible, but avoid long inline sector lists
+        because they can run into the neighbouring summary column.
+        """
+        if all_sectors is None:
+            return str(sector)
+        try:
+            sectors = list(all_sectors)
+        except TypeError:
+            sectors = [all_sectors]
+        if len(sectors) == 0:
+            return str(sector)
+        if len(sectors) == 1 and str(sectors[0]) == str(sector):
+            return str(sector)
+        if len(sectors) > max_listed:
+            return f"{sector}\n{len(sectors)} sectors available"
+
+        sector_chunks = [
+            sectors[i : i + sectors_per_line] for i in range(0, len(sectors), sectors_per_line)
+        ]
+        lines = [str(sector)]
+        for i, chunk in enumerate(sector_chunks):
+            prefix = "available: " if i == 0 else ""
+            lines.append(prefix + ", ".join(str(s) for s in chunk))
+        return "\n".join(lines)
 
     def make_summary_info(self):
         """
@@ -1356,11 +1387,17 @@ class TessQuickLook:
         col_w = 1.0 / n_cols
         header_fs = pl.rcParams["font.size"]
         row_fs = header_fs - 1
+
         # Pitch is set by the longest column plus generous overhead (header,
         # divider and a comfortable bottom margin) so the final row of the
         # tallest section stays clear of the panel's bottom edge instead of
         # being clipped when the figure is compressed (e.g. by the suptitle).
-        max_units = max(len(rows) for _, rows in sections) + 5.0
+        def row_units(rows):
+            return sum(
+                max(str(label).count("\n"), str(value).count("\n")) + 1 for label, value in rows
+            )
+
+        max_units = max(row_units(rows) for _, rows in sections) + 5.0
         top, bottom = 0.99, 0.03
         dy = (top - bottom) / max_units
         # Nudge each column leftward: the first (Candidate) column into the left
@@ -1392,6 +1429,7 @@ class TessQuickLook:
             )
             y -= dy * 0.9
             for label, value in rows:
+                units = max(str(label).count("\n"), str(value).count("\n")) + 1
                 ax.text(
                     label_x,
                     y,
@@ -1410,7 +1448,7 @@ class TessQuickLook:
                     family="monospace",
                     va="top",
                 )
-                y -= dy
+                y -= dy * units
 
     def append_tls_results(self):
         """
@@ -1727,13 +1765,26 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting odd-even transit...")
         ax = axes.flatten()[6]
-        _ = plot_odd_even_transit(self.fold_lc, self.tls_results, bin_mins=10, markersize=6, ax=ax)
+        _ = plot_odd_even_transit(
+            self.fold_lc,
+            self.tls_results,
+            bin_mins=10,
+            markersize=6,
+            ax=ax,
+            phase_xlim=self.phase_xlim,
+        )
 
         if self.verbose:
             logger.info("Plotting secondary eclipse...")
         ax = axes.flatten()[7]
         _ = plot_secondary_eclipse(
-            self.flat_lc, self.tls_results, tmask2, bin_mins=10, markersize=6, ax=ax
+            self.flat_lc,
+            self.tls_results,
+            tmask2,
+            bin_mins=10,
+            markersize=6,
+            ax=ax,
+            phase_xlim=self.phase_xlim,
         )
 
         if self.verbose:

@@ -481,6 +481,13 @@
           </div>
           <input type="number" step="0.01" name="period_max" id="period_max" placeholder="baseline/2">
         </div>
+        <div>
+          <div class="label-row">
+            <label for="phase_xlim">Phase Panel Half-Width</label>
+            <span class="help-tip" tabindex="0" data-tip="Optional phase half-width for panels 7 and 8. 0.1 shows transit phase -0.1..0.1 and eclipse phase 0.4..0.6. Leave blank for automatic zoom.">?</span>
+          </div>
+          <input type="number" step="0.01" min="0" max="1" name="phase_xlim" id="phase_xlim" placeholder="auto">
+        </div>
         <div class="full-width checkbox-group" style="margin-top: 4px;">
           <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
           <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
@@ -790,7 +797,7 @@ const FORM_STORAGE_KEY = 'ql-form-state';
 const PERSIST_FIELDS = [
   'name','sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
-  'sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
+  'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
 const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad'];
 

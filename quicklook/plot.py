@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import importlib.resources as pkg_resources
 import warnings
 from typing import List, Tuple
@@ -93,17 +94,61 @@ def _strip_for_bin(lc):
     return lc
 
 
-def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=None):
+def _validate_phase_xlim_delta(phase_xlim):
+    """Return a validated phase half-width, or None for automatic zoom."""
+    if phase_xlim is None:
+        return None
+    phase_xlim = float(phase_xlim)
+    if not 0 < phase_xlim <= 1:
+        raise ValueError("phase_xlim must be > 0 and <= 1")
+    return phase_xlim
+
+
+def _phase_window(center, auto_delta, phase_xlim=None):
+    delta = _validate_phase_xlim_delta(phase_xlim)
+    if delta is None:
+        delta = auto_delta
+    return center - delta, center + delta
+
+
+def _as_values(col):
+    return col.value if hasattr(col, "value") else np.asarray(col)
+
+
+def _plot_binned_phase_lc(lc, x_transform, bin_mins, ax, **kwargs):
+    binned = _strip_for_bin(lc.copy()).bin(time_bin_size=bin_mins * u.minute)
+    x = x_transform(_as_values(binned.time))
+    y = _as_values(binned.flux)
+    yerr = None
+    if hasattr(binned, "flux_err") and binned.flux_err is not None:
+        yerr = _as_values(binned.flux_err)
+    ax.errorbar(x, y, yerr=yerr, **kwargs)
+
+
+def plot_odd_even_transit(
+    fold_lc, tls_results, bin_mins=10, markersize=6, ax=None, phase_xlim=None
+):
     if ax is None:
         _, ax = pl.subplots()
     yline = tls_results.depth
     t14 = tls_results.duration
+    period = tls_results.period
+    t14_phase = t14 / period
     # Clip to transit window before binning to avoid creating thousands of
     # empty bins for long-period planets (phase range = period, not just t14).
-    phase_cut = t14 * 2
-    near_transit = (fold_lc.time.value >= -phase_cut) & (fold_lc.time.value <= phase_cut)
+    phase_lo, phase_hi = _phase_window(0, t14_phase * 2, phase_xlim)
+    folded_phase = fold_lc.time.value / period
+    near_transit = (folded_phase >= phase_lo) & (folded_phase <= phase_hi)
     clipped_lc = fold_lc[near_transit]
-    clipped_lc.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
+    clipped_phase = folded_phase[near_transit]
+    ax.scatter(
+        clipped_phase,
+        _as_values(clipped_lc.flux),
+        c="k",
+        alpha=0.5,
+        label="_nolegend_",
+        zorder=1,
+    )
 
     # Force writeable deep copies; stacked boolean slices on the folded
     # LightCurve leave the underlying flux/time buffers non-writeable, which
@@ -115,26 +160,32 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
 
     if len(even_lc) > 0:
         try:
-            even_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            _plot_binned_phase_lc(
+                even_lc,
+                lambda t: t / period,
+                bin_mins,
+                ax,
                 label="even transit",
-                c="#1f77b4",
+                color="#1f77b4",
                 marker="o",
                 lw=2,
                 markersize=markersize,
-                ax=ax,
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
             logger.warning(f"Could not bin even-transit data: {e}")
     if len(odd_lc) > 0:
         try:
-            odd_lc.bin(time_bin_size=bin_mins * u.minute).errorbar(
+            _plot_binned_phase_lc(
+                odd_lc,
+                lambda t: t / period,
+                bin_mins,
+                ax,
                 label="odd transit",
-                c="#d62728",
+                color="#d62728",
                 marker="o",
                 lw=2,
                 markersize=markersize,
-                ax=ax,
                 zorder=2,
             )
         except (ValueError, TypeError) as e:
@@ -149,39 +200,49 @@ def plot_odd_even_transit(fold_lc, tls_results, bin_mins=10, markersize=6, ax=No
         label="TLS model",
     )
     ax.axhline(yline, 0, 1, lw=2, ls="--", c="k")
-    ax.axvline(-t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
-    ax.axvline(t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(-t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.set_xlabel("Orbital Phase")
-    ax.set_xlim(-phase_cut, phase_cut)
+    ax.set_xlim(phase_lo, phase_hi)
     ax.legend()
     return ax
 
 
-def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=6, ax=None):
+def plot_secondary_eclipse(
+    flat_lc, tls_results, tmask, bin_mins=10, markersize=6, ax=None, phase_xlim=None
+):
     if ax is None:
         _, ax = pl.subplots()
     # mask transit and shift phase
     fold_lc2 = flat_lc[~tmask].fold(
         period=tls_results.period,
         epoch_time=tls_results.T0 + tls_results.period / 2,
-        # normalize_phase=False,
-        # wrap_phase=tls_results.period
+        normalize_phase=True,
+        wrap_phase=0.5,
     )
-    half_phase = 0.5  # tls_results.period/2
-    fold_lc2.time = fold_lc2.time + half_phase * u.day
+    half_phase = 0.5
+    eclipse_phase = fold_lc2.time.value + half_phase
     yline = tls_results.depth
     t14 = tls_results.duration
+    t14_phase = t14 / tls_results.period
     try:
-        secthresh = compute_secthresh(fold_lc2, t14)
+        secthresh = compute_secthresh(fold_lc2, t14_phase)
     except (ValueError, ZeroDivisionError, IndexError) as e:
         logger.debug(f"Could not compute secondary eclipse threshold: {e}")
         secthresh = np.nan
     # Clip to eclipse window before binning to avoid thousands of empty bins
-    phase_lo = half_phase - t14 * 2
-    phase_hi = half_phase + t14 * 2
-    near_eclipse = (fold_lc2.time.value >= phase_lo) & (fold_lc2.time.value <= phase_hi)
+    phase_lo, phase_hi = _phase_window(half_phase, t14_phase * 2, phase_xlim)
+    near_eclipse = (eclipse_phase >= phase_lo) & (eclipse_phase <= phase_hi)
     clipped_lc2 = fold_lc2[near_eclipse]
-    clipped_lc2.scatter(ax=ax, c="k", alpha=0.5, label="_nolegend_", zorder=1)
+    clipped_phase = eclipse_phase[near_eclipse]
+    ax.scatter(
+        clipped_phase,
+        _as_values(clipped_lc2.flux),
+        c="k",
+        alpha=0.5,
+        label="_nolegend_",
+        zorder=1,
+    )
     ax.axhline(
         yline,
         0,
@@ -191,12 +252,15 @@ def plot_secondary_eclipse(flat_lc, tls_results, tmask, bin_mins=10, markersize=
         c="k",
         ls="--",
     )
-    ax.axvline(half_phase - t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
-    ax.axvline(half_phase + t14 / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(half_phase - t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
+    ax.axvline(half_phase + t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     try:
         if len(clipped_lc2) > 0:
-            _strip_for_bin(clipped_lc2).bin(time_bin_size=bin_mins * u.minute).errorbar(
-                ax=ax,
+            _plot_binned_phase_lc(
+                clipped_lc2,
+                lambda t: t + half_phase,
+                bin_mins,
+                ax,
                 marker="o",
                 markersize=markersize,
                 lw=2,
@@ -941,7 +1005,7 @@ def plot_gaia_sources_on_survey(
                     xytext=(5, 5),
                     textcoords="offset points",
                     fontsize=8,
-                    color="C9",
+                    color="magenta",
                     zorder=5,
                 )
                 n_shown += 1

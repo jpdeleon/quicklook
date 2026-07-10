@@ -48,7 +48,12 @@ def _get_tglc_sectors_via_tesscut(target_name, tic_id=None):
     sector_table = Tesscut.get_sectors(coordinates=coord)
     if len(sector_table) == 0:
         return []
-    return sorted({int(s) for s in sector_table["sector"]})
+    # MAST sometimes returns synthetic/HLSP composite sectorNames whose
+    # ``sector`` value is not a real observing sector (e.g. ``tess-s1751-1-3``
+    # for TOI-5169). Filter those out so they don't pollute each-sector
+    # queues with downstream-incompatible sector numbers.
+    MAX_REAL_SECTOR = 300
+    return sorted({int(s) for s in sector_table["sector"] if 1 <= int(s) <= MAX_REAL_SECTOR})
 
 
 def get_available_sectors(target_name, pipeline="SPOC", tic_id=None):

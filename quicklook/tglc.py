@@ -7,6 +7,9 @@ Changes from the original:
 - Removed unused proper-motion variables in Source.__init__
 - Replaced print()/warnings.warn() with loguru logger calls
 - Added get_tglc_lc() function returning lightkurve.TessLightCurve
+- fit_lc() accepts optional prior + x_all/y_all to run the float-field
+  Gaussian-prior PSF photometry path inline (no separate fit_lc_float_field call)
+- get_tglc_lc() enforces FFI cutsize in [50, 99] and uses prior=0.1
 """
 
 import json
@@ -1078,6 +1081,9 @@ def fit_lc(
     psf_size=11,
     e_psf=None,
     near_edge=False,
+    prior=None,
+    x_all=None,
+    y_all=None,
 ):
     """
     Produce matrix for least_square fitting without a certain target
@@ -1103,6 +1109,10 @@ def fit_lc(
     whether the star is 2 pixels or closer to the edge of a CCD
     :return: aperture lightcurve, PSF lightcurve, vertical pixel coord, horizontal pixel coord, portion of light in aperture
     """
+    if prior is not None and (x_all is None or y_all is None):
+        raise ValueError(
+            "fit_lc with prior set requires x_all and y_all (full per-star coordinate arrays)."
+        )
     over_size = psf_size * factor + 1
     a = star_info[star_num][1]
     star_info_num = (
@@ -1176,59 +1186,137 @@ def fit_lc(
             target_5x5,
             field_stars_5x5,
         )
-    left_ = left - x + 5
-    right_ = right - x + 5
-    down_ = down - y + 5
-    up_ = up - y + 5
+    if prior is None:
+        left_ = left - x + 5
+        right_ = right - x + 5
+        down_ = down - y + 5
+        up_ = up - y + 5
 
-    left_11 = np.maximum(-x + 5, 0)
-    right_11 = np.minimum(size - x + 5, 11)
-    down_11 = np.maximum(-y + 5, 0)
-    up_11 = np.minimum(size - y + 5, 11)
-    coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
-    index = coord[down_11:up_11, left_11:right_11]
-    if isinstance(source, Source):
-        bg_dof = 6
-    else:
-        bg_dof = 3
-    A = np.zeros((psf_size**2, over_size**2 + bg_dof))
-    A[np.repeat(index, 4), star_info_num[1]] = star_info_num[2]
-    psf_shape = np.dot(e_psf, A.T).reshape(len(source.time), psf_size, psf_size)
-    psf_sim = psf_shape[:, down_:up_, left_:right_]
-    # psf_sim = np.transpose(psf_shape[:, down_:up_, left_: right_], (0, 2, 1))
-
-    psf_lc = np.zeros(len(source.time))
-    A_ = np.zeros((cut_size**2, 4))
-    xx, yy = np.meshgrid(
-        (np.arange(cut_size) - (cut_size - 1) / 2),
-        (np.arange(cut_size) - (cut_size - 1) / 2),
-    )
-    A_[:, -1] = np.ones(cut_size**2)
-    A_[:, -2] = yy.flatten()
-    A_[:, -3] = xx.flatten()
-    edge_pixel = np.array([0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 19, 20, 21, 22, 23, 24])
-    # edge_pixel = np.array([0, 1, 2, 3, 4, 5, 6,
-    #                        7, 8, 9, 10, 11, 12, 13,
-    #                        14, 15, 19, 20,
-    #                        21, 22, 26, 27,
-    #                        28, 29, 33, 34,
-    #                        35, 36, 37, 38, 39, 40, 41,
-    #                        42, 43, 44, 45, 46, 47, 48])
-    med_aperture = np.median(aperture, axis=0).flatten()
-    outliers = np.abs(
-        med_aperture[edge_pixel] - np.nanmedian(med_aperture[edge_pixel])
-    ) > 1 * np.std(med_aperture[edge_pixel])
-    epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
-    for j in range(len(source.time)):
-        if np.isnan(psf_sim[j, :, :]).any():
-            psf_lc[j] = np.nan
+        left_11 = np.maximum(-x + 5, 0)
+        right_11 = np.minimum(size - x + 5, 11)
+        down_11 = np.maximum(-y + 5, 0)
+        up_11 = np.minimum(size - y + 5, 11)
+        coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
+        index = coord[down_11:up_11, left_11:right_11]
+        if isinstance(source, Source):
+            bg_dof = 6
         else:
-            aper_flat = aperture[j, :, :].flatten()
-            A_[:, 0] = psf_sim[j, :, :].flatten() / epsf_sum
-            a = np.delete(A_, edge_pixel[outliers], 0)
-            aper_flat = np.delete(aper_flat, edge_pixel[outliers])
-            psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][0]
-    portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+            bg_dof = 3
+        A = np.zeros((psf_size**2, over_size**2 + bg_dof))
+        A[np.repeat(index, 4), star_info_num[1]] = star_info_num[2]
+        psf_shape = np.dot(e_psf, A.T).reshape(len(source.time), psf_size, psf_size)
+        psf_sim = psf_shape[:, down_:up_, left_:right_]
+
+        psf_lc = np.zeros(len(source.time))
+        A_ = np.zeros((cut_size**2, 4))
+        xx, yy = np.meshgrid(
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+        )
+        A_[:, -1] = np.ones(cut_size**2)
+        A_[:, -2] = yy.flatten()
+        A_[:, -3] = xx.flatten()
+        edge_pixel = np.array([0, 1, 2, 3, 4, 5, 9, 10, 14, 15, 19, 20, 21, 22, 23, 24])
+        med_aperture = np.median(aperture, axis=0).flatten()
+        outliers = np.abs(
+            med_aperture[edge_pixel] - np.nanmedian(med_aperture[edge_pixel])
+        ) > 1 * np.std(med_aperture[edge_pixel])
+        epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
+        for j in range(len(source.time)):
+            if np.isnan(psf_sim[j, :, :]).any():
+                psf_lc[j] = np.nan
+            else:
+                aper_flat = aperture[j, :, :].flatten()
+                A_[:, 0] = psf_sim[j, :, :].flatten() / epsf_sum
+                a = np.delete(A_, edge_pixel[outliers], 0)
+                aper_flat = np.delete(aper_flat, edge_pixel[outliers])
+                psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][0]
+        portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+    else:
+        # Float-field PSF photometry: each nearby field star gets its own free
+        # amplitude column, regularized by a Gaussian prior centred on its
+        # Gaia-predicted brightness. `prior` (usually <1) scales the prior
+        # width: smaller -> tighter (closer to Gaia), larger -> looser.
+        if isinstance(source, Source):
+            bg_dof = 6
+        else:
+            bg_dof = 3
+        field_star_num = []
+        for j in range(len(source.gaia)):
+            if np.abs(x_all[j] - x_all[star_num]) < 5 and np.abs(y_all[j] - y_all[star_num]) < 5:
+                field_star_num.append(j)
+
+        psf_lc = np.zeros(len(source.time))
+        A_ = np.zeros((cut_size**2 + len(field_star_num), len(field_star_num) + 3))
+        xx, yy = np.meshgrid(
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+            (np.arange(cut_size) - (cut_size - 1) / 2),
+        )
+        A_[: (cut_size**2), -1] = np.ones(cut_size**2)
+        A_[: (cut_size**2), -2] = yy.flatten()
+        A_[: (cut_size**2), -3] = xx.flatten()
+        psf_sim = np.zeros((len(source.time), 11**2 + len(field_star_num), len(field_star_num)))
+        portion = np.nan
+        for j, star in enumerate(field_star_num):
+            a = star_info[star][1]
+            star_info_star = (
+                np.repeat(star_info[star][0], 4),
+                np.array([a, a + 1, a + over_size, a + over_size + 1]).flatten(order="F"),
+                np.tile(star_info[star][2], len(a)),
+            )
+            delta_x = x_all[star_num] - x_all[star]
+            delta_y = y_all[star_num] - y_all[star]
+            left_shift = np.maximum(delta_x, 0)
+            right_shift = np.minimum(11 + delta_x, 11)
+            down_shift = np.maximum(delta_y, 0)
+            up_shift = np.minimum(11 + delta_y, 11)
+            left_shift_ = np.maximum(-delta_x, 0)
+            right_shift_ = np.minimum(11 - delta_x, 11)
+            down_shift_ = np.maximum(-delta_y, 0)
+            up_shift_ = np.minimum(11 - delta_y, 11)
+
+            left_11 = np.maximum(-x_all[star] + 5, 0)
+            right_11 = np.minimum(size - x_all[star] + 5, 11)
+            down_11 = np.maximum(-y_all[star] + 5, 0)
+            up_11 = np.minimum(size - y_all[star] + 5, 11)
+
+            coord = np.arange(psf_size**2).reshape(psf_size, psf_size)
+            index = coord[down_11:up_11, left_11:right_11]
+            A_star = np.zeros((psf_size**2, over_size**2 + bg_dof))
+            A_star[np.repeat(index, 4), star_info_star[1]] = star_info_star[2]
+            psf_shape = np.dot(e_psf, A_star.T).reshape(len(source.time), psf_size, psf_size)
+            epsf_sum = np.sum(np.nanmedian(psf_shape, axis=0))
+            psf_sim_index = coord[down_shift:up_shift, left_shift:right_shift].flatten()
+            psf_sim[:, psf_sim_index, j] = (
+                psf_shape[:, down_shift_:up_shift_, left_shift_:right_shift_].reshape(
+                    len(source.time), -1
+                )
+                / epsf_sum
+            )
+            if star != star_num:
+                psf_sim[:, 11**2 + j, j] = np.ones(len(source.time)) / (
+                    prior * 1.5e4 * 10 ** ((10 - source.gaia[star]["tess_mag"]) / 2.5)
+                )
+            else:
+                portion = np.nansum(psf_shape[:, 4:7, 4:7]) / np.nansum(psf_shape)
+
+        star_index = np.where(np.array(field_star_num) == star_num)[0]
+        for j in range(len(source.time)):
+            if np.isnan(psf_sim[j, :, :]).any():
+                psf_lc[j] = np.nan
+            else:
+                aper_flat = aperture[j, :, :].flatten()
+                aper_flat = np.append(aper_flat, np.zeros(len(field_star_num) - 1))
+                aper_flat[cut_size**2 + star_index] = 0
+                postcards = psf_sim[j, np.arange(11**2).reshape(11, 11)[3:8, 3:8], :].reshape(
+                    cut_size**2, len(field_star_num)
+                )
+                A_[: cut_size**2, : len(field_star_num)] = postcards
+                A_[cut_size**2 :, : len(field_star_num)] = psf_sim[j, 11**2 :, :].reshape(
+                    len(field_star_num), len(field_star_num)
+                )
+                a = np.delete(A_, cut_size**2 + star_index, 0)
+                psf_lc[j] = np.linalg.lstsq(a, aper_flat)[0][star_index]
     # print(np.nansum(psf_shape[:, 5, 5]) / np.nansum(psf_shape))
     # np.save(f'toi-5344_psf_{source.sector}.npy', psf_shape)
     return (
@@ -1603,7 +1691,7 @@ def epsf(
     sector=0,
     limit_mag=16,
     edge_compression=1e-4,
-    power=1.4,
+    power=0.8,
     name=None,
     save_aper=False,
     no_progress_bar=False,
@@ -2050,6 +2138,11 @@ def get_tglc_lc(
     valid_modes = ("auto", "aperture", "psf")
     if photometry not in valid_modes:
         raise ValueError(f"photometry must be one of {valid_modes}, got {photometry!r}")
+    if not (50 <= int(size) <= 99):
+        raise ValueError(f"FFI cutsize must be between 50 and 99 pixels, got {size}")
+    # Field-star Gaussian-prior width; tighter values pull field-star amplitudes
+    # closer to their Gaia-predicted brightness.
+    prior = 0.1
     import lightkurve as lk
     from astropy.time import Time
 
@@ -2172,6 +2265,9 @@ def get_tglc_lc(
         star_num=star_idx,
         e_psf=e_psf,
         near_edge=near_edge,
+        prior=prior,
+        x_all=x_round,
+        y_all=y_round,
     )
     aper_lc = np.sum(
         aperture[
@@ -2236,8 +2332,11 @@ def get_tglc_lc(
     # 9. Build the TessLightCurve
     flux_err = np.full_like(flux, 1.4826 * np.nanmedian(np.abs(flux - np.nanmedian(flux))))
 
-    # BTJD times (TESS Barycentric Julian Date, BJD - 2457000)
-    btjd = Time(source.time + 2457000, format="jd", scale="tdb")
+    # BTJD times (TESS Barycentric Julian Date, BJD - 2457000).
+    # source.time is already BTJD, so use the btjd format directly rather than
+    # adding 2457000 and labelling it "jd" (which left lc.time.value in full JD
+    # and mis-aligned it against HLSP TGLC products that report BTJD).
+    btjd = Time(source.time, format="btjd", scale="tdb")
 
     lc = lk.TessLightCurve(
         time=btjd,

@@ -32,6 +32,7 @@ def run_ql_for_sector(
     suffix,
     period_limits,
     tls_use_threads,
+    phase_xlim,
     show_simbad=False,
 ):
     """Run ql for a single sector. Used by --each-sector."""
@@ -53,6 +54,7 @@ def run_ql_for_sector(
         sigma_clip_flat=None,
         Porb_limits=period_limits,
         edge_cutoff=edge_cutoff,
+        phase_xlim=phase_xlim,
         archival_survey="dss1",
         show_simbad=show_simbad,
         savefig=save,
@@ -298,6 +300,16 @@ def main():
         default=None,
     )
     parser.add_argument(
+        "--phase_xlim",
+        type=float,
+        default=None,
+        help=(
+            "phase half-width for panels 7 and 8. Example: 0.1 plots "
+            "transit phase -0.1..0.1 and eclipse phase 0.4..0.6. "
+            "Default: automatic zoom from transit duration."
+        ),
+    )
+    parser.add_argument(
         "-u",
         "--use_priors",
         action="store_true",
@@ -420,6 +432,7 @@ def main():
                     args.suffix,
                     args.period_limits,
                     tls_use_threads,
+                    args.phase_xlim,
                     args.show_simbad,
                 )
                 futures[future] = sector
@@ -474,6 +487,7 @@ def main():
                     args.suffix,
                     args.period_limits,
                     tls_use_threads,
+                    args.phase_xlim,
                     args.show_simbad,
                 )
                 futures[future] = pipeline
@@ -524,6 +538,7 @@ def main():
         # bin_hr=args.bin_hr,
         Porb_limits=args.period_limits,
         use_star_priors=args.use_priors,
+        phase_xlim=args.phase_xlim,
         edge_cutoff=args.edge_cutoff,
         # find_cluster=args.find_cluster,
         # nearby_gaia_radius=args.nearby_gaia_radius,

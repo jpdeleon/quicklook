@@ -177,6 +177,22 @@ def test_with_mock_light_curve(mock_light_curve, planet_inputs):
             assert ql.sector == inputs["sector"]
 
 
+def test_format_sector_summary_single_sector():
+    assert TessQuickLook._format_sector_summary(56, [56]) == "56"
+
+
+def test_format_sector_summary_wraps_short_lists():
+    summary = TessQuickLook._format_sector_summary(56, [14, 15, 19, 22, 26, 40])
+
+    assert summary == "56\navailable: 14, 15, 19, 22\n26, 40"
+
+
+def test_format_sector_summary_counts_long_lists():
+    summary = TessQuickLook._format_sector_summary(86, list(range(1, 12)))
+
+    assert summary == "86\n11 sectors available"
+
+
 # @pytest.mark.parametrize("pg_method", ["gls", "lombscargle", "bls"])
 # def test_different_periodogram_methods(planet_inputs, pg_method):
 #     """Test TessQuickLook with different periodogram methods"""
