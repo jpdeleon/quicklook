@@ -19,16 +19,20 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Transit detection** -- Transit Least Squares (TLS) periodogram
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
+- **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
+- **Headless friendly** -- detects missing display and aborts early, or works fully offline with `--save`
 - **Web GUI** -- Flask-based interface with live progress, job queue, and gallery
 - **HDF5 output** -- full TLS results saved for downstream filtering
 
 ## Installation
 
-Create a conda environment and install from PyPI:
+Requires Python 3.10+. Install with `uv` (recommended) or `pip`:
 
 ```bash
-conda create -n quicklook python=3.12
-conda activate quicklook
+# uv (recommended)
+uv tool install quicklook-package
+
+# or pip
 pip install -U quicklook-package
 ```
 
@@ -53,31 +57,46 @@ pip install -U "quicklook-package[dev]"
 
 ### Command line
 
+The `ql` CLI provides subcommands for analysis and post-processing:
+
+```bash
+ql --help          # show commands: run, read-tls, rank-tls
+ql run --help      # full analysis options
+ql read-tls --help  # extract TLS results to CSV
+ql rank-tls --help  # filter and rank candidates
+```
+
 ```bash
 # Basic run on the latest TESS sector
-ql --name WASP-21 -save -verbose
+ql run --name WASP-21 --save --verbose
 
 # Specific sector and pipeline
-ql --name TOI-125.01 --sector 2 --pipeline qlp
+ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
 # Custom detrending
-ql --name TOI-125.01 --flatten_method cosine --window_length 0.3
+ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 
 # Restrict TLS period search range
-ql --name TOI-125.01 --period_limits 1 5
+ql run --name TOI-125.01 --period-limits 1 5
 
 # Run on every available sector
-ql --name TOI-125.01 --each-sector -save
+ql run --name TOI-125.01 --each-sector --save
 
 # Run all sectors with 4 parallel workers
-ql --name TOI-125.01 --each-sector -j 4 -save
+ql run --name TOI-125.01 --each-sector -j 4 --save
 
 # Run every available pipeline on the latest sector
-ql --name TOI-125.01 --each-pipeline -save
+ql run --name TOI-125.01 --each-pipeline --save
 
 # TGLC PSF photometry with nearby SIMBAD objects overlaid
-ql --name TOI-125.01 --pipeline tglc --fluxtype psf -show_simbad -save
+ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 ```
+
+> **Note:** Old-style `-save` / `-verbose` flags and the standalone
+> `read_tls` / `rank_tls` commands still work via automatic redirect.
+> Underscore flags (`--flatten_method`) are interchangeable with hyphens
+> (`--flatten-method`). On headless Linux systems, `--save` is required
+> (the CLI detects missing `$DISPLAY` and exits early unless `--save` is set).
 
 ### Python API
 
@@ -116,10 +135,20 @@ Open http://127.0.0.1:5000 in your browser. Enter a target, adjust parameters, a
 
 ![QuickLook Web GUI](docs/img/ql-gui.png)
 
+The Flask debugger is off by default. Set `QUICKLOOK_DEBUG=1` to enable it and
+the auto-reloader while developing:
+
+```bash
+QUICKLOOK_DEBUG=1 ql-gui
+```
+
+Leave it unset on any host other users can reach — the Werkzeug debugger
+exposes an interactive console to whoever can open the port.
+
 ## Output figure
 
 ```bash
-ql --name WASP-21 -save -verbose
+ql run --name WASP-21 --save --verbose
 ```
 
 ![Example output](tests/WASP-21_s83_pdcsap_sc.png)
@@ -142,9 +171,9 @@ The 9-panel figure shows:
 
 | Command | Description |
 |---------|-------------|
-| `ql` | Run the full QuickLook pipeline on a target |
-| `read_tls` | Extract TLS results from a directory of `.h5` files into a CSV |
-| `rank_tls` | Filter and rank candidates by SDE from the CSV output |
+| `ql run` | Run the full QuickLook pipeline on a target |
+| `ql read-tls` | Extract TLS results from a directory of `.h5` files into a CSV |
+| `ql rank-tls` | Filter and rank candidates by SDE from the CSV output |
 | `ql-gui` | Launch the web GUI (requires `[gui]` extra) |
 
 ## Batch processing
@@ -154,15 +183,15 @@ Process a list of TIC IDs:
 ```bash
 # Generate batch script
 cat tic_ids.txt | while read tic; do
-  echo "ql --name TIC$tic -save --outdir results | tee TIC$tic.log"
+  echo "ql run --name TIC$tic --save --outdir results | tee TIC$tic.log"
 done > run_batch.sh
 
 # Run in parallel with GNU parallel
 cat run_batch.sh | parallel -j 4
 
 # Extract and rank results
-read_tls results/
-rank_tls results/ --output_dir ranked
+ql read-tls results/
+ql rank-tls results/ --output-dir ranked
 
 # Combine ranked plots into a PDF
 pip install img2pdf

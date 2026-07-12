@@ -1,11 +1,21 @@
 # CLI Reference
 
-QuickLook provides three command-line tools: `ql`, `read_tls`, and `rank_tls`.
+QuickLook provides a unified Typer-based CLI (`ql`) with subcommands.
 
-## `ql` -- Run QuickLook analysis
+## Global help
 
 ```bash
-ql --name TARGET [options]
+ql --help
+```
+
+Shows available subcommands: `run`, `read-tls`, `rank-tls`.
+
+---
+
+## `ql run` -- Run QuickLook analysis
+
+```bash
+ql run --name TARGET [options]
 ```
 
 ### Required
@@ -20,33 +30,37 @@ ql --name TARGET [options]
 |------|---------|-------------|
 | `--sector SECTOR` | `-1` (latest) | TESS sector number |
 | `--pipeline PIPELINE` | `spoc` | Light curve pipeline: `spoc`, `tess-spoc`, `qlp`, `cdips`, `pathos`, `tglc`, `tasoc`, `t16` |
-| `--fluxtype TYPE` | `pdcsap` | Light-curve type. SPOC: `pdcsap` or `sap`. TGLC: `aperture`, `psf`, or `auto` (best-quality default) |
+| `--fluxtype TYPE` | `pdcsap` | Light-curve type. SPOC: `pdcsap` or `sap`. TGLC: `aperture`, `psf`, or `auto` |
 | `--exptime SECONDS` | auto | Exposure time in seconds |
-| `--quality_bitmask MASK` | `default` | Quality mask: `none`, `default`, `hard`, `hardest` |
+| `--quality-bitmask MASK` | `default` | Quality mask: `none`, `default`, `hard`, `hardest` |
 
 ### Detrending
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--flatten_method METHOD` | `biweight` | Detrending method (any [wotan](https://github.com/hippke/wotan) method) |
-| `--window_length DAYS` | auto | Detrending window length in days (0 = auto-optimize) |
-| `--edge_cutoff DAYS` | `0.1` | Cut this many days from each orbit edge |
-| `--sigma_clip_raw LO HI` | `10 5` | Sigma clipping on raw light curve before flattening |
-| `--sigma_clip_flat LO HI` | none | Sigma clipping on flattened light curve |
+| `--flatten-method METHOD` | `biweight` | Detrending method (any [wotan](https://github.com/hippke/wotan) method) |
+| `--window-length DAYS` | auto | Detrending window length in days (0 = auto-optimize) |
+| `--edge-cutoff DAYS` | `0.1` | Cut this many days from each orbit edge |
+| `--sigma-clip-raw LO HI` | `10 5` | Sigma clipping on raw light curve before flattening |
+| `--sigma-clip-flat LO HI` | none | Sigma clipping on flattened light curve |
+| `--gp-kernel KERNEL` | `periodic_auto` | GP kernel: `periodic_auto`, `periodic`, `squared_exp` |
+| `--gp-kernel-size N` | `5` | GP kernel size |
 
 ### Period search
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--pg_method METHOD` | `gls` | Periodogram method: `gls`, `ls`, or `bls` |
-| `--period_limits MIN MAX` | auto | TLS search range in days (default: 0.5 to baseline/2) |
+| `--pg-method METHOD` | `gls` | Periodogram method: `gls`, `ls`, or `bls` |
+| `--period-limits MIN MAX` | auto | TLS search range in days |
+| `--phase-xlim HALF_WIDTH` | auto | Phase half-width for transit/eclipse panels |
 
 ### Ephemeris
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--custom_ephem Tc Tcerr P Perr Tdur Tdurerr` | none | Custom ephemeris (6 values in days) |
-| `-mask_ephem` | off | Mask known transits before detrending |
+| `--custom-ephem Tc Tcerr P Perr Tdur Tdurerr` | none | Custom ephemeris (6 values in days) |
+| `--mask-ephem` | off | Mask known transits before detrending |
+| `--use-priors` | off | Use ExoFOP stellar params as TLS priors |
 
 ### Output
 
@@ -55,10 +69,10 @@ ql --name TARGET [options]
 | `--outdir DIR` | `.` | Output directory |
 | `--suffix TEXT` | none | Suffix appended to output filenames |
 | `--survey NAME` | `dss1` | Archival image survey for overlay |
-| `-show_simbad` | off | Overplot nearby non-stellar SIMBAD objects on the archival image |
-| `-save` | off | Save figure (.png) and TLS results (.h5) |
-| `-verbose` | off | Print detailed progress |
-| `-overwrite` | off | Overwrite existing output files |
+| `--show-simbad` | off | Overplot nearby SIMBAD objects on the archival image |
+| `--save` | off | Save figure (.png) and TLS results (.h5) |
+| `--verbose` | off | Print detailed progress |
+| `--overwrite` | off | Overwrite existing output files |
 
 ### Multi-sector / multi-pipeline mode
 
@@ -68,55 +82,79 @@ ql --name TARGET [options]
 | `--each-pipeline` | off | Run on every available pipeline for the latest sector (mutually exclusive with `--each-sector`) |
 | `-j, --jobs N` | `1` | Number of parallel jobs for `--each-sector` |
 | `--nice INC` | unchanged | Lower CPU priority by this increment (POSIX; e.g. `19` = lowest) |
-| `--cores N` | auto | CPU cores used by TLS per run (default: `cpu_count // 2` single run, `cpu_count // jobs` for `--each-sector`) |
+| `--cores N` | auto | CPU cores used by TLS per run |
 
 ### Examples
 
 ```bash
 # Basic run on latest sector
-ql --name TOI-1234 -save -verbose
+ql run --name TOI-1234 --save --verbose
 
 # Specific sector and pipeline
-ql --name TOI-125.01 --sector 2 --pipeline qlp
+ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
 # Custom detrending
-ql --name HD209458 --flatten_method cosine --window_length 0.3
+ql run --name HD209458 --flatten-method cosine --window-length 0.3
 
 # Restrict period search range
-ql --name TOI-125.01 --period_limits 1 5
+ql run --name TOI-125.01 --period-limits 1 5
 
 # Run all sectors, save results
-ql --name TOI-125.01 --each-sector -save
+ql run --name TOI-125.01 --each-sector --save
 
 # Run all sectors with 4 parallel workers
-ql --name TOI-125.01 --each-sector -j 4 -save
+ql run --name TOI-125.01 --each-sector -j 4 --save
 
 # Run every available pipeline on the latest sector
-ql --name TOI-125.01 --each-pipeline -save
+ql run --name TOI-125.01 --each-pipeline --save
 
 # TGLC PSF photometry with nearby SIMBAD objects overlaid
-ql --name TOI-125.01 --pipeline tglc --fluxtype psf -show_simbad -save
+ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 
 # Pipe output to a log file
-ql --name TIC-52368076 -verbose -save | tee output.log
+ql run --name TIC-52368076 --verbose --save | tee output.log
 ```
 
-## `read_tls` -- Read TLS results
+> Underscore-style flags (`--flatten_method`) are also accepted as equivalents
+> to hyphen-style flags (`--flatten-method`).
+
+---
+
+## `ql read-tls` -- Read TLS results
 
 Scan a directory of `.h5` TLS output files and produce a summary CSV:
 
 ```bash
-read_tls OUTPUT_DIR
+ql read-tls OUTPUT_DIR
 ```
 
-This creates `OUTPUT_DIR_tls.csv` with columns for period, depth, SDE, and other TLS metrics. Useful for ranking candidates after batch processing.
+This creates `OUTPUT_DIR_tls.csv` with columns for period, depth, SDE, and other
+TLS metrics. Useful for ranking candidates after batch processing.
 
-## `rank_tls` -- Rank candidates
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--param, -p PARAM` | `SDE_tls` | Parameter to sort by |
 
-Filter and rank candidates from the CSV produced by `read_tls`:
+---
+
+## `ql rank-tls` -- Rank candidates
+
+Filter and rank candidates from the CSV produced by `read-tls`:
 
 ```bash
-rank_tls OUTPUT_DIR --output_dir ranked
+ql rank-tls OUTPUT_DIR --output-dir ranked
 ```
 
-This copies the plots of candidates that pass the filters into the `ranked/` directory, sorted by Signal Detection Efficiency (SDE).
+This copies the plots of candidates that pass the filters into the `ranked/`
+directory, sorted by Signal Detection Efficiency (SDE).
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--csv-path PATH` | auto | Path to the existing CSV (auto-generated if omitted) |
+| `--output-dir DIR` | `{input_dir}/temp` | Output directory for ranked plots |
+| `--column COL` | `SDE_tls` | Column to sort by |
+| `--remove-filter` | off | Skip filtering (rank all candidates) |
+| `--use-ascending` | off | Sort ascending instead of descending |
+| `--min-sde N` | `5.0` | Minimum SDE threshold |
+| `--min-depth N` | `1.0` | Minimum transit depth (ppt) |
+| `--max-depth N` | `100.0` | Maximum transit depth (ppt) |

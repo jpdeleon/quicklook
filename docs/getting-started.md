@@ -5,7 +5,7 @@
 Run QuickLook on a known exoplanet host:
 
 ```bash
-ql --name WASP-21 -save -verbose
+ql run --name WASP-21 --save --verbose
 ```
 
 This will:

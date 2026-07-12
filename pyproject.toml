@@ -45,7 +45,8 @@ dependencies = [
     "reproject>=0.13",
     "astroplan>=0.10",
     "loguru",
-    "flask"
+    "flask",
+    "typer>=0.12",
 ]
 
 [project.optional-dependencies]

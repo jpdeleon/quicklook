@@ -449,7 +449,7 @@
     let saved = null;
     try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
     if (saved && saved !== currentDir) {
-      window.location.replace('/tls-summary?dir=' + encodeURIComponent(saved));
+      window.location.replace(BASE + '/tls-summary?dir=' + encodeURIComponent(saved));
       return; // The new navigation will re-run this script.
     }
   } else if (!isDefault && currentDir) {
@@ -785,7 +785,7 @@ if (table) {
   async function loadDirs(path) {
     errorEl.textContent = '';
     listEl.innerHTML = '<div class="modal-empty">Loading…</div>';
-    const url = '/list-dirs' + (path ? '?path=' + encodeURIComponent(path) : '');
+    const url = BASE + '/list-dirs' + (path ? '?path=' + encodeURIComponent(path) : '');
     let data;
     try {
       const res = await fetch(url);

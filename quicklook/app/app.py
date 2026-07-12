@@ -13,13 +13,15 @@ from collections import OrderedDict
 from pathlib import Path
 from threading import Thread, Event
 
-from flask import Flask, render_template, request, jsonify
+import matplotlib.pyplot as pl
+from flask import Flask, render_template, request, jsonify, url_for
 from flask_sock import Sock
 from loguru import logger
+from werkzeug.middleware.proxy_fix import ProxyFix
 from quicklook.tql import TessQuickLook
 from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.cli.ql import sanitize_target_name
-from quicklook.exceptions import QuickLookError
+from quicklook.exceptions import InvalidInputError, QuickLookError
 from quicklook.utils import get_available_pipelines, get_available_sectors
 
 # Directories
@@ -33,6 +35,9 @@ os.makedirs(LOG_DIR, exist_ok=True)
 app = Flask(
     __name__, static_folder=str(BASE_DIR / "static"), template_folder=str(BASE_DIR / "templates")
 )
+# Honor only the mount prefix supplied by the trusted muscat-db gateway.  Host,
+# scheme, port, and client-address forwarding remain disabled deliberately.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=0, x_proto=0, x_host=0, x_port=0, x_prefix=1)
 sock = Sock(app)
 
 # Original stdout/stderr for fallback
@@ -350,6 +355,12 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         jobs[name]["error"] = str(e)
         logger.error(f"Job '{name}' failed unexpectedly: {e}\n{tb}")
     finally:
+        # pyplot holds every figure in a global registry, so dropping the local
+        # reference is not enough. The CLI exits after each target, but this
+        # worker outlives the job and would otherwise accumulate a figure per
+        # target across a batch. Jobs run serially on one thread (see
+        # _submit_job), so no other thread owns a figure here.
+        pl.close("all")
         # Tear down in safe order: streams first, then loguru sink, then file
         _tls_stdout.clear_stream()
         _tls_stderr.clear_stream()
@@ -376,7 +387,10 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 def _get_recent_results(limit=12):
     """Return the most recent output PNGs as dicts with path and filename."""
     images = sorted(OUTPUT_DIR.glob("*.png"), key=os.path.getmtime, reverse=True)
-    return [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in images[:limit]]
+    return [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in images[:limit]
+    ]
 
 
 def _is_truthy(val):
@@ -482,6 +496,12 @@ def index():
     )
 
 
+@app.errorhandler(InvalidInputError)
+def handle_invalid_input(e):
+    """Turn a rejected target name into a 400 rather than a 500 + traceback."""
+    return jsonify({"ok": False, "reason": str(e)}), 400
+
+
 @app.route("/submit", methods=["POST"])
 def submit_job():
     """AJAX endpoint for single-job submission."""
@@ -545,7 +565,12 @@ def batch_submit():
         raw_name = raw_name.strip()
         if not raw_name:
             continue
-        name = sanitize_target_name(raw_name)
+        try:
+            name = sanitize_target_name(raw_name)
+        except InvalidInputError:
+            # One bad name should not abort the rest of the batch.
+            skipped.append(raw_name)
+            continue
         with jobs_lock:
             if name in jobs and jobs[name]["status"] not in ("done", "error", "cancelled"):
                 skipped.append(name)
@@ -802,8 +827,8 @@ def results_json(target):
     h5s = sorted(OUTPUT_DIR.glob(f"*{search_name}*_tls.h5"), key=os.path.getmtime, reverse=True)
     return jsonify(
         {
-            "image": f"/static/outputs/{images[0].name}" if images else None,
-            "h5": f"/static/outputs/{h5s[0].name}" if h5s else None,
+            "image": url_for("static", filename=f"outputs/{images[0].name}") if images else None,
+            "h5": url_for("static", filename=f"outputs/{h5s[0].name}") if h5s else None,
         }
     )
 
@@ -967,7 +992,10 @@ def gallery():
     start = (page - 1) * per_page
     page_images = images[start : start + per_page]
 
-    items = [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in page_images]
+    items = [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in page_images
+    ]
     return render_template(
         "gallery.html",
         images=items,
@@ -1270,8 +1298,12 @@ def tls_summary():
             h5_path = None
             disk_path = str(fp_resolved)
         else:
-            png_path = f"/static/outputs/{png_name}" if (OUTPUT_DIR / png_name).exists() else None
-            h5_path = f"/static/outputs/{fp.name}"
+            png_path = (
+                url_for("static", filename=f"outputs/{png_name}")
+                if (OUTPUT_DIR / png_name).exists()
+                else None
+            )
+            h5_path = url_for("static", filename=f"outputs/{fp.name}")
             disk_path = None
 
         def first(seq):
@@ -1348,7 +1380,10 @@ def tls_summary():
 def compare():
     """Side-by-side comparison view."""
     images = sorted(OUTPUT_DIR.glob("*.png"), key=os.path.getmtime, reverse=True)
-    items = [{"path": f"/static/outputs/{img.name}", "name": img.name} for img in images]
+    items = [
+        {"path": url_for("static", filename=f"outputs/{img.name}"), "name": img.name}
+        for img in images
+    ]
     left = request.args.get("left", "")
     right = request.args.get("right", "")
     return render_template("compare.html", images=items, left=left, right=right)
@@ -1358,7 +1393,10 @@ def compare():
 # Main
 # ---------------------------------------------------------------------------
 def main():
-    app.run(debug=True, threaded=True)
+    # The Werkzeug debugger exposes an interactive console (arbitrary code
+    # execution) to anyone who can reach the port, so it is opt-in.
+    debug = os.environ.get("QUICKLOOK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(debug=debug, threaded=True)
 
 
 if __name__ == "__main__":

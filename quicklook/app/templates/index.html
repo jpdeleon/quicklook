@@ -782,7 +782,7 @@ function showToast(message, type, duration) {
 function notifyBrowser(title, body) {
   if (!('Notification' in window)) return;
   if (Notification.permission === 'granted') {
-    new Notification(title, { body: body, icon: '/static/favicon.ico' });
+    new Notification(title, { body: body, icon: BASE + '/static/favicon.ico' });
   } else if (Notification.permission !== 'denied') {
     Notification.requestPermission().then(p => {
       if (p === 'granted') new Notification(title, { body: body });
@@ -1000,7 +1000,7 @@ async function refreshSectorHint() {
   _lastSectorQuery = key;
   hint.innerHTML = '<span>Looking up sectors&hellip;</span>';
   try {
-    const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+    const res = await fetch(BASE + '/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
     const data = await res.json();
     if (!data.ok || !Array.isArray(data.sectors) || data.sectors.length === 0) {
       _availableSectors = [];
@@ -1163,7 +1163,7 @@ cancelBtn.addEventListener('click', async () => {
   cancelBtn.disabled = true;
   let cancelled = true;
   try {
-    const res = await fetch('/cancel/' + target, {method: 'POST'});
+    const res = await fetch(BASE + '/cancel/' + target, {method: 'POST'});
     cancelled = res.ok;
   } catch (err) {
     /* network error — still tear down the running UI below */
@@ -1192,7 +1192,7 @@ cancelAllBtn.addEventListener('click', async () => {
   if (!confirm('Cancel all queued and running jobs?')) return;
   cancelAllBtn.disabled = true;
   try {
-    const res = await fetch('/cancel-all', {method: 'POST'});
+    const res = await fetch(BASE + '/cancel-all', {method: 'POST'});
     const data = await res.json();
     if (data.ok) {
       const n = (data.cancelled || []).length;
@@ -1265,7 +1265,7 @@ form.addEventListener('submit', async (e) => {
         }
       }
       submitBtn.textContent = 'Querying pipelines...';
-      const res = await fetch('/available-pipelines?name=' + encodeURIComponent(name));
+      const res = await fetch(BASE + '/available-pipelines?name=' + encodeURIComponent(name));
       const pipeData = await res.json();
       if (!pipeData.ok || !pipeData.pipelines || pipeData.pipelines.length === 0) {
         showToast(pipeData.reason || 'No pipelines found for ' + name, 'error');
@@ -1277,7 +1277,7 @@ form.addEventListener('submit', async (e) => {
       showToast('Found ' + pipelines.length + ' pipelines: ' + pipelines.join(', '), 'info', 6000);
       submitBtn.textContent = 'Submitting ' + pipelines.length + ' jobs...';
 
-      const batchRes = await fetch('/each-pipeline-submit', {
+      const batchRes = await fetch(BASE + '/each-pipeline-submit', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ name: name, pipelines: pipelines, params: params }),
@@ -1308,7 +1308,7 @@ form.addEventListener('submit', async (e) => {
       }
       const pipeline = params.pipeline || 'spoc';
       submitBtn.textContent = 'Querying sectors...';
-      const res = await fetch('/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
+      const res = await fetch(BASE + '/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
       const secData = await res.json();
       if (!secData.ok || !secData.sectors || secData.sectors.length === 0) {
         showToast(secData.reason || 'No sectors found for ' + name, 'error');
@@ -1320,7 +1320,7 @@ form.addEventListener('submit', async (e) => {
       showToast('Found ' + sectors.length + ' sectors: ' + sectors.join(', '), 'info', 6000);
       submitBtn.textContent = 'Submitting ' + sectors.length + ' jobs...';
 
-      const batchRes = await fetch('/each-sector-submit', {
+      const batchRes = await fetch(BASE + '/each-sector-submit', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ name: name, sectors: sectors, params: params }),
@@ -1344,7 +1344,7 @@ form.addEventListener('submit', async (e) => {
   }
 
   try {
-    const res = await fetch('/submit', { method: 'POST', body: new FormData(form) });
+    const res = await fetch(BASE + '/submit', { method: 'POST', body: new FormData(form) });
     const data = await res.json();
     if (data.ok) {
       showToast('Job submitted: ' + data.name, 'info');
@@ -1393,7 +1393,7 @@ batchSubmitBtn.addEventListener('click', async () => {
   batchStatus.textContent = 'Submitting ' + targets.length + ' targets...';
 
   try {
-    const res = await fetch('/batch-submit', {
+    const res = await fetch(BASE + '/batch-submit', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ targets: targets, params: params }),
@@ -1422,7 +1422,7 @@ batchSubmitBtn.addEventListener('click', async () => {
    ========================================================================= */
 async function showResults(target) {
   try {
-    const res = await fetch('/results-json/' + target);
+    const res = await fetch(BASE + '/results-json/' + target);
     const data = await res.json();
     if (data.image) {
       // Cache-bust so re-runs with the same target name show the fresh PNG
@@ -1545,7 +1545,7 @@ function resolveFolded(total) {
 
 async function refreshQueue() {
   try {
-    const res = await fetch('/jobs-json');
+    const res = await fetch(BASE + '/jobs-json');
     const jobs = await res.json();
     if (jobs.length === 0) { queueSection.style.display = 'none'; return; }
 
@@ -1599,7 +1599,7 @@ async function refreshQueue() {
           e.stopPropagation();
           if (!confirm('Remove "' + job.name + '" from the queue?')) return;
           try {
-            const res = await fetch('/delete-job/' + encodeURIComponent(job.name), {
+            const res = await fetch(BASE + '/delete-job/' + encodeURIComponent(job.name), {
               method: 'POST',
             });
             const data = await res.json();
@@ -1656,7 +1656,7 @@ function connectWs(target) {
   statusBar.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const ws = new WebSocket(proto + '//' + location.host + '/ws/' + target);
+  const ws = new WebSocket(proto + '//' + location.host + BASE + '/ws/' + target);
   activeWs = ws;
 
   ws.onmessage = function(e) {
@@ -1721,7 +1721,7 @@ function connectWs(target) {
 // After a job finishes, automatically watch the next running job (for batch)
 async function autoWatchNext(finishedTarget) {
   try {
-    const res = await fetch('/jobs-json');
+    const res = await fetch(BASE + '/jobs-json');
     const jobs = await res.json();
     const next = jobs.find(j => (j.status === 'running' || j.status === 'queued') && j.name !== finishedTarget);
     if (next) {
@@ -1737,7 +1737,7 @@ async function autoWatchNext(finishedTarget) {
 async function deleteOutput(filename, btnElem) {
   if (!confirm('Delete ' + filename + ' and its associated files?')) return;
   try {
-    const res = await fetch('/delete-output', {
+    const res = await fetch(BASE + '/delete-output', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({filename: filename}),
@@ -1821,7 +1821,7 @@ if ('Notification' in window && Notification.permission === 'default') {
     // Clean the URL so refresh doesn't re-trigger
     history.replaceState(null, '', '/');
     try {
-      const res = await fetch('/jobs-json');
+      const res = await fetch(BASE + '/jobs-json');
       const jobs = await res.json();
       const job = jobs.find(j => j.name === watchParam);
       if (job && job.status === 'running') {
@@ -1835,7 +1835,7 @@ if ('Notification' in window && Notification.permission === 'default') {
   const savedTarget = sessionStorage.getItem('ql-active-target');
   if (savedTarget) {
     try {
-      const res = await fetch('/jobs-json');
+      const res = await fetch(BASE + '/jobs-json');
       const jobs = await res.json();
       const job = jobs.find(j => j.name === savedTarget);
       if (job && job.status === 'running') {
@@ -1849,7 +1849,7 @@ if ('Notification' in window && Notification.permission === 'default') {
 
   // 3. Otherwise, auto-watch first running job if any
   try {
-    const res = await fetch('/jobs-json');
+    const res = await fetch(BASE + '/jobs-json');
     const jobs = await res.json();
     const running = jobs.find(j => j.status === 'running' || j.status === 'queued');
     if (running) connectWs(running.name);
