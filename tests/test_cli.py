@@ -76,3 +76,35 @@ def test_run_default_flag_values():
     assert result.exit_code == 0
     assert "biweight" in result.output
     assert "periodic_auto" in result.output
+
+
+def test_run_aborts_on_headless_without_save():
+    import os
+
+    had_display = os.environ.pop("DISPLAY", None)
+    try:
+        result = runner.invoke(app, ["run", "--name", "TOI-6109"])
+        assert result.exit_code == 1
+        assert "headless" in result.output.lower()
+    finally:
+        if had_display is not None:
+            os.environ["DISPLAY"] = had_display
+
+
+def test_run_with_save_skips_headless_check():
+    """With --save the headless check is bypassed. The pipeline may still fail
+    for other reasons, but it shouldn't exit with headless-abort code 1."""
+    import os
+    from loguru import logger
+
+    logger.disable("quicklook")
+    had_display = os.environ.pop("DISPLAY", None)
+    try:
+        result = runner.invoke(
+            app, ["run", "--name", "TOI-6109", "--save", "--overwrite", "--verbose"]
+        )
+        assert result.exit_code != 1, f"unexpected headless abort: {result.output}"
+    finally:
+        if had_display is not None:
+            os.environ["DISPLAY"] = had_display
+        logger.enable("quicklook")

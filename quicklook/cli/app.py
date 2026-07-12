@@ -341,16 +341,27 @@ def run(
         valid = ", ".join(dss_description.keys())
         raise typer.BadParameter(f"survey must be one of: {valid}")
 
+    if each_sector and each_pipeline:
+        typer.echo("Error: --each-sector and --each-pipeline are mutually exclusive.", err=True)
+        raise typer.Exit(2)
+
+    if not save:
+        import sys
+
+        if not os.environ.get("DISPLAY") and sys.platform == "linux":
+            typer.echo(
+                "No display detected on this headless system.\n"
+                "Use --save to save the figure and results to disk.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
     cpu_total = os.cpu_count() or 1
     if each_sector:
         tls_use_threads = cores if cores is not None else max(1, cpu_total // max(1, jobs))
     else:
         tls_use_threads = cores if cores is not None else max(1, cpu_total // 2)
     tls_use_threads = max(1, min(tls_use_threads, cpu_total))
-
-    if each_sector and each_pipeline:
-        typer.echo("Error: --each-sector and --each-pipeline are mutually exclusive.", err=True)
-        raise typer.Exit(2)
 
     if each_sector and jobs * tls_use_threads > cpu_total:
         typer.echo(
