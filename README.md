@@ -19,6 +19,8 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Transit detection** -- Transit Least Squares (TLS) periodogram
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
+- **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
+- **Headless friendly** -- detects missing display and aborts early, or works fully offline with `--save`
 - **Web GUI** -- Flask-based interface with live progress, job queue, and gallery
 - **HDF5 output** -- full TLS results saved for downstream filtering
 
@@ -93,7 +95,8 @@ ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 > **Note:** Old-style `-save` / `-verbose` flags and the standalone
 > `read_tls` / `rank_tls` commands still work via automatic redirect.
 > Underscore flags (`--flatten_method`) are interchangeable with hyphens
-> (`--flatten-method`).
+> (`--flatten-method`). On headless Linux systems, `--save` is required
+> (the CLI detects missing `$DISPLAY` and exits early unless `--save` is set).
 
 ### Python API
 
