@@ -565,10 +565,13 @@ class Gls:
             if not period:
                 ax2 = plt.twiny()
                 ax2.tick_params(direction="in", which="both")
-                ax2.format_coord = lambda x, y: "x=%g, x2=%g, y=%g" % (
-                    x,
-                    1 / x,
-                    y,
+                ax2.format_coord = lambda x, y: (
+                    "x=%g, x2=%g, y=%g"
+                    % (
+                        x,
+                        1 / x,
+                        y,
+                    )
                 )
                 ax2.set_xticks(x2tics)
                 ax2.set_xticks(mx2tics, minor=True)
@@ -639,10 +642,13 @@ class Gls:
             xx = phase(tt)
             ii = np.argsort(xx)
             plt2.plot(xx[ii], yy[ii], "k-")
-            plt2.format_coord = lambda x, y: "x=%g, x2=%g, y=%g" % (
-                x,
-                x * fbest,
-                y,
+            plt2.format_coord = lambda x, y: (
+                "x=%g, x2=%g, y=%g"
+                % (
+                    x,
+                    x * fbest,
+                    y,
+                )
             )
 
         if residuals:
@@ -661,10 +667,13 @@ class Gls:
             mpl.setp(plt4.get_yticklabels(), visible=False)
             plot_ecol(plt4, phase(self.t), yres)
             plt4.plot([0, 1 / fbest], [0, 0], "k-")
-            plt4.format_coord = lambda x, y: "x=%g, x2=%g, y=%g" % (
-                x,
-                x * fbest,
-                y,
+            plt4.format_coord = lambda x, y: (
+                "x=%g, x2=%g, y=%g"
+                % (
+                    x,
+                    x * fbest,
+                    y,
+                )
             )
 
         for x in fig.get_axes()[2:]:
@@ -701,7 +710,7 @@ class Gls:
                 plt.set_position(plt.get_position().translated(0, 4 * ydpi))
 
         # fig.canvas.mpl_connect("resize_event", lambda _: (fig.tight_layout()))
-        fig.canvas.mpl_connect("resize_event", lambda _: (tighter()))
+        fig.canvas.mpl_connect("resize_event", lambda _: tighter())
         fig.show()
         if block:
             print("Close the plot to continue.")

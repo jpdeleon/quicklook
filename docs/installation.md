@@ -15,7 +15,7 @@ conda activate quicklook
 pip install -U quicklook-package
 ```
 
-This installs the `ql`, `read_tls`, and `rank_tls` command-line tools plus the Python API.
+This installs the `ql` command-line tool (with subcommands `run`, `read-tls`, and `rank-tls`) plus the Python API.
 
 ## Install with Web GUI
 

@@ -7,13 +7,13 @@ QuickLook supports processing many targets at scale using the CLI, shell scripts
 Run the pipeline on every available sector for a single target:
 
 ```bash
-ql --name TOI-125.01 --each-sector -save
+ql run --name TOI-125.01 --each-sector --save
 ```
 
 Add `-j N` to parallelize across N workers:
 
 ```bash
-ql --name TOI-125.01 --each-sector -j 4 -save
+ql run --name TOI-125.01 --each-sector -j 4 --save
 ```
 
 ## Shell: batch script from a target list
@@ -30,7 +30,7 @@ Given a file `tic_ids.txt` with one TIC ID per line:
 
 ```bash
 cat tic_ids.txt | while read tic; do
-  echo "ql --name TIC$tic -save --outdir results | tee TIC$tic.log"
+  echo "ql run --name TIC$tic --save --outdir results | tee TIC$tic.log"
 done > run_batch.sh
 ```
 
@@ -50,12 +50,12 @@ cat run_batch.sh | parallel -j 4
 
 ## Post-processing: rank candidates
 
-After batch processing, use `read_tls` and `rank_tls` to find the best candidates.
+After batch processing, use `ql read-tls` and `ql rank-tls` to find the best candidates.
 
 ### Step 1: Extract TLS results
 
 ```bash
-read_tls results/
+ql read-tls results/
 ```
 
 This scans all `*_tls.h5` files in `results/` and creates `results_tls.csv` with one row per target.
@@ -63,7 +63,7 @@ This scans all `*_tls.h5` files in `results/` and creates `results_tls.csv` with
 ### Step 2: Rank and filter
 
 ```bash
-rank_tls results/ --output_dir ranked
+ql rank-tls results/ --output-dir ranked
 ```
 
 This filters candidates by SDE and other metrics, then copies the plots of the top candidates into `ranked/`.
@@ -97,8 +97,8 @@ The GUI queries available sectors, then submits one job per sector. All jobs sha
 
 ## Tips for large runs
 
-- **Save outputs** (`-save`): always save to disk so results persist across sessions.
+- **Save outputs** (`--save`): always save to disk so results persist across sessions.
 - **Use an output directory** (`--outdir results/`): keep results organized.
-- **Check for existing outputs**: QuickLook skips targets that already have output files unless `-overwrite` is used.
+- **Check for existing outputs**: QuickLook skips targets that already have output files unless `--overwrite` is used.
 - **Monitor MAST availability**: the MAST archive occasionally has outages. If many targets fail with HTTP errors, wait and retry.
 - **Disk space**: each target produces a ~1 MB PNG and a ~1 MB HDF5 file.

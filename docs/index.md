@@ -22,7 +22,7 @@
 
 ## Output figure
 
-Running `ql --name WASP-21 -save` produces a 9-panel figure:
+Running `ql run --name WASP-21 --save` produces a 9-panel figure:
 
 ![Example output](https://raw.githubusercontent.com/jpdeleon/quicklook/main/tests/WASP-21_s83_pdcsap_sc.png)
 

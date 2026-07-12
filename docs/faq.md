@@ -52,7 +52,7 @@ Try a different matplotlib backend:
 
 ```bash
 export MPLBACKEND=Agg
-ql --name TOI-1234 -save
+ql run --name TOI-1234 --save
 ```
 
 ## Pipeline parameters
@@ -89,4 +89,4 @@ with h5py.File("TOI-1234_s56_pdcsap_sc_tls.h5", "r") as f:
     print(f"Period: {period:.4f} d, SDE: {sde:.1f}, Depth: {depth:.6f}")
 ```
 
-Or use the `read_tls` tool to extract a CSV summary from a directory of H5 files.
+Or use `ql read-tls` to extract a CSV summary from a directory of H5 files.

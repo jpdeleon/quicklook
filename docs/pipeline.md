@@ -118,4 +118,4 @@ Example: `WASP-21_s56_pdcsap_sc.png` and `WASP-21_s56_pdcsap_sc_tls.h5`
 
 For TGLC runs, the flux token encodes the photometry method: `--fluxtype aperture` writes `tglc_aper` and `--fluxtype psf` writes `tglc_psf` (e.g. `TIC123_s11_tglc_psf_lc.png`). This keeps aperture and PSF runs of the same target/sector from overwriting each other on disk. SPOC stems and default (auto) TGLC stems are unchanged.
 
-The HDF5 file contains the TLS periodogram, best-fit parameters, stellar parameters, and metadata. Use `read_tls` to extract a summary CSV from a directory of these files.
+The HDF5 file contains the TLS periodogram, best-fit parameters, stellar parameters, and metadata. Use `ql read-tls` to extract a summary CSV from a directory of these files.

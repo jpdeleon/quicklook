@@ -51,33 +51,37 @@ pip install -U "quicklook-package[dev]"
 
 ## Usage
 
-### Command line
+### Command line (Typer CLI)
 
 ```bash
 # Basic run on the latest TESS sector
-ql --name WASP-21 -save -verbose
+ql run --name WASP-21 --save --verbose
 
 # Specific sector and pipeline
-ql --name TOI-125.01 --sector 2 --pipeline qlp
+ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
 # Custom detrending
-ql --name TOI-125.01 --flatten_method cosine --window_length 0.3
+ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 
 # Restrict TLS period search range
-ql --name TOI-125.01 --period_limits 1 5
+ql run --name TOI-125.01 --period-limits 1 5
 
 # Run on every available sector
-ql --name TOI-125.01 --each-sector -save
+ql run --name TOI-125.01 --each-sector --save
 
 # Run all sectors with 4 parallel workers
-ql --name TOI-125.01 --each-sector -j 4 -save
+ql run --name TOI-125.01 --each-sector -j 4 --save
 
 # Run every available pipeline on the latest sector
-ql --name TOI-125.01 --each-pipeline -save
+ql run --name TOI-125.01 --each-pipeline --save
 
 # TGLC PSF photometry with nearby SIMBAD objects overlaid
-ql --name TOI-125.01 --pipeline tglc --fluxtype psf -show_simbad -save
+ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 ```
+
+> **Note:** The old `ql` (argparse) syntax still works via automatic redirect.
+> Underscore flags (`--flatten_method`) are also accepted as hyphen flags
+> (`--flatten-method`) and vice versa.
 
 ### Python API
 
@@ -129,7 +133,7 @@ exposes an interactive console to whoever can open the port.
 ## Output figure
 
 ```bash
-ql --name WASP-21 -save -verbose
+ql run --name WASP-21 --save --verbose
 ```
 
 ![Example output](tests/WASP-21_s83_pdcsap_sc.png)
@@ -152,9 +156,9 @@ The 9-panel figure shows:
 
 | Command | Description |
 |---------|-------------|
-| `ql` | Run the full QuickLook pipeline on a target |
-| `read_tls` | Extract TLS results from a directory of `.h5` files into a CSV |
-| `rank_tls` | Filter and rank candidates by SDE from the CSV output |
+| `ql run` | Run the full QuickLook pipeline on a target |
+| `ql read-tls` | Extract TLS results from a directory of `.h5` files into a CSV |
+| `ql rank-tls` | Filter and rank candidates by SDE from the CSV output |
 | `ql-gui` | Launch the web GUI (requires `[gui]` extra) |
 
 ## Batch processing
@@ -164,15 +168,15 @@ Process a list of TIC IDs:
 ```bash
 # Generate batch script
 cat tic_ids.txt | while read tic; do
-  echo "ql --name TIC$tic -save --outdir results | tee TIC$tic.log"
+  echo "ql run --name TIC$tic --save --outdir results | tee TIC$tic.log"
 done > run_batch.sh
 
 # Run in parallel with GNU parallel
 cat run_batch.sh | parallel -j 4
 
 # Extract and rank results
-read_tls results/
-rank_tls results/ --output_dir ranked
+ql read-tls results/
+ql rank-tls results/ --output-dir ranked
 
 # Combine ranked plots into a PDF
 pip install img2pdf
