@@ -1,27 +1,19 @@
-"""Unified CLI for TESS quick-look analysis using Typer."""
+"""Unified CLI for TESS quick-look analysis using Typer.
+
+All heavy imports (numpy, pandas, matplotlib, lightkurve, etc.) are deferred
+inside the functions that need them so that ``--help`` on any subcommand or
+``read-tls`` / ``rank-tls`` execution is fast.
+"""
 
 import os
-import shutil
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from pathlib import Path
 from typing import Optional, Tuple
-from glob import glob
 
-import matplotlib.pyplot as pl
-import numpy as np
-import pandas as pd
 import typer
-from tqdm import tqdm
 
-from quicklook import h5io
-from quicklook.tql import TessQuickLook
 from quicklook.exceptions import InvalidInputError
-from quicklook.utils import get_available_pipelines, get_available_sectors
-from quicklook.plot import dss_description
-from quicklook.cli.ql import sanitize_target_name
 
 
-# --- validation helpers ---
+# --- validation helpers (stdlib / typer only) ---
 
 _FLUXTYPE_CHOICES = {"pdcsap", "sap", "aperture", "psf", "auto"}
 _PIPELINE_CHOICES = {"spoc", "tess-spoc", "tasoc", "cdips", "pathos", "qlp", "tglc", "t16"}
@@ -51,7 +43,7 @@ def _validate_choice(value: str, choices: set[str], name: str) -> str:
     return low
 
 
-# --- batch helper (same semantics as original ql.py) ---
+# --- batch helper (heavy imports inside) ---
 
 
 def _run_ql_for_sector(
@@ -76,6 +68,9 @@ def _run_ql_for_sector(
     phase_xlim: Optional[float],
     show_simbad: bool = False,
 ):
+    import matplotlib.pyplot as pl
+    from quicklook.tql import TessQuickLook
+
     ql = TessQuickLook(
         target_name=name,
         sector=sector,
@@ -111,21 +106,26 @@ def _run_ql_for_sector(
     pl.close()
 
 
-# --- rank-tls helpers ---
+# --- rank-tls helpers (heavy imports inside) ---
 
 
-def _is_near_integer(series: pd.Series, tolerance: float) -> pd.Series:
+def _is_near_integer(series, tolerance):
+    import numpy as np
+
     fractional = series % 1
     return np.isclose(fractional, 0, atol=tolerance) | np.isclose(fractional, 1, atol=tolerance)
 
 
 def _apply_rank_filters(
-    df: pd.DataFrame,
+    df,
     tolerance: float = 0.2,
     min_depth: float = 1,
     max_depth: float = 100,
     min_SDE: float = 5,
-) -> pd.DataFrame:
+):
+    import numpy as np
+    import pandas as pd
+
     df2 = df.copy()
     depth_range = (df2["depth"] >= min_depth) & (df2["depth"] < max_depth)
     errmsg = f"No candidates satisfy `{min_depth}<depth_range<{max_depth}` ppt."
@@ -174,10 +174,15 @@ def _apply_rank_filters(
     return df2[depth_range & not_near & not_eb & strong_signal & not_toi & not_sparse]
 
 
-# --- read-tls helper ---
+# --- read-tls helper (heavy imports inside) ---
 
 
 def _summarize_tls_to_csv(input_dir: str, param: str = "SDE_tls") -> str:
+    from glob import glob
+    from tqdm import tqdm
+    from quicklook import h5io
+    import pandas as pd
+
     files = glob(input_dir + "/*.h5")
     if not files:
         raise typer.BadParameter(f"No *.h5 files found in {input_dir}")
@@ -284,9 +289,7 @@ def run(
     use_priors: bool = typer.Option(
         False, "--use-priors", help="Use ExoFOP stellar params as TLS priors"
     ),
-    survey: str = typer.Option(
-        "dss1", "--survey", help=f"Archival survey ({'/'.join(dss_description.keys())})"
-    ),
+    survey: str = typer.Option("dss1", "--survey", help="Archival image survey name"),
     custom_ephem: Optional[Tuple[float, float, float, float, float, float]] = typer.Option(
         None, "--custom-ephem", help="Custom ephemeris: Tc Tcerr P Perr Tdur Tdurerr"
     ),
@@ -306,6 +309,13 @@ def run(
 
         ql run --name TOI-1234 --sector 27 --save --verbose
     """
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+    from quicklook.cli.ql import sanitize_target_name
+    from quicklook.utils import get_available_pipelines, get_available_sectors
+    from quicklook.plot import dss_description
+    import matplotlib.pyplot as pl
+    from quicklook.tql import TessQuickLook
+
     if nice is not None:
         try:
             new_nice = os.nice(nice)
@@ -524,6 +534,10 @@ def rank_tls(
     Uses the CSV produced by ``read-tls``. The CSV is auto-generated from
     ``input_dir`` if not provided via ``--csv-path``.
     """
+    import pandas as pd
+    import shutil
+    from pathlib import Path
+
     if csv_path is None:
         csv_path = f"{input_dir.rstrip('/')}_tls.csv"
         if not os.path.exists(csv_path):
