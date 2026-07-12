@@ -24,11 +24,13 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 
 ## Installation
 
-Create a conda environment and install from PyPI:
+Requires Python 3.10+. Install with `uv` (recommended) or `pip`:
 
 ```bash
-conda create -n quicklook python=3.12
-conda activate quicklook
+# uv (recommended)
+uv tool install quicklook-package
+
+# or pip
 pip install -U quicklook-package
 ```
 
@@ -51,7 +53,16 @@ pip install -U "quicklook-package[dev]"
 
 ## Usage
 
-### Command line (Typer CLI)
+### Command line
+
+The `ql` CLI provides subcommands for analysis and post-processing:
+
+```bash
+ql --help          # show commands: run, read-tls, rank-tls
+ql run --help      # full analysis options
+ql read-tls --help  # extract TLS results to CSV
+ql rank-tls --help  # filter and rank candidates
+```
 
 ```bash
 # Basic run on the latest TESS sector
@@ -79,9 +90,10 @@ ql run --name TOI-125.01 --each-pipeline --save
 ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 ```
 
-> **Note:** The old `ql` (argparse) syntax still works via automatic redirect.
-> Underscore flags (`--flatten_method`) are also accepted as hyphen flags
-> (`--flatten-method`) and vice versa.
+> **Note:** Old-style `-save` / `-verbose` flags and the standalone
+> `read_tls` / `rank_tls` commands still work via automatic redirect.
+> Underscore flags (`--flatten_method`) are interchangeable with hyphens
+> (`--flatten-method`).
 
 ### Python API
 
