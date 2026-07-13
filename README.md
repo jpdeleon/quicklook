@@ -26,31 +26,47 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 
 ## Installation
 
-Requires Python 3.10+. Install with `uv` (recommended) or `pip`:
+Requires Python 3.10+. Choose either `uv` (recommended) or `pip` below.
+
+<details open>
+<summary><strong>uv (recommended)</strong></summary>
 
 ```bash
-# uv (recommended)
+# Command-line application
 uv tool install quicklook-package
 
-# or pip
-pip install -U quicklook-package
+# Or install this repository, including development dependencies
+uv sync --extra dev
+
+# Optional extras for a repository installation
+uv sync --extra gui        # Web GUI
+uv sync --extra gpu        # GPU transit search (CUDA 12)
+uv sync --extra notebooks  # Jupyter notebooks
 ```
 
-### Optional extras
+Run commands from a repository installation with `uv run`, for example
+`uv run quicklook --help`.
+
+</details>
+
+<details>
+<summary><strong>pip</strong></summary>
 
 ```bash
-# Web GUI
-pip install -U "quicklook-package[gui]"
+# Command-line application
+python -m pip install -U quicklook-package
 
-# GPU-accelerated transit search (CUDA 12, including toolkit headers)
-uv sync --extra gpu
-
-# Jupyter notebooks
-pip install -U "quicklook-package[notebooks]"
-
-# Development (testing, linting, formatting)
-pip install -U "quicklook-package[dev]"
+# Optional extras
+python -m pip install -U "quicklook-package[gui]"       # Web GUI
+python -m pip install -U "quicklook-package[gpu]"       # GPU transit search (CUDA 12)
+python -m pip install -U "quicklook-package[notebooks]" # Jupyter notebooks
+python -m pip install -U "quicklook-package[dev]"       # Development tools
 ```
+
+Once installed, run commands directly, for example `quicklook --help` or
+`ql --help`.
+
+</details>
 
 With the `gpu` extra installed, QuickLook uses GTLS when a CUDA device is
 visible and automatically falls back to the standard CPU TLS implementation

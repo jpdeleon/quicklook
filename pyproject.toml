@@ -72,7 +72,7 @@ notebooks = [
 ]
 
 [tool.uv.sources]
-gputls = { path = "../ext_tools/GTLS", editable = true }
+gputls = { git = "https://github.com/jpdeleon/GTLS.git" }
 
 [project.urls]
 Homepage = "https://github.com/jpdeleon/quicklook"

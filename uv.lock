@@ -1637,7 +1637,7 @@ wheels = [
 [[package]]
 name = "gputls"
 version = "0.5.1"
-source = { editable = "../ext_tools/GTLS" }
+source = { git = "https://github.com/jpdeleon/GTLS.git#c8cd6209c3add315f9620e0c4acffdbd942930c1" }
 dependencies = [
     { name = "batman-package" },
     { name = "numba" },
@@ -1647,19 +1647,6 @@ dependencies = [
     { name = "setuptools", marker = "python_full_version >= '3.12'" },
     { name = "tqdm" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "batman-package" },
-    { name = "cupy-cuda11x", marker = "extra == 'cuda11'" },
-    { name = "cupy-cuda12x", marker = "extra == 'cuda12'" },
-    { name = "numba" },
-    { name = "numpy" },
-    { name = "pynvml" },
-    { name = "setuptools", marker = "python_full_version >= '3.12'" },
-    { name = "tqdm" },
-]
-provides-extras = ["cuda11", "cuda12"]
 
 [[package]]
 name = "h11"
@@ -4425,7 +4412,7 @@ requires-dist = [
     { name = "flask" },
     { name = "flask", marker = "extra == 'gui'" },
     { name = "flask-sock", marker = "extra == 'gui'" },
-    { name = "gputls", marker = "extra == 'gpu'", editable = "../ext_tools/GTLS" },
+    { name = "gputls", marker = "extra == 'gpu'", git = "https://github.com/jpdeleon/GTLS.git" },
     { name = "h5py", specifier = ">=3.10" },
     { name = "ipykernel", marker = "extra == 'notebooks'" },
     { name = "jupyter", marker = "extra == 'notebooks'" },
