@@ -1042,16 +1042,24 @@ class TessQuickLook:
         else:
             logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
         gpu_tls = _get_gpu_tls()
-        tls_engine = gpu_tls or tls
-        logger.info("Running GTLS on GPU" if gpu_tls else "Running TLS on CPU")
-        model = tls_engine(
+        engine_args = (
             self.flat_lc.time.value,
             self.flat_lc.flux.value,
             flux_err,
-            verbose=self.verbose,
         )
-        result = model.power(**power_kwargs)
-        self.tls_results = _adapt_gtls_result(result, model) if gpu_tls else result
+        if gpu_tls:
+            logger.info("Running GTLS on GPU")
+            try:
+                model = gpu_tls(*engine_args, verbose=self.verbose)
+                result = model.power(**power_kwargs)
+                self.tls_results = _adapt_gtls_result(result, model)
+                return
+            except Exception as exc:
+                logger.warning(f"GTLS failed ({exc}); retrying with CPU TLS")
+
+        logger.info("Running TLS on CPU")
+        model = tls(*engine_args, verbose=self.verbose)
+        self.tls_results = model.power(**power_kwargs)
 
     def _stellar_prior_kwargs(self):
         """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.

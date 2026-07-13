@@ -43,6 +43,47 @@ def test_cpu_tls_is_fallback_when_gpu_detection_fails(monkeypatch):
     assert tql._get_gpu_tls() is None
 
 
+def test_cpu_tls_is_fallback_when_gtls_execution_fails(monkeypatch):
+    cpu_result = object()
+
+    class BrokenGTLS:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def power(self, **kwargs):
+            raise RuntimeError("Failed to find CUDA headers")
+
+    class RecordingTLS:
+        calls = 0
+
+        def __init__(self, *args, **kwargs):
+            RecordingTLS.calls += 1
+
+        def power(self, **kwargs):
+            return cpu_result
+
+    monkeypatch.setattr(tql, "_get_gpu_tls", lambda: BrokenGTLS)
+    monkeypatch.setattr(tql, "tls", RecordingTLS)
+
+    values = np.linspace(0, 1, 10)
+    qlook = tql.TessQuickLook.__new__(tql.TessQuickLook)
+    qlook.flat_lc = types.SimpleNamespace(
+        time=types.SimpleNamespace(value=values),
+        flux=types.SimpleNamespace(value=np.ones(10)),
+        flux_err=types.SimpleNamespace(value=np.full(10, 0.01)),
+    )
+    qlook.Porb_min = 0.5
+    qlook.Porb_max = 10.0
+    qlook.tls_use_threads = None
+    qlook.use_star_priors = False
+    qlook.verbose = False
+
+    qlook.run_tls()
+
+    assert qlook.tls_results is cpu_result
+    assert RecordingTLS.calls == 1
+
+
 def test_gtls_result_is_adapted_to_tls_conventions():
     result = types.SimpleNamespace(
         depth=0.01,

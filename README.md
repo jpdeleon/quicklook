@@ -54,7 +54,7 @@ pip install -U "quicklook-package[dev]"
 
 With the `gpu` extra installed, QuickLook uses GTLS when a CUDA device is
 visible and automatically falls back to the standard CPU TLS implementation
-when GTLS or a GPU is unavailable.
+when GTLS or a GPU is unavailable, or when GPU execution fails to initialize.
 
 ## Try it on Google Colab
 
