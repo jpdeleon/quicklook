@@ -177,6 +177,78 @@ def test_with_mock_light_curve(mock_light_curve, planet_inputs):
             assert ql.sector == inputs["sector"]
 
 
+def _bare_ql(raw_lc, toi_epoch, toi_period, toi_dur, sector=1, all_sectors=None):
+    """Build a TessQuickLook without running __init__ (no network).
+
+    Only the attributes touched by ``get_transit_mask`` and
+    ``_warn_no_transits_in_sector`` are populated.
+    """
+    ql = TessQuickLook.__new__(TessQuickLook)
+    ql.raw_lc = raw_lc
+    ql.toi_epoch = toi_epoch
+    ql.toi_period = toi_period
+    ql.toi_dur = toi_dur
+    ql.sector = sector
+    ql.all_sectors = all_sectors if all_sectors is not None else [sector]
+    ql.ephem_source = "TFOP"
+    return ql
+
+
+def test_get_transit_mask_empty_when_transit_outside_baseline(mock_light_curve):
+    """A long-period ephemeris whose transit misses the sector yields no mask.
+
+    Mirrors TOI-2074 (P=177.6 d): the transit does not fall in a single
+    ~27-day sector, so the mask must be all-False rather than raising.
+    """
+    ql = _bare_ql(
+        mock_light_curve,
+        toi_epoch=np.array((1000.0, 0.01)),  # far outside the 0-27 d baseline
+        toi_period=np.array((177.58, 0.005)),
+        toi_dur=np.array((0.2, 0.01)),
+    )
+
+    tmask = ql.get_transit_mask()
+
+    assert tmask.dtype == bool
+    assert len(tmask) == len(mock_light_curve.time)
+    assert tmask.sum() == 0
+
+
+def test_get_transit_mask_flags_transit_within_baseline(mock_light_curve):
+    """A short-period ephemeris inside the baseline flags in-transit cadences."""
+    ql = _bare_ql(
+        mock_light_curve,
+        toi_epoch=np.array((5.0, 0.01)),  # within the 0-27 d baseline
+        toi_period=np.array((3.0, 0.005)),
+        toi_dur=np.array((0.2, 0.01)),
+    )
+
+    tmask = ql.get_transit_mask()
+
+    assert tmask.sum() > 0
+
+
+def test_warn_no_transits_in_sector_does_not_raise(mock_light_curve):
+    """Zero predicted transits warn (with guidance) instead of raising."""
+    ql = _bare_ql(
+        mock_light_curve,
+        toi_epoch=np.array((1000.0, 0.01)),
+        toi_period=np.array((177.58, 0.005)),
+        toi_dur=np.array((0.2, 0.01)),
+        sector=77,
+        all_sectors=[16, 23, 50, 77],
+    )
+
+    with patch("quicklook.tql.logger.warning") as mock_warn:
+        ql._warn_no_transits_in_sector()  # must not raise
+
+    mock_warn.assert_called_once()
+    msg = mock_warn.call_args[0][0]
+    assert "sector 77" in msg
+    assert "Nearest predicted transit" in msg
+    assert "[16, 23, 50, 77]" in msg
+
+
 def test_format_sector_summary_single_sector():
     assert TessQuickLook._format_sector_summary(56, [56]) == "56"
 

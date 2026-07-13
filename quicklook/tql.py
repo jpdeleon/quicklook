@@ -15,7 +15,7 @@ from pathlib import Path
 from time import time as timer
 from loguru import logger
 from importlib.resources import files
-from quicklook.exceptions import NoDataError, InvalidInputError, PipelineError
+from quicklook.exceptions import NoDataError, InvalidInputError
 import matplotlib.pyplot as pl
 import numpy as np
 import pandas as pd
@@ -155,10 +155,15 @@ class TessQuickLook:
             self.window_length = window_length
 
         self.tmask = self.get_transit_mask()
-        err_msg = "No masked transits"
+        # A known ephemeris that predicts no transit within the downloaded
+        # data is expected for long-period planets whose transit simply does
+        # not fall in this ~27-day sector (e.g. TOI-2074, P=177.6 d). This is
+        # not a failure: flattening, the TLS search, and the plots still run.
+        # Warn (pointing at the nearest predicted transit) and continue rather
+        # than aborting the whole quicklook.
         if self.toi_epoch is not None and self.tmask.sum() == 0:
-            raise PipelineError(err_msg)
-        if self.mask_ephem:
+            self._warn_no_transits_in_sector()
+        if self.mask_ephem and self.tmask.sum() > 0:
             if self.verbose:
                 logger.info(
                     f"Masking transits in raw lightcurve using {self.ephem_source} ephem..."
@@ -1169,6 +1174,37 @@ class TessQuickLook:
             # If no transit ephemeris is provided, create an empty mask
             tmask = np.zeros_like(self.raw_lc.time.value, dtype=bool)
         return tmask
+
+    def _warn_no_transits_in_sector(self):
+        """Warn that the known ephemeris predicts no transit in the data.
+
+        For long-period planets the transit often falls outside the ~27-day
+        TESS sector that was downloaded, so there is simply nothing to mask.
+        This is expected, not an error: the quicklook (flattening, TLS search,
+        plots) still runs. Report the sector's time coverage and the nearest
+        predicted transit so the user can pick a sector that actually contains
+        a transit.
+        """
+        time = self.raw_lc.time.value
+        t_start, t_end = float(np.nanmin(time)), float(np.nanmax(time))
+        epoch, period = float(self.toi_epoch[0]), float(self.toi_period[0])
+        msg = (
+            f"No transit predicted by the {self.ephem_source} ephem falls "
+            f"within sector {self.sector} (BTJD {t_start:.2f}-{t_end:.2f}); "
+            "nothing to mask."
+        )
+        if period > 0:
+            # Nearest transit epoch to the middle of the observed baseline.
+            t_mid = 0.5 * (t_start + t_end)
+            nearest = epoch + round((t_mid - epoch) / period) * period
+            gap = max(t_start - nearest, nearest - t_end, 0.0)
+            msg += (
+                f" Nearest predicted transit at BTJD {nearest:.2f} "
+                f"({gap:.1f} d outside coverage, P={period:.4f} d)."
+            )
+        if self.all_sectors is not None and len(self.all_sectors) > 1:
+            msg += f" Try another sector: {self.all_sectors}."
+        logger.warning(msg)
 
     def _summary_sections(self):
         """Build the summary as structured (label, value) rows per section.
