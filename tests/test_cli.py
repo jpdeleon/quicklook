@@ -1,5 +1,6 @@
 """Tests for the unified Typer CLI (quicklook.cli.app)."""
 
+from click import unstyle
 from typer.testing import CliRunner
 from quicklook.cli.app import app
 
@@ -117,10 +118,11 @@ def test_run_with_save_skips_headless_check(monkeypatch):
 
 def test_gui_help_succeeds():
     result = runner.invoke(app, ["gui", "--help"])
+    output = unstyle(result.output)
     assert result.exit_code == 0
-    assert "web" in result.output.lower() or "gui" in result.output.lower()
-    assert "--host" in result.output
-    assert "--port" in result.output
+    assert "web" in output.lower() or "gui" in output.lower()
+    assert "--host" in output
+    assert "--port" in output
 
 
 def test_gui_invokes_run_gui_with_options(monkeypatch):
