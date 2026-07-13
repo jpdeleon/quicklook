@@ -42,12 +42,19 @@ pip install -U quicklook-package
 # Web GUI
 pip install -U "quicklook-package[gui]"
 
+# GPU-accelerated transit search (CUDA 12)
+uv sync --extra gpu
+
 # Jupyter notebooks
 pip install -U "quicklook-package[notebooks]"
 
 # Development (testing, linting, formatting)
 pip install -U "quicklook-package[dev]"
 ```
+
+With the `gpu` extra installed, QuickLook uses GTLS when a CUDA device is
+visible and automatically falls back to the standard CPU TLS implementation
+when GTLS or a GPU is unavailable.
 
 ## Try it on Google Colab
 

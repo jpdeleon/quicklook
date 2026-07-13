@@ -20,6 +20,13 @@ def test_cpu_tls_is_fallback_when_no_cuda_device_is_visible(monkeypatch):
     assert tql._get_gpu_tls() is None
 
 
+def test_cpu_tls_is_fallback_when_gtls_is_not_installed(monkeypatch):
+    monkeypatch.setattr(tql, "_gpu_device_count", lambda: 1)
+    monkeypatch.setitem(sys.modules, "gputls", None)
+
+    assert tql._get_gpu_tls() is None
+
+
 def test_cpu_tls_is_fallback_when_gpu_detection_fails(monkeypatch):
     def fail_detection():
         raise RuntimeError("CUDA driver unavailable")
