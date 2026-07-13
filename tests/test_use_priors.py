@@ -203,14 +203,28 @@ def test_use_priors_handles_missing_exofop(monkeypatch):
     assert "R_star" not in kw and "M_star" not in kw
 
 
-def test_cli_use_priors_flag_wired():
-    """Regression: --use_priors flag and TessQuickLook plumbing must be live
-    (the flag was previously commented-out in cli/ql.py)."""
-    import quicklook.cli.ql as ql_mod
+def test_cli_use_priors_flag_wired(monkeypatch):
+    """The unified Typer option reaches ``TessQuickLook``."""
+    from typer.testing import CliRunner
 
-    src = open(ql_mod.__file__).read()
-    assert '"--use_priors"' in src
-    assert "use_star_priors=args.use_priors" in src
+    import quicklook.tql as tql_mod
+    from quicklook.cli.app import app
+
+    calls = {}
+
+    class FakeQuickLook:
+        def __init__(self, **kwargs):
+            calls.update(kwargs)
+
+        def plot_tql(self):
+            return None
+
+    monkeypatch.setattr(tql_mod, "TessQuickLook", FakeQuickLook)
+
+    result = CliRunner().invoke(app, ["run", "--name", "TOI-1234", "--use-priors", "--save"])
+
+    assert result.exit_code == 0, result.output
+    assert calls["use_star_priors"] is True
 
 
 def test_gui_use_priors_checkbox_wired():

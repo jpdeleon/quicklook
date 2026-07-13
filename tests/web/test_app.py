@@ -2,6 +2,15 @@ import pytest
 from quicklook.app import app
 
 
+def test_import_does_not_replace_process_streams():
+    """Importing the Flask app must not retain pytest/Typer capture streams."""
+    import sys
+    import quicklook.app.app as app_module
+
+    assert sys.stdout is not app_module._tls_stdout
+    assert sys.stderr is not app_module._tls_stderr
+
+
 @pytest.fixture
 def client():
     # app.config["TESTING"] = True

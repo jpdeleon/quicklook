@@ -25,13 +25,28 @@ def test_phase_xlim_rejects_invalid_delta(bad_value):
         _phase_window(0, 0.02, bad_value)
 
 
-def test_cli_phase_xlim_flag_wired():
-    import quicklook.cli.ql as ql_mod
+def test_cli_phase_xlim_flag_wired(monkeypatch):
+    """The unified Typer option reaches ``TessQuickLook``."""
+    from typer.testing import CliRunner
 
-    src = open(ql_mod.__file__).read()
-    assert '"--phase_xlim"' in src
-    assert "phase_xlim=args.phase_xlim" in src
-    assert "args.phase_xlim" in src
+    import quicklook.tql as tql_mod
+    from quicklook.cli.app import app
+
+    calls = {}
+
+    class FakeQuickLook:
+        def __init__(self, **kwargs):
+            calls.update(kwargs)
+
+        def plot_tql(self):
+            return None
+
+    monkeypatch.setattr(tql_mod, "TessQuickLook", FakeQuickLook)
+
+    result = CliRunner().invoke(app, ["run", "--name", "TOI-1234", "--phase-xlim", "0.1", "--save"])
+
+    assert result.exit_code == 0, result.output
+    assert calls["phase_xlim"] == pytest.approx(0.1)
 
 
 def test_gui_phase_xlim_input_wired():

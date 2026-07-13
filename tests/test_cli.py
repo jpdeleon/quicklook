@@ -91,23 +91,28 @@ def test_run_aborts_on_headless_without_save():
             os.environ["DISPLAY"] = had_display
 
 
-def test_run_with_save_skips_headless_check():
-    """With --save the headless check is bypassed. The pipeline may still fail
-    for other reasons, but it shouldn't exit with headless-abort code 1."""
-    import os
-    from loguru import logger
+def test_run_with_save_skips_headless_check(monkeypatch):
+    """With --save, a headless run reaches the analysis pipeline."""
+    import quicklook.tql as tql_mod
 
-    logger.disable("quicklook")
-    had_display = os.environ.pop("DISPLAY", None)
-    try:
-        result = runner.invoke(
-            app, ["run", "--name", "TOI-6109", "--save", "--overwrite", "--verbose"]
-        )
-        assert result.exit_code != 1, f"unexpected headless abort: {result.output}"
-    finally:
-        if had_display is not None:
-            os.environ["DISPLAY"] = had_display
-        logger.enable("quicklook")
+    calls = {}
+
+    class FakeQuickLook:
+        def __init__(self, **kwargs):
+            calls.update(kwargs)
+
+        def plot_tql(self):
+            calls["plot_tql"] = True
+
+    monkeypatch.setattr(tql_mod, "TessQuickLook", FakeQuickLook)
+    monkeypatch.delenv("DISPLAY", raising=False)
+
+    result = runner.invoke(app, ["run", "--name", "TOI-6109", "--save"])
+
+    assert result.exit_code == 0, result.output
+    assert calls["savefig"] is True
+    assert calls["savetls"] is True
+    assert calls["plot_tql"] is True
 
 
 def test_gui_help_succeeds():

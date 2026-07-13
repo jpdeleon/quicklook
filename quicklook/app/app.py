@@ -61,6 +61,9 @@ class _ThreadLocalStream(io.TextIOBase):
     def set_stream(self, stream):
         self._local.stream = stream
 
+    def set_fallback(self, stream):
+        self._fallback = stream
+
     def clear_stream(self):
         self._local.stream = None
 
@@ -84,8 +87,6 @@ class _ThreadLocalStream(io.TextIOBase):
 
 _tls_stdout = _ThreadLocalStream(_real_stdout)
 _tls_stderr = _ThreadLocalStream(_real_stderr)
-sys.stdout = _tls_stdout
-sys.stderr = _tls_stderr
 
 
 # ---------------------------------------------------------------------------
@@ -1414,7 +1415,24 @@ def run_gui(host="127.0.0.1", port=5000, debug=None):
     """
     if debug is None:
         debug = os.environ.get("QUICKLOOK_DEBUG", "").lower() in ("1", "true", "yes")
-    app.run(host=host, port=port, debug=debug, threaded=True)
+
+    # Route output only while the server is running. Installing these wrappers
+    # at module import time captured temporary streams owned by pytest, Typer,
+    # and other embedders; once those streams closed, later writes failed with
+    # ``ValueError: I/O operation on closed file``.
+    previous_stdout = sys.stdout
+    previous_stderr = sys.stderr
+    _tls_stdout.set_fallback(previous_stdout)
+    _tls_stderr.set_fallback(previous_stderr)
+    sys.stdout = _tls_stdout
+    sys.stderr = _tls_stderr
+    try:
+        app.run(host=host, port=port, debug=debug, threaded=True)
+    finally:
+        if sys.stdout is _tls_stdout:
+            sys.stdout = previous_stdout
+        if sys.stderr is _tls_stderr:
+            sys.stderr = previous_stderr
 
 
 def main():
