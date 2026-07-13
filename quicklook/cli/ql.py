@@ -1,7 +1,9 @@
 #!/usr/bin/env python
-"""Target-name sanitization and CLI redirect to the unified Typer app."""
+"""Target-name sanitization shared by the CLI and web GUI.
 
-import sys as _sys
+The user-facing commands live in :mod:`quicklook.cli.app` (the unified Typer
+app exposed as the ``quicklook`` and ``ql`` console scripts).
+"""
 
 from quicklook.exceptions import InvalidInputError
 
@@ -34,15 +36,3 @@ def sanitize_target_name(name: str) -> str:
     if any(char in name for char in ("/", "\\", "\x00")) or ".." in name or name.startswith("."):
         raise InvalidInputError(f"Invalid target name: {name!r}")
     return name
-
-
-def main():
-    """Redirect to the unified Typer CLI (``ql run``)."""
-    _sys.argv = [_sys.argv[0], "run"] + _sys.argv[1:]
-    from quicklook.cli.app import app
-
-    app()
-
-
-if __name__ == "__main__":
-    main()

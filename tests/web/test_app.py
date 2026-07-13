@@ -88,10 +88,23 @@ def test_debug_is_off_unless_env_var_is_set(monkeypatch):
     monkeypatch.setattr(app_module.app, "run", lambda **kw: captured.update(kw))
     app_module.main()
     assert captured["debug"] is False
-    assert "host" not in captured  # loopback-only bind
+    # loopback-only bind: default host must never reach beyond localhost
+    assert captured.get("host", "127.0.0.1") == "127.0.0.1"
 
     monkeypatch.setenv("QUICKLOOK_DEBUG", "1")
     app_module.main()
+    assert captured["debug"] is True
+
+
+def test_run_gui_forwards_host_port_debug(monkeypatch):
+    """run_gui passes host/port/debug straight through to Flask's app.run."""
+    import quicklook.app.app as app_module
+
+    captured = {}
+    monkeypatch.setattr(app_module.app, "run", lambda **kw: captured.update(kw))
+    app_module.run_gui(host="0.0.0.0", port=8080, debug=True)
+    assert captured["host"] == "0.0.0.0"
+    assert captured["port"] == 8080
     assert captured["debug"] is True
 
 
@@ -158,3 +171,26 @@ def test_worker_closes_figure_when_the_job_raises(monkeypatch, tmp_path):
     info = _drive_one_job(app_module, monkeypatch, tmp_path, plot_tql)
     assert info["status"] == "error"
     assert pl.get_fignums() == []
+
+
+def test_worker_log_preserves_interleaved_logger_and_stdout(monkeypatch, tmp_path):
+    """Logger and stdout must append without overwriting each other."""
+    from loguru import logger
+    import quicklook.app.app as app_module
+
+    def plot_tql(**kwargs):
+        quicklook_logger = logger.patch(lambda record: record.update(name="quicklook.tql"))
+        quicklook_logger.info("logger before stdout")
+        app_module._tls_stdout.write("stdout between logger messages\n")
+        app_module._tls_stdout.flush()
+        quicklook_logger.info("logger after stdout")
+
+    info = _drive_one_job(app_module, monkeypatch, tmp_path, plot_tql)
+    log_text = (tmp_path / "FIG-TEST.log").read_text()
+
+    assert info["status"] == "done"
+    assert "logger before stdout" in log_text
+    assert "stdout between logger messages" in log_text
+    assert "logger after stdout" in log_text
+    assert log_text.index("logger before stdout") < log_text.index("stdout between logger messages")
+    assert log_text.index("stdout between logger messages") < log_text.index("logger after stdout")

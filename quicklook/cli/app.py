@@ -600,5 +600,31 @@ def rank_tls(
         typer.echo(f"Copied: {src_path} -> {dst_path}")
 
 
+@app.command()
+def gui(
+    host: str = typer.Option("127.0.0.1", "--host", help="Interface to bind (default: localhost)"),
+    port: int = typer.Option(5000, "--port", help="Port to listen on"),
+    debug: bool = typer.Option(
+        False, "--debug", help="Enable the Werkzeug debugger and auto-reloader (dev only)"
+    ),
+):
+    """Launch the QuickLook web GUI (Flask). Needs the optional gui extra.
+
+    Open http://<host>:<port> in a browser to run analyses interactively.
+    The Werkzeug debugger exposes an interactive console, so ``--debug`` is
+    opt-in; leave it off on any host other users can reach.
+
+    Examples:
+
+        quicklook gui
+        quicklook gui --host 0.0.0.0 --port 8080
+    """
+    from quicklook.app.app import run_gui
+
+    # An explicit --debug forces the debugger on; without it, defer to the
+    # QUICKLOOK_DEBUG environment variable handled inside run_gui.
+    run_gui(host=host, port=port, debug=True if debug else None)
+
+
 if __name__ == "__main__":
     app()

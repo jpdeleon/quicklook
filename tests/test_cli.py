@@ -108,3 +108,42 @@ def test_run_with_save_skips_headless_check():
         if had_display is not None:
             os.environ["DISPLAY"] = had_display
         logger.enable("quicklook")
+
+
+def test_gui_help_succeeds():
+    result = runner.invoke(app, ["gui", "--help"])
+    assert result.exit_code == 0
+    assert "web" in result.output.lower() or "gui" in result.output.lower()
+    assert "--host" in result.output
+    assert "--port" in result.output
+
+
+def test_gui_invokes_run_gui_with_options(monkeypatch):
+    """`quicklook gui --host ... --port ...` forwards to run_gui without
+    actually starting the blocking Flask server."""
+    import quicklook.app.app as gui_module
+
+    calls = {}
+
+    def fake_run_gui(host="127.0.0.1", port=5000, debug=None):
+        calls.update(host=host, port=port, debug=debug)
+
+    monkeypatch.setattr(gui_module, "run_gui", fake_run_gui)
+    result = runner.invoke(app, ["gui", "--host", "0.0.0.0", "--port", "8080"])
+    assert result.exit_code == 0, result.output
+    assert calls["host"] == "0.0.0.0"
+    assert calls["port"] == 8080
+
+
+def test_gui_debug_flag_forwarded(monkeypatch):
+    import quicklook.app.app as gui_module
+
+    calls = {}
+
+    def fake_run_gui(host="127.0.0.1", port=5000, debug=None):
+        calls.update(host=host, port=port, debug=debug)
+
+    monkeypatch.setattr(gui_module, "run_gui", fake_run_gui)
+    result = runner.invoke(app, ["gui", "--debug"])
+    assert result.exit_code == 0, result.output
+    assert calls["debug"] is True

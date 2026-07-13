@@ -281,7 +281,12 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 
         # Open the log file and set up streams — file stays open until the
         # outermost finally block so no concurrent write hits a closed FD.
-        log_fh = open(log_file, "w", buffering=1, encoding="utf-8")
+        # Keep stdout/stderr in append mode too. Loguru uses a separate
+        # append-mode descriptor below; a normal ``w`` descriptor would keep
+        # its own offset and overwrite Loguru messages written in between.
+        log_fh = open(log_file, "a", buffering=1, encoding="utf-8")
+        log_fh.seek(0)
+        log_fh.truncate()
         _tls_stdout.set_stream(log_fh)
         _tls_stderr.set_stream(log_fh)
 
@@ -1392,11 +1397,29 @@ def compare():
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def run_gui(host="127.0.0.1", port=5000, debug=None):
+    """Launch the Flask development server for the QuickLook GUI.
+
+    Parameters
+    ----------
+    host : str
+        Interface to bind to (default ``127.0.0.1``, localhost only).
+    port : int
+        Port to listen on (default ``5000``).
+    debug : bool | None
+        Enable the Werkzeug debugger and auto-reloader. ``None`` (the default)
+        consults the ``QUICKLOOK_DEBUG`` environment variable. The debugger
+        exposes an interactive console (arbitrary code execution) to anyone who
+        can reach the port, so it is opt-in.
+    """
+    if debug is None:
+        debug = os.environ.get("QUICKLOOK_DEBUG", "").lower() in ("1", "true", "yes")
+    app.run(host=host, port=port, debug=debug, threaded=True)
+
+
 def main():
-    # The Werkzeug debugger exposes an interactive console (arbitrary code
-    # execution) to anyone who can reach the port, so it is opt-in.
-    debug = os.environ.get("QUICKLOOK_DEBUG", "").lower() in ("1", "true", "yes")
-    app.run(debug=debug, threaded=True)
+    """Entry point for the ``ql-gui`` console script."""
+    run_gui()
 
 
 if __name__ == "__main__":

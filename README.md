@@ -57,14 +57,19 @@ pip install -U "quicklook-package[dev]"
 
 ### Command line
 
-The `ql` CLI provides subcommands for analysis and post-processing:
+A single `quicklook` command groups every subcommand (the shorter `ql` alias
+is equivalent):
 
 ```bash
-ql --help          # show commands: run, read-tls, rank-tls
-ql run --help      # full analysis options
-ql read-tls --help  # extract TLS results to CSV
-ql rank-tls --help  # filter and rank candidates
+uv run quicklook --help       # show commands: run, read-tls, rank-tls, gui
+uv run quicklook run --help   # full analysis options
+uv run quicklook read-tls --help  # extract TLS results to CSV
+uv run quicklook rank-tls --help  # filter and rank candidates
+uv run quicklook gui --help   # launch the web GUI
 ```
+
+Drop the `uv run` prefix once the package is installed on your `PATH`
+(e.g. `quicklook run ...` or `ql run ...`).
 
 ```bash
 # Basic run on the latest TESS sector
@@ -128,22 +133,25 @@ locally via effective-PSF (ePSF) photometry.
 ### Web GUI
 
 ```bash
-ql-gui
+uv run quicklook gui                       # http://127.0.0.1:5000
+uv run quicklook gui --host 0.0.0.0 --port 8080
 ```
 
 Open http://127.0.0.1:5000 in your browser. Enter a target, adjust parameters, and click **Run QuickLook**. Progress is streamed live via WebSocket. Supports single targets, batch submission, and each-sector mode.
 
 ![QuickLook Web GUI](docs/img/ql-gui.png)
 
-The Flask debugger is off by default. Set `QUICKLOOK_DEBUG=1` to enable it and
-the auto-reloader while developing:
+The Flask debugger is off by default. Pass `--debug` (or set `QUICKLOOK_DEBUG=1`)
+to enable it and the auto-reloader while developing:
 
 ```bash
-QUICKLOOK_DEBUG=1 ql-gui
+uv run quicklook gui --debug
+QUICKLOOK_DEBUG=1 uv run quicklook gui
 ```
 
-Leave it unset on any host other users can reach — the Werkzeug debugger
-exposes an interactive console to whoever can open the port.
+Leave it off on any host other users can reach — the Werkzeug debugger
+exposes an interactive console to whoever can open the port. The standalone
+`ql-gui` command remains available as an alias for `quicklook gui`.
 
 ## Output figure
 
@@ -169,12 +177,14 @@ The 9-panel figure shows:
 
 ## CLI tools
 
+All subcommands are available under either `quicklook` or the shorter `ql` alias.
+
 | Command | Description |
 |---------|-------------|
-| `ql run` | Run the full QuickLook pipeline on a target |
-| `ql read-tls` | Extract TLS results from a directory of `.h5` files into a CSV |
-| `ql rank-tls` | Filter and rank candidates by SDE from the CSV output |
-| `ql-gui` | Launch the web GUI (requires `[gui]` extra) |
+| `quicklook run` | Run the full QuickLook pipeline on a target |
+| `quicklook read-tls` | Extract TLS results from a directory of `.h5` files into a CSV |
+| `quicklook rank-tls` | Filter and rank candidates by SDE from the CSV output |
+| `quicklook gui` | Launch the web GUI (requires `[gui]` extra); also available as `ql-gui` |
 
 ## Batch processing
 

@@ -97,7 +97,8 @@ ignore = [
 ]
 
 [project.scripts]
-ql = "quicklook.cli.ql:main"
+quicklook = "quicklook.cli.app:app"
+ql = "quicklook.cli.app:app"
 read_tls = "quicklook.cli.read_tls:main"
 rank_tls = "quicklook.cli.rank_tls:main"
 ql-gui = "quicklook.app.app:main"
