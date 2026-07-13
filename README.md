@@ -42,7 +42,7 @@ pip install -U quicklook-package
 # Web GUI
 pip install -U "quicklook-package[gui]"
 
-# GPU-accelerated transit search (CUDA 12)
+# GPU-accelerated transit search (CUDA 12, including toolkit headers)
 uv sync --extra gpu
 
 # Jupyter notebooks

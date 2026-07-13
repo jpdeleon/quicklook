@@ -1,9 +1,16 @@
 import sys
 import types
+from pathlib import Path
 
 import numpy as np
 
 from quicklook import tql
+
+
+def test_gpu_extra_installs_cuda_toolkit_headers():
+    pyproject = (Path(__file__).parents[1] / "pyproject.toml").read_text()
+
+    assert 'gpu = ["gputls", "cupy-cuda12x[ctk]"]' in pyproject
 
 
 def test_gpu_tls_is_selected_when_cuda_device_is_visible(monkeypatch):

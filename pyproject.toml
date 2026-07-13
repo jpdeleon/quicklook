@@ -63,7 +63,7 @@ dev = [
 
 gui = ["flask", "flask-sock", "pytest-flask"]
 
-gpu = ["gputls[cuda12]"]
+gpu = ["gputls", "cupy-cuda12x[ctk]"]
 
 notebooks = [
     "ipykernel",
