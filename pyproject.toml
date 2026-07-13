@@ -63,11 +63,16 @@ dev = [
 
 gui = ["flask", "flask-sock", "pytest-flask"]
 
+gpu = ["gputls[cuda12]"]
+
 notebooks = [
     "ipykernel",
     "jupyter",
     "nbconvert"
 ]
+
+[tool.uv.sources]
+gputls = { path = "../ext_tools/GTLS", editable = true }
 
 [project.urls]
 Homepage = "https://github.com/jpdeleon/quicklook"

@@ -60,6 +60,7 @@ def _build_qlook(monkeypatch, use_star_priors, star_params):
     from quicklook import tql as tql_mod
 
     monkeypatch.setattr(tql_mod, "tls", _RecordingTLS)
+    monkeypatch.setattr(tql_mod, "_get_gpu_tls", lambda: None)
     monkeypatch.setattr(
         tql_mod,
         "get_params_from_exofop",

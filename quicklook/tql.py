@@ -69,6 +69,74 @@ use_style("science")
 __all__ = ["TessQuickLook"]
 
 
+class _TLSResult(dict):
+    """TLS-compatible mapping used to normalize GTLS results."""
+
+    def __getattr__(self, name):
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+
+def _gpu_device_count():
+    """Return the number of CUDA devices visible to CuPy."""
+    import cupy
+
+    return cupy.cuda.runtime.getDeviceCount()
+
+
+def _get_gpu_tls():
+    """Return GTLS when it is installed and a CUDA GPU is visible."""
+    try:
+        device_count = _gpu_device_count()
+    except Exception as exc:
+        logger.debug(f"GPU TLS unavailable ({exc}); using CPU TLS")
+        return None
+
+    if device_count < 1:
+        logger.info("No CUDA GPU detected; using CPU TLS")
+        return None
+
+    try:
+        from gputls import gtls
+    except Exception as exc:
+        logger.warning(f"CUDA GPU detected but GTLS could not be loaded ({exc}); using CPU TLS")
+        return None
+
+    return gtls
+
+
+def _adapt_gtls_result(result, model):
+    """Expose a GTLS result through the mapping/attribute API QuickLook uses."""
+    values = vars(result).copy()
+    fractional_depth = float(values["depth"])
+    values["depth"] = 1.0 - fractional_depth
+    values["rp_rs"] = np.sqrt(max(0.0, fractional_depth))
+    values["odd_even_mismatch"] = np.nan
+
+    periods = np.asarray(values["periods"])
+    power = np.asarray(values["power"])
+    try:
+        peak = int(np.nanargmax(power))
+        half_max = power[peak] / 2
+        lower = np.flatnonzero(power[:peak] <= half_max)
+        upper = np.flatnonzero(power[peak + 1 :] <= half_max)
+        if len(lower) and len(upper):
+            lo = lower[-1]
+            hi = peak + 1 + upper[0]
+            values["period_uncertainty"] = 0.5 * (periods[hi] - periods[lo])
+        else:
+            values["period_uncertainty"] = np.inf
+    except (ValueError, IndexError):
+        values["period_uncertainty"] = np.inf
+
+    model_flux, model_phase, _ = model.showFit()
+    values["model_folded_phase"] = np.asarray(model_phase)
+    values["model_folded_model"] = np.asarray(model_flux)
+    return _TLSResult(values)
+
+
 class TessQuickLook:
     def __init__(
         self,
@@ -973,12 +1041,17 @@ class TessQuickLook:
             power_kwargs.update(self._stellar_prior_kwargs())
         else:
             logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
-        self.tls_results = tls(
+        gpu_tls = _get_gpu_tls()
+        tls_engine = gpu_tls or tls
+        logger.info("Running GTLS on GPU" if gpu_tls else "Running TLS on CPU")
+        model = tls_engine(
             self.flat_lc.time.value,
             self.flat_lc.flux.value,
             flux_err,
             verbose=self.verbose,
-        ).power(**power_kwargs)
+        )
+        result = model.power(**power_kwargs)
+        self.tls_results = _adapt_gtls_result(result, model) if gpu_tls else result
 
     def _stellar_prior_kwargs(self):
         """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
