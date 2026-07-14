@@ -839,6 +839,43 @@ def results_json(target):
     )
 
 
+@app.route("/job-log/<target>")
+def job_log(target):
+    """Return the persisted per-target output log.
+
+    The live WebSocket (``/ws/<target>``) only streams jobs still present in the
+    in-memory ``jobs`` queue; once a job finishes and is evicted — or after a
+    server restart — its ``.log`` file on disk is the only remaining record.
+    This endpoint reads that file directly so the GUI can show a finished job's
+    output on demand, without a live connection.
+    """
+    # Job names never contain path separators or ``..`` (see
+    # sanitize_target_name), so reject anything that could escape LOG_DIR.
+    if not target or "/" in target or "\\" in target or ".." in target or target.startswith("."):
+        return jsonify({"ok": False, "reason": "invalid target"}), 400
+
+    log_path = LOG_DIR / f"{target}.log"
+    # Defense in depth: confirm the resolved path really sits inside LOG_DIR.
+    try:
+        resolved = log_path.resolve()
+        resolved.relative_to(Path(LOG_DIR).resolve())
+    except (ValueError, OSError):
+        return jsonify({"ok": False, "reason": "invalid target"}), 400
+
+    if not resolved.exists():
+        return jsonify({"ok": False, "reason": "no log for this job"}), 404
+
+    try:
+        content = resolved.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        logger.warning(f"Failed to read log file {resolved}: {e}")
+        return jsonify({"ok": False, "reason": "could not read log"}), 500
+
+    info = jobs.get(target)
+    status = info.get("status") if info else None
+    return jsonify({"ok": True, "log": content, "status": status})
+
+
 @app.route("/avg-step-times")
 def avg_step_times():
     """Return average pipeline step durations for ETA estimation."""

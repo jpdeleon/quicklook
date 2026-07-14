@@ -1587,6 +1587,18 @@ async function refreshQueue() {
         li.appendChild(watchBtn);
       }
 
+      // Finished jobs (done/error/cancelled) keep no live WebSocket, but their
+      // captured output persists on disk. Offer a "Log" button that fetches the
+      // stored log so users can still review what happened.
+      if (job.status === 'done' || job.status === 'error' || job.status === 'cancelled') {
+        const logBtn = document.createElement('button');
+        logBtn.className = 'btn btn-outline btn-sm';
+        logBtn.textContent = 'Log';
+        logBtn.title = 'View this job’s output log';
+        logBtn.onclick = () => viewJobLog(job.name, job.status);
+        li.appendChild(logBtn);
+      }
+
       // Remove-from-queue button (rightmost). Hidden for running jobs —
       // user must cancel them first via the status bar's Cancel.
       if (job.status !== 'running') {
@@ -1716,6 +1728,34 @@ function connectWs(target) {
   ws.onerror = function() { console.error('WebSocket error'); };
   ws.onclose = function() { activeWs = null; };
   refreshQueue();
+}
+
+// Fetch and display a finished job's persisted output log (no live socket).
+async function viewJobLog(target, status) {
+  // A finished job has no live WebSocket; close any active one so its updates
+  // don't overwrite the static log we're about to show.
+  if (activeWs) { activeWs.close(); activeWs = null; }
+  activeTarget = target;
+  logSection.classList.add('visible');
+  logElem.style.display = 'block';
+  logToggle.classList.add('open');
+  logElem.textContent = 'Loading log…';
+  try {
+    const res = await fetch(BASE + '/job-log/' + encodeURIComponent(target));
+    const data = await res.json();
+    if (data.ok) {
+      logElem.textContent = data.log || '(log is empty)';
+      logElem.scrollTop = logElem.scrollHeight;
+      setStatus(status || 'done', 'Output log for ' + target);
+    } else {
+      logElem.textContent = '(' + (data.reason || 'no log available') + ')';
+      showToast(data.reason || 'No log for ' + target, 'info');
+    }
+  } catch (err) {
+    logElem.textContent = '(failed to load log)';
+    showToast('Network error: ' + err.message, 'error');
+  }
+  logSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // After a job finishes, automatically watch the next running job (for batch)

@@ -162,6 +162,10 @@ uv run quicklook gui --host 0.0.0.0 --port 8080
 
 Open http://127.0.0.1:5000 in your browser. Enter a target, adjust parameters, and click **Run QuickLook**. Progress is streamed live via WebSocket. Supports single targets, batch submission, and each-sector mode.
 
+Each running job streams its output log live. Finished jobs (done, error, or cancelled) keep a **Log** button in the queue that reloads their captured output from disk — so you can review what happened even after the job left the live queue or the server restarted.
+
+![Per-job output log](docs/img/ql-gui-joblog.png)
+
 ![QuickLook Web GUI](docs/img/ql-gui.png)
 
 The Flask debugger is off by default. Pass `--debug` (or set `QUICKLOOK_DEBUG=1`)

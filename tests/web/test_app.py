@@ -88,6 +88,53 @@ def test_batch_submit_skips_bad_name_without_dropping_the_batch(submit_client):
     assert body["skipped"] == ["../evil"]
 
 
+# --- persisted job-log retrieval -------------------------------------------
+#
+# The live WebSocket (/ws/<target>) only streams jobs still present in the
+# in-memory queue. Once a job finishes and is evicted (or the server restarts),
+# its .log file on disk is the only record. /job-log/<target> reads that file so
+# the GUI can still show a finished job's output.
+
+
+def test_job_log_returns_persisted_log(submit_client, monkeypatch, tmp_path):
+    import quicklook.app.app as app_module
+
+    monkeypatch.setattr(app_module, "LOG_DIR", tmp_path)
+    (tmp_path / "TIC-42.log").write_text("Generating quicklook for TIC-42...\ndone\n")
+
+    rv = submit_client.get("/job-log/TIC-42")
+    assert rv.status_code == 200
+    body = rv.get_json()
+    assert body["ok"] is True
+    assert "Generating quicklook for TIC-42" in body["log"]
+
+
+def test_job_log_404_when_no_log_exists(submit_client, monkeypatch, tmp_path):
+    import quicklook.app.app as app_module
+
+    monkeypatch.setattr(app_module, "LOG_DIR", tmp_path)
+    rv = submit_client.get("/job-log/TIC-does-not-exist")
+    assert rv.status_code == 404
+    assert rv.get_json()["ok"] is False
+
+
+@pytest.mark.parametrize("name", ["..", "..%2f..%2fsecret", "%2e%2e"])
+def test_job_log_rejects_traversal_names(submit_client, monkeypatch, tmp_path, name):
+    import quicklook.app.app as app_module
+
+    monkeypatch.setattr(app_module, "LOG_DIR", tmp_path)
+    # Seed a file outside LOG_DIR that a traversal would try to reach.
+    (tmp_path.parent / "secret.log").write_text("top secret\n")
+    rv = submit_client.get(f"/job-log/{name}")
+    # Flask's default converter refuses an embedded slash (404); a dotted name
+    # is rejected by our own guard (400). Either way it must not return the
+    # out-of-tree file.
+    assert rv.status_code in (400, 404)
+    if rv.is_json:
+        assert rv.get_json()["ok"] is False
+    assert b"top secret" not in rv.data
+
+
 def test_debug_is_off_unless_env_var_is_set(monkeypatch):
     """The Werkzeug debug console must never be the default."""
     import quicklook.app.app as app_module
