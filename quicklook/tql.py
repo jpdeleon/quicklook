@@ -1546,25 +1546,44 @@ class TessQuickLook:
             )
             y -= dy * 0.9
             for label, value in rows:
-                units = max(str(label).count("\n"), str(value).count("\n")) + 1
+                label_str = str(label)
+                value_str = str(value)
+                units = max(label_str.count("\n"), value_str.count("\n")) + 1
                 ax.text(
                     label_x,
                     y,
-                    label,
+                    label_str,
                     transform=ax.transAxes,
                     fontsize=row_fs,
                     color="0.30",
                     va="top",
                 )
+                # Keep the first value line beside its label, but wrap any
+                # continuation lines (e.g. the "available: ..." sector list)
+                # back to the label column so they line up under the label
+                # instead of trailing beneath the value column. The leading
+                # newline reserves the first (label) row so the wrapped lines
+                # fall on the same baselines they would as a single block.
+                first_value, _, rest_value = value_str.partition("\n")
                 ax.text(
                     value_x,
                     y,
-                    value,
+                    first_value,
                     transform=ax.transAxes,
                     fontsize=row_fs,
                     family="monospace",
                     va="top",
                 )
+                if rest_value:
+                    ax.text(
+                        label_x,
+                        y,
+                        "\n" + rest_value,
+                        transform=ax.transAxes,
+                        fontsize=row_fs,
+                        family="monospace",
+                        va="top",
+                    )
                 y -= dy * units
 
     def append_tls_results(self):
