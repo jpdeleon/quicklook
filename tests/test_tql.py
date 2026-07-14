@@ -145,36 +145,46 @@ def test_tql_runtime(benchmark, planet_inputs):
 
 
 def test_with_mock_light_curve(mock_light_curve, planet_inputs):
-    """Test TessQuickLook with a mock light curve"""
+    """Test TessQuickLook with a mock light curve and no external services."""
     inputs = planet_inputs.copy()
+    inputs["tls_use_threads"] = 1
+    exofop_data = {
+        "basic_info": {
+            "star_names": "WASP-21, TIC 234523599, Gaia DR3 2345395591154370176",
+            "tic_id": "234523599",
+        },
+        "coordinates": {"ra": 349.8985, "dec": -10.3270},
+        "planet_parameters": [],
+    }
 
-    # We need to patch multiple methods to avoid network calls and initialization issues
-    with patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve):
-        # Patch check_output_file_exists to avoid pipeline attribute error
-        with patch.object(TessQuickLook, "check_output_file_exists", return_value=None):
-            # Create the TessQuickLook instance
-            ql = TessQuickLook(**inputs)
+    with (
+        patch("quicklook.tql.get_exofop_json", return_value=exofop_data),
+        patch.object(TessQuickLook, "get_simbad_obj_type", return_value=None),
+        patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve),
+        patch.object(TessQuickLook, "check_output_file_exists", return_value=None),
+    ):
+        ql = TessQuickLook(**inputs)
 
-            # Manually set the required attributes
-            ql.pipeline = inputs["pipeline"].lower()
-            ql.sector = inputs["sector"]
+    # Manually set the required attributes
+    ql.pipeline = inputs["pipeline"].lower()
+    ql.sector = inputs["sector"]
 
-            # Check that the light curve was set correctly
-            assert ql.raw_lc is mock_light_curve
+    # Check that the light curve was set correctly
+    assert ql.raw_lc is mock_light_curve
 
-            # Check that the flattened light curve was created
-            assert isinstance(ql.flat_lc, lk.LightCurve)
-            assert isinstance(ql.trend_lc, lk.LightCurve)
+    # Check that the flattened light curve was created
+    assert isinstance(ql.flat_lc, lk.LightCurve)
+    assert isinstance(ql.trend_lc, lk.LightCurve)
 
-            # Check that TLS was run
-            assert hasattr(ql, "tls_results")
-            assert hasattr(ql.tls_results, "period")
+    # Check that TLS was run
+    assert hasattr(ql, "tls_results")
+    assert hasattr(ql.tls_results, "period")
 
-            # Test basic attributes
-            assert ql.target_name == inputs["target_name"]
-            assert ql.flux_type == inputs["flux_type"].lower()
-            assert ql.pipeline == inputs["pipeline"].lower()
-            assert ql.sector == inputs["sector"]
+    # Test basic attributes
+    assert ql.target_name == inputs["target_name"]
+    assert ql.flux_type == inputs["flux_type"].lower()
+    assert ql.pipeline == inputs["pipeline"].lower()
+    assert ql.sector == inputs["sector"]
 
 
 def _bare_ql(raw_lc, toi_epoch, toi_period, toi_dur, sector=1, all_sectors=None):
