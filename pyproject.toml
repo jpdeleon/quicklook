@@ -58,6 +58,7 @@ dev = [
     "pre-commit",       # hook management
     "tox>=4.0",         # multi-env testing
     "ruff",             # linting and formatting
+    "pytest-timeout>=2.4.0",  # per-test hang guard (bounds CI, pinpoints stalls)
     #"flake8>=6.0"       # legacy linting
 ]
 

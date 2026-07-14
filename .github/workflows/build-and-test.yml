@@ -9,6 +9,10 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    # Hard ceiling so a stalled external call (e.g. astroquery/astropy reaching
+    # a service) fails the job in minutes instead of hanging until GitHub's
+    # 6-hour default and surfacing only as "The operation was canceled."
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +55,10 @@ jobs:
           pip install -e ".[dev,gui]"
 
       - name: Run tests
-        run: pytest -v -m "not notebook and not network" -n auto
+        # --timeout converts a hung test (e.g. an unmocked network call) into a
+        # failure with a traceback pinpointing the stall, instead of wedging the
+        # whole -n auto run. thread method is xdist-safe and cross-platform.
+        run: pytest -v -m "not notebook and not network" -n auto --timeout=180 --timeout-method=thread
 
       - name: Verify package builds cleanly
         run: |
