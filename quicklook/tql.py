@@ -1406,8 +1406,8 @@ class TessQuickLook:
         # the GPU adapter does not expose it, so guard with getattr.
         n_transits = getattr(tls, "distinct_transit_count", None)
         if n_transits is not None:
-            candidate.append(("Transits (TLS)", f"{int(n_transits)}"))
-        candidate.append(("Sector", self._format_sector_summary(self.sector, self.all_sectors)))
+            candidate.append(("Num. Transits", f"{int(n_transits)}"))
+        candidate.append(("Available sectors", self._format_available_sectors(self.all_sectors)))
 
         # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
@@ -1446,34 +1446,28 @@ class TessQuickLook:
         ]
 
     @staticmethod
-    def _format_sector_summary(sector, all_sectors, max_listed=8, sectors_per_line=4):
-        """Format sector availability for the summary panel.
+    def _format_available_sectors(all_sectors, max_listed=8, sectors_per_line=4):
+        """Format available sectors for the summary panel.
 
-        Keep the selected sector visible, but avoid long inline sector lists
-        because they can run into the neighbouring summary column. Beyond
-        max_listed sectors the list is replaced by a count, capping the panel
-        at two wrapped lines.
+        Avoid long inline sector lists because they can run into the
+        neighbouring summary column. Beyond max_listed sectors the list is
+        replaced by a count.
         """
         if all_sectors is None:
-            return str(sector)
+            return ""
         try:
             sectors = list(all_sectors)
         except TypeError:
             sectors = [all_sectors]
         if len(sectors) == 0:
-            return str(sector)
-        if len(sectors) == 1 and str(sectors[0]) == str(sector):
-            return str(sector)
+            return ""
         if len(sectors) > max_listed:
-            return f"{sector}\n{len(sectors)} sectors available"
+            return f"{len(sectors)} sectors available"
 
         sector_chunks = [
             sectors[i : i + sectors_per_line] for i in range(0, len(sectors), sectors_per_line)
         ]
-        lines = [str(sector)]
-        for i, chunk in enumerate(sector_chunks):
-            prefix = "available: " if i == 0 else ""
-            lines.append(prefix + ", ".join(str(s) for s in chunk))
+        lines = [", ".join(str(s) for s in chunk) for chunk in sector_chunks]
         return "\n".join(lines)
 
     @staticmethod
@@ -1595,7 +1589,7 @@ class TessQuickLook:
                     va="top",
                 )
                 # Keep the first value line beside its label, but wrap any
-                # continuation lines (e.g. the "available: ..." sector list)
+                # continuation lines (e.g. a wrapped available-sector list)
                 # back to the label column so they line up under the label
                 # instead of trailing beneath the value column. The leading
                 # newline reserves the first (label) row so the wrapped lines

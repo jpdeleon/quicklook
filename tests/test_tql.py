@@ -259,32 +259,32 @@ def test_warn_no_transits_in_sector_does_not_raise(mock_light_curve):
     assert "[16, 23, 50, 77]" in msg
 
 
-def test_format_sector_summary_single_sector():
-    assert TessQuickLook._format_sector_summary(56, [56]) == "56"
+def test_format_available_sectors_single_sector():
+    assert TessQuickLook._format_available_sectors([56]) == "56"
 
 
-def test_format_sector_summary_wraps_short_lists():
-    summary = TessQuickLook._format_sector_summary(56, [14, 15, 19, 22, 26, 40])
+def test_format_available_sectors_wraps_short_lists():
+    summary = TessQuickLook._format_available_sectors([14, 15, 19, 22, 26, 40])
 
-    assert summary == "56\navailable: 14, 15, 19, 22\n26, 40"
-
-
-def test_format_sector_summary_counts_long_lists():
-    summary = TessQuickLook._format_sector_summary(86, list(range(1, 12)))
-
-    assert summary == "86\n11 sectors available"
+    assert summary == "14, 15, 19, 22\n26, 40"
 
 
-def test_format_sector_summary_lists_at_max_listed_boundary():
-    summary = TessQuickLook._format_sector_summary(8, list(range(1, 9)))
+def test_format_available_sectors_counts_long_lists():
+    summary = TessQuickLook._format_available_sectors(list(range(1, 12)))
 
-    assert summary == "8\navailable: 1, 2, 3, 4\n5, 6, 7, 8"
+    assert summary == "11 sectors available"
 
 
-def test_format_sector_summary_counts_one_past_max_listed():
-    summary = TessQuickLook._format_sector_summary(9, list(range(1, 10)))
+def test_format_available_sectors_lists_at_max_listed_boundary():
+    summary = TessQuickLook._format_available_sectors(list(range(1, 9)))
 
-    assert summary == "9\n9 sectors available"
+    assert summary == "1, 2, 3, 4\n5, 6, 7, 8"
+
+
+def test_format_available_sectors_counts_one_past_max_listed():
+    summary = TessQuickLook._format_available_sectors(list(range(1, 10)))
+
+    assert summary == "9 sectors available"
 
 
 # --- Gaia RUWE extraction for the summary panel ----------------------------
@@ -325,7 +325,7 @@ def test_extract_ruwe_nan_when_gaiaid_not_coercible():
     assert np.isnan(TessQuickLook._extract_ruwe(sources, "not-an-id"))
 
 
-# --- summary panel: RUWE + Transits (TLS) rows -----------------------------
+# --- summary panel: RUWE + Num. Transits rows ------------------------------
 #
 # _summary_sections needs a lot of object state but no network, so build a bare
 # TessQuickLook and stub the ExoFOP stellar-parameter parse.
@@ -376,9 +376,11 @@ def test_summary_adds_transits_after_odd_even_and_ruwe_in_stellar():
     candidate = sections[0][1]
     stellar = sections[1][1]
     cand_labels = [label for label, _ in candidate]
-    # Transits (TLS) sits immediately after Odd-Even in Candidate Properties.
-    assert cand_labels[cand_labels.index("Odd-Even") + 1] == "Transits (TLS)"
-    assert dict(candidate)["Transits (TLS)"] == "3"
+    # Num. Transits sits immediately after Odd-Even in Candidate Properties.
+    assert cand_labels[cand_labels.index("Odd-Even") + 1] == "Num. Transits"
+    assert dict(candidate)["Num. Transits"] == "3"
+    assert "Sector" not in cand_labels
+    assert dict(candidate)["Available sectors"] == "56"
     # RUWE appears in the Stellar Properties column.
     assert dict(stellar)["RUWE"] == "1.42"
 
@@ -391,7 +393,7 @@ def test_summary_omits_transits_and_ruwe_when_unavailable():
             distinct_transit_count=None, gaia_ruwe=np.nan
         )._summary_sections()
 
-    assert "Transits (TLS)" not in dict(sections[0][1])
+    assert "Num. Transits" not in dict(sections[0][1])
     assert "RUWE" not in dict(sections[1][1])
 
 
