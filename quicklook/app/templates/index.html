@@ -393,12 +393,19 @@
           </div>
           <input type="number" step="0.01" name="edge_cutoff" id="edge_cutoff" value="0.1">
         </div>
-        <div class="full-width">
+        <div>
           <div class="label-row">
             <label for="sigma_clip_raw">Sigma Clip Raw (lo hi)</label>
             <span class="help-tip" tabindex="0" data-tip="Two values: lower and upper sigma bounds for raw light curve clipping. E.g. '10 5' clips below 10-sigma and above 5-sigma.">?</span>
           </div>
           <input type="text" name="sigma_clip_raw" id="sigma_clip_raw" placeholder="10 5" value="10 5">
+        </div>
+        <div>
+          <div class="label-row">
+            <label for="sigma_clip_flat">Sigma Clip Flat (lo hi)</label>
+            <span class="help-tip" tabindex="0" data-tip="Two values (lo hi), same format as raw. Applied after flattening. Leave blank to skip.">?</span>
+          </div>
+          <input type="text" name="sigma_clip_flat" id="sigma_clip_flat" placeholder="none">
         </div>
         <div>
           <div class="label-row">
@@ -436,13 +443,6 @@
             <option value="periodic">periodic</option>
             <option value="squared_exp">squared_exp</option>
           </select>
-        </div>
-        <div>
-          <div class="label-row">
-            <label for="sigma_clip_flat">Sigma Clip Flat (lo hi)</label>
-            <span class="help-tip" tabindex="0" data-tip="Two values (lo hi), same format as raw. Applied after flattening. Leave blank to skip.">?</span>
-          </div>
-          <input type="text" name="sigma_clip_flat" id="sigma_clip_flat" placeholder="none">
         </div>
       </div>
     </div>
