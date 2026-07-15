@@ -287,6 +287,114 @@ def test_format_sector_summary_counts_one_past_max_listed():
     assert summary == "9\n9 sectors available"
 
 
+# --- Gaia RUWE extraction for the summary panel ----------------------------
+
+
+def _gaia_table(rows):
+    import pandas as pd
+
+    return pd.DataFrame(rows)
+
+
+def test_extract_ruwe_returns_target_value_matched_on_source_id():
+    sources = _gaia_table(
+        [
+            {"source_id": 111, "ruwe": 2.31},
+            {"source_id": 222, "ruwe": 0.98},
+        ]
+    )
+    assert TessQuickLook._extract_ruwe(sources, 222) == pytest.approx(0.98)
+
+
+def test_extract_ruwe_nan_when_no_row_matches():
+    sources = _gaia_table([{"source_id": 111, "ruwe": 1.05}])
+    assert np.isnan(TessQuickLook._extract_ruwe(sources, 999))
+
+
+def test_extract_ruwe_nan_when_ruwe_column_absent():
+    sources = _gaia_table([{"source_id": 111, "phot_g_mean_mag": 12.0}])
+    assert np.isnan(TessQuickLook._extract_ruwe(sources, 111))
+
+
+def test_extract_ruwe_nan_when_sources_is_none():
+    assert np.isnan(TessQuickLook._extract_ruwe(None, 111))
+
+
+def test_extract_ruwe_nan_when_gaiaid_not_coercible():
+    sources = _gaia_table([{"source_id": 111, "ruwe": 1.4}])
+    assert np.isnan(TessQuickLook._extract_ruwe(sources, "not-an-id"))
+
+
+# --- summary panel: RUWE + Transits (TLS) rows -----------------------------
+#
+# _summary_sections needs a lot of object state but no network, so build a bare
+# TessQuickLook and stub the ExoFOP stellar-parameter parse.
+
+from quicklook.tql import _TLSResult  # noqa: E402
+
+_STAR_PARAMS = {
+    "srad": 1.1, "srad_e": 0.05, "mass": 1.0, "mass_e": 0.05,
+    "teff": 5800, "teff_e": 100, "logg": 4.4, "logg_e": 0.1,
+    "dist": 120.0, "dist_e": 5.0,
+}  # fmt: skip
+
+
+def _bare_summary_ql(distinct_transit_count=3, gaia_ruwe=1.42):
+    from astropy.coordinates import SkyCoord
+
+    ql = TessQuickLook.__new__(TessQuickLook)
+    ql.pipeline = "qlp"
+    ql.ephem_source = "TFOP"
+    ql.sector = 56
+    ql.all_sectors = [56]
+    ql.gaiaid = 12345
+    ql.gaia_ruwe = gaia_ruwe
+    ql.Prot_ls = 3.2
+    ql.nearby_star_sep = None
+    ql.simbad_obj_type = None
+    ql.target_coord = SkyCoord(ra=350.0, dec=-10.0, unit="deg")
+    ql.toi_period = ql.toi_epoch = ql.toi_dur = ql.toi_depth = ql.toi_rp = None
+    lc = lk.LightCurve(time=[1, 2, 3], flux=[1.0, 1.0, 1.0])
+    lc.meta = {"FLUX_ORIGIN": "pdcsap"}
+    ql.raw_lc = lc
+    tls_values = {
+        "SDE": 21.4, "period": 8.213, "period_uncertainty": 0.002,
+        "T0": 1650.1, "duration": 0.12, "depth": 0.997, "rp_rs": 0.05,
+        "odd_even_mismatch": 0.3,
+    }  # fmt: skip
+    if distinct_transit_count is not None:
+        tls_values["distinct_transit_count"] = distinct_transit_count
+    ql.tls_results = _TLSResult(tls_values)
+    ql.exofop_data = {"magnitudes": [{"band": "T", "value": 11.2}]}
+    return ql
+
+
+def test_summary_adds_transits_after_odd_even_and_ruwe_in_stellar():
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = _bare_summary_ql(distinct_transit_count=3, gaia_ruwe=1.42)._summary_sections()
+
+    candidate = sections[0][1]
+    stellar = sections[1][1]
+    cand_labels = [label for label, _ in candidate]
+    # Transits (TLS) sits immediately after Odd-Even in Candidate Properties.
+    assert cand_labels[cand_labels.index("Odd-Even") + 1] == "Transits (TLS)"
+    assert dict(candidate)["Transits (TLS)"] == "3"
+    # RUWE appears in the Stellar Properties column.
+    assert dict(stellar)["RUWE"] == "1.42"
+
+
+def test_summary_omits_transits_and_ruwe_when_unavailable():
+    """GPU TLS results lack distinct_transit_count and RUWE may be missing —
+    both rows must be skipped rather than rendered as errors/NaN."""
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = _bare_summary_ql(
+            distinct_transit_count=None, gaia_ruwe=np.nan
+        )._summary_sections()
+
+    assert "Transits (TLS)" not in dict(sections[0][1])
+    assert "RUWE" not in dict(sections[1][1])
+
+
 # @pytest.mark.parametrize("pg_method", ["gls", "lombscargle", "bls"])
 # def test_different_periodogram_methods(planet_inputs, pg_method):
 #     """Test TessQuickLook with different periodogram methods"""

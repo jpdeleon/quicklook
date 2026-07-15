@@ -2,7 +2,6 @@
 TODO:
 * Add momentum dumps as in TESSLatte:
 https://github.com/noraeisner/LATTE/blob/7ac35c8a51949345bc076fd30a456e74fce70c51/LATTE/LATTEutils.py#L3501C13-L3501C63
-* Add RUWE in plots
 """
 
 import math
@@ -1403,6 +1402,11 @@ class TessQuickLook:
                 ("Rp (TFOP)", f"{self.toi_rp[0]:.2f}{pm}{self.toi_rp[1]:.2f} {r_earth}")
             )
         candidate.append(("Odd-Even", f"{tls.odd_even_mismatch:.2f} " + r"$\sigma$"))
+        # Number of transits sampled by the data. Present on CPU TLS results;
+        # the GPU adapter does not expose it, so guard with getattr.
+        n_transits = getattr(tls, "distinct_transit_count", None)
+        if n_transits is not None:
+            candidate.append(("Transits (TLS)", f"{int(n_transits)}"))
         candidate.append(("Sector", self._format_sector_summary(self.sector, self.all_sectors)))
 
         # --- Stellar properties ---
@@ -1422,6 +1426,11 @@ class TessQuickLook:
             (f"{mags['band']}mag", f"{float(mags['value']):.1f}"),
             ("Gaia DR2 ID", f"{self.gaiaid}"),
         ]
+        # RUWE (Gaia DR3 astrometric fit quality; >~1.4 hints at an unresolved
+        # companion/blend). Shown when the Gaia catalog query returned a value.
+        ruwe = getattr(self, "gaia_ruwe", np.nan)
+        if np.isfinite(ruwe):
+            stellar.append(("RUWE", f"{ruwe:.2f}"))
         if self.nearby_star_sep is not None:
             if self.nearby_star_sep < 1 * u.arcmin:
                 val = self.nearby_star_sep.to(u.arcsec)
@@ -1466,6 +1475,33 @@ class TessQuickLook:
             prefix = "available: " if i == 0 else ""
             lines.append(prefix + ", ".join(str(s) for s in chunk))
         return "\n".join(lines)
+
+    @staticmethod
+    def _extract_ruwe(gaia_sources, gaiaid):
+        """Return the target's Gaia RUWE from a Gaia catalog table, or NaN.
+
+        The target row is matched on ``source_id`` (the same convention the
+        Gaia overlay plots use). Returns NaN when the table is missing, lacks a
+        ``ruwe``/``source_id`` column, has no matching row, or holds a
+        non-numeric value — so callers can guard on ``np.isfinite``.
+        """
+        if gaia_sources is None:
+            return np.nan
+        columns = getattr(gaia_sources, "columns", [])
+        if "ruwe" not in columns or "source_id" not in columns:
+            return np.nan
+        try:
+            match = gaia_sources.loc[
+                gaia_sources["source_id"].astype("int64") == int(gaiaid), "ruwe"
+            ]
+        except (TypeError, ValueError):
+            return np.nan
+        if len(match) == 0:
+            return np.nan
+        try:
+            return float(match.iloc[0])
+        except (TypeError, ValueError):
+            return np.nan
 
     def make_summary_info(self):
         """
@@ -1844,8 +1880,10 @@ class TessQuickLook:
         fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
         tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
         self.gaia_sources = tab.to_pandas()
-        # TODO: Add Gaia RUWE attribute
-        # self.gaia_ruwe = self.gaia_sources["ruwe"]
+        # RUWE (renormalised unit weight error) of the target from Gaia DR3.
+        # Values >~1.4 flag a poor single-star astrometric fit — often an
+        # unresolved companion or blend. Matched to the target by source_id.
+        self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
         if len(self.gaia_sources) > 1:
             sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
             self.nearby_star_sep = sep.iloc[1] * u.arcmin
