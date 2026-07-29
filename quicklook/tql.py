@@ -213,12 +213,14 @@ class TessQuickLook:
         self.edge_cutoff = edge_cutoff
 
         if window_length is None:
+            self._use_rotation_aware_window = True
             self.window_length = (
                 self.toi_dur[0] * 3
                 if (self.toi_dur is not None) and (self.toi_dur[0] * 3 >= 0.1)
                 else 0.5
             )
         else:
+            self._use_rotation_aware_window = False
             self.window_length = window_length
 
         self.tmask = self.get_transit_mask()
@@ -1060,6 +1062,125 @@ class TessQuickLook:
         model = tls(*engine_args, verbose=self.verbose)
         self.tls_results = model.power(**power_kwargs)
 
+        # Advanced vetting flags
+        self.compute_advanced_vetting_metrics()
+
+    def compute_advanced_vetting_metrics(self):
+        """Compute advanced vetting metrics for young variable star candidates."""
+        if not hasattr(self, "tls_results") or self.tls_results is None:
+            return
+
+        # 1. Depth variance ratio
+        try:
+            int_depths = getattr(self.tls_results, "transit_depths", None)
+            if int_depths is not None and len(int_depths) > 1 and np.nanmean(int_depths) > 0:
+                self.tls_results["depth_variance_ratio"] = float(
+                    np.nanstd(int_depths) / np.nanmean(int_depths)
+                )
+            else:
+                self.tls_results["depth_variance_ratio"] = np.nan
+        except Exception:
+            self.tls_results["depth_variance_ratio"] = np.nan
+
+        # 2. Duration consistency ratio
+        try:
+            obs_dur = getattr(self.tls_results, "duration", None)
+            exp_dur = getattr(self.tls_results, "duration_expected", None)
+            if obs_dur and exp_dur and exp_dur > 0:
+                self.tls_results["duration_consistency_ratio"] = float(obs_dur / exp_dur)
+            else:
+                self.tls_results["duration_consistency_ratio"] = np.nan
+        except Exception:
+            self.tls_results["duration_consistency_ratio"] = np.nan
+
+        # 3. Secondary eclipse search in phase range [0.1, 0.9]
+        try:
+            if hasattr(self, "fold_lc") and self.fold_lc is not None:
+                phase = self.fold_lc.phase.value
+                flux = self.fold_lc.flux.value
+                sec_mask = (phase >= 0.1) & (phase <= 0.9)
+                if np.sum(sec_mask) > 10:
+                    sec_std = np.nanstd(flux[sec_mask])
+                    sec_min = np.nanmin(flux[sec_mask])
+                    sec_depth = 1.0 - sec_min
+                    self.tls_results["secondary_depth"] = float(sec_depth)
+                    self.tls_results["secondary_sde"] = float(
+                        sec_depth / sec_std if sec_std > 0 else np.nan
+                    )
+                else:
+                    self.tls_results["secondary_depth"] = np.nan
+                    self.tls_results["secondary_sde"] = np.nan
+        except Exception:
+            self.tls_results["secondary_depth"] = np.nan
+            self.tls_results["secondary_sde"] = np.nan
+
+    def run_iterative_tls(self, min_sde: float = 7.0):
+        """Perform an iterative secondary transit search by masking the primary signal.
+
+        Parameters
+        ----------
+        min_sde : float
+            Minimum SDE required on the primary detection to trigger a secondary search.
+
+        Returns
+        -------
+        secondary_results : dict or None
+            TLS results dict for the secondary transit search if executed, else None.
+        """
+        if not hasattr(self, "tls_results") or self.tls_results is None:
+            return None
+
+        primary_sde = getattr(self.tls_results, "SDE", 0)
+        if primary_sde < min_sde:
+            if self.verbose:
+                logger.info(
+                    f"Primary SDE={primary_sde:.2f} < {min_sde}; skipping secondary search."
+                )
+            return None
+
+        p0 = self.tls_results.period
+        t0 = self.tls_results.T0
+        dur = getattr(self.tls_results, "duration", 0.1)
+
+        if self.verbose:
+            logger.info(
+                f"Masking primary candidate (P={p0:.3f} d, T0={t0:.2f}, dur={dur:.3f} d) for secondary search..."
+            )
+
+        # Create transit mask for primary candidate
+        mask = self.flat_lc.create_transit_mask(transit_time=t0, period=p0, duration=dur * 1.2)
+        masked_flat_lc = self.flat_lc[~mask]
+
+        if len(masked_flat_lc) < 50:
+            logger.warning("Not enough data remaining after masking primary candidate.")
+            return None
+
+        # Re-run TLS on remaining data
+        flux_err = (
+            np.nanstd(masked_flat_lc.flux.value)
+            if math.isnan(np.median(masked_flat_lc.flux_err.value))
+            else masked_flat_lc.flux_err.value
+        )
+        power_kwargs = {
+            "period_min": self.Porb_min,
+            "period_max": self.Porb_max,
+        }
+        if self.tls_use_threads is not None:
+            power_kwargs["use_threads"] = self.tls_use_threads
+
+        model = tls(
+            masked_flat_lc.time.value, masked_flat_lc.flux.value, flux_err, verbose=self.verbose
+        )
+        sec_results = model.power(**power_kwargs)
+        self.secondary_tls_results = sec_results
+
+        if self.verbose:
+            logger.info(
+                f"Secondary TLS Search Completed: SDE={sec_results.SDE:.2f}, P={sec_results.period:.3f} d"
+            )
+
+        return sec_results
+
     def _stellar_prior_kwargs(self):
         """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
 
@@ -1184,31 +1305,69 @@ class TessQuickLook:
             self.window_length_opt = self.window_length
         else:
             self.window_length_opt = None
+
+        # Rotation-aware window and spline tuning if window_length is default or unset
+        if (
+            getattr(self, "_use_rotation_aware_window", False)
+            and getattr(self, "toi_dur", None) is None
+        ):
+            try:
+                gls_obj = self.init_gls()
+                prot = float(gls_obj.P)
+                if prot <= 2.0:
+                    self.window_length = 0.5
+                else:
+                    self.window_length = 1.0
+                if self.verbose:
+                    logger.info(
+                        f"Rotation-aware tuning: P_rot={prot:.2f} d -> window_length={self.window_length:.2f} d"
+                    )
+            except Exception as exc:
+                if self.verbose:
+                    logger.warning(
+                        f"Could not compute rotation period via GLS for dynamic window tuning ({exc})"
+                    )
+
+        # Additional kwargs for wotan flatten
+        flatten_kwargs = {
+            "method": self.flatten_method,
+            "robust": True,
+            "kernel": self.gp_kernel,
+            "kernel_size": self.gp_kernel_size,
+            "window_length": self.window_length,
+            "edge_cutoff": self.edge_cutoff,
+            "break_tolerance": 1,
+            "return_trend": True,
+            "cval": 5.0,
+        }
+
+        # Dynamic max_splines calculation for spline methods based on P_rot
+        if self.flatten_method in ("rspline", "pspline", "spline"):
+            try:
+                gls_obj = self.init_gls()
+                prot = float(gls_obj.P)
+                if prot <= 2.0:
+                    max_splines = 200
+                elif prot <= 10.0:
+                    max_splines = int(200 / prot)
+                else:
+                    max_splines = 25
+                flatten_kwargs["max_splines"] = max_splines
+                if self.verbose:
+                    logger.info(
+                        f"Rotation-aware spline tuning: P_rot={prot:.2f} d -> max_splines={max_splines}"
+                    )
+            except Exception as exc:
+                if self.verbose:
+                    logger.warning(f"Could not set max_splines dynamically ({exc})")
+
         # https://github.com/hippke/wotan#available-detrending-algorithms
         wflat_lc, wtrend_lc = flatten(
             # Array of time values
             self.raw_lc.time.value,
             # Array of flux values
             self.raw_lc.flux.value,
-            # The method to use for detrending
-            method=self.flatten_method,
-            # robust=True uses iterative clipping approach
-            # outliers beyond 2 sigma from the fitted trend are removed in each iteration until convergence
-            robust=True,
-            # The kernel to use for the Gaussian process
-            kernel=self.gp_kernel,
-            # The size of the kernel (if applicable)
-            kernel_size=self.gp_kernel_size,
-            # The length of the filter window in units of ``time``
-            window_length=self.window_length,
-            # The fraction of the window to cut off at the edges
-            edge_cutoff=self.edge_cutoff,
-            # The tolerance for breaks in the data
-            break_tolerance=1,
-            # Return the trend as well
-            return_trend=True,
-            # Tuning parameter for the robust estimators
-            cval=5.0,
+            **flatten_kwargs,
         )
 
         if self.sigma_clip_flat is not None:

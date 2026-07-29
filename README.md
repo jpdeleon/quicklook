@@ -14,9 +14,9 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 
 - **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC, T16
 - **Flux / light-curve type** -- PDCSAP or SAP for SPOC; aperture or PSF photometry for TGLC, with an automatic best-quality default
-- **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods
+- **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
-- **Transit detection** -- Transit Least Squares (TLS) periodogram
+- **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
