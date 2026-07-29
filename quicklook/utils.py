@@ -267,7 +267,7 @@ def get_params_from_exofop(exofop_info, name="planet_parameters", idx=None):
             # get the latest parameter based on upload date
             dates = [d.get(key) for d in params_dict]
             df = pd.DataFrame({"date": dates})
-            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+            df["date"] = pd.to_datetime(df["date"], format="mixed", errors="coerce")
             if df["date"].isna().all():
                 idx = 0  # no parseable dates; fall back to first entry
             else:

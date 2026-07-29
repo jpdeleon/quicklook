@@ -29,6 +29,11 @@ def test_notebook_execution(notebook_path):
     if os.environ.get("CI") and not os.environ.get("KERNEL_INSTALLED"):
         pytest.skip("Skipping notebook test in CI environment without kernel")
 
+    try:
+        import jupyter  # noqa: F401
+    except ImportError:
+        pytest.skip("jupyter is not installed in the environment")
+
     # Get the project root directory to add to PYTHONPATH
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
