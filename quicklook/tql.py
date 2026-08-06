@@ -36,6 +36,7 @@ from quicklook.utils import (
 )
 from quicklook.gls import Gls
 from quicklook.plot import (
+    _get_frac_depth,
     use_style,
     get_dss_data,
     plot_gaia_sources_on_survey,
@@ -110,7 +111,7 @@ def _adapt_gtls_result(result, model):
     """Expose a GTLS result through the mapping/attribute API QuickLook uses."""
     values = vars(result).copy()
     fractional_depth = float(values["depth"])
-    values["depth"] = 1.0 - fractional_depth
+    values["depth"] = fractional_depth
     values["rp_rs"] = np.sqrt(max(0.0, fractional_depth))
     values["odd_even_mismatch"] = np.nan
 
@@ -892,7 +893,9 @@ class TessQuickLook:
         if self.verbose:
             logger.info(msg)
         idx = sector_orig if sector_orig == -1 else 0
-        tpf = search_result[idx].download(quality_bitmask=self.quality_bitmask)
+        tpf = self._download_with_retry(
+            lambda: search_result[idx].download(quality_bitmask=self.quality_bitmask)
+        )
         # FIXME: What is the correct tpf aperture for other pipeline?
         # author = tpf.meta['PROCVER'].split('-')[0]
         author = search_result.author[idx].upper()
@@ -913,9 +916,13 @@ class TessQuickLook:
         """
         if self.sector is None:
             raise InvalidInputError("Provide sector for TESScut download.")
-        tpf = lk.search_tesscut(self.query_name, sector=self.sector).download(
-            cutout_size=(15, 15), quality_bitmask=self.quality_bitmask
-        )
+
+        def _download():
+            return lk.search_tesscut(self.query_name, sector=self.sector).download(
+                cutout_size=(15, 15), quality_bitmask=self.quality_bitmask
+            )
+
+        tpf = self._download_with_retry(_download)
         if tpf is None:
             raise NoDataError("No results from Tesscut search.")
         # remove zeros
@@ -1070,28 +1077,34 @@ class TessQuickLook:
         if not hasattr(self, "tls_results") or self.tls_results is None:
             return
 
+        def _set_val(key, val):
+            try:
+                self.tls_results[key] = val
+            except Exception:
+                pass
+
         # 1. Depth variance ratio
         try:
             int_depths = getattr(self.tls_results, "transit_depths", None)
             if int_depths is not None and len(int_depths) > 1 and np.nanmean(int_depths) > 0:
-                self.tls_results["depth_variance_ratio"] = float(
-                    np.nanstd(int_depths) / np.nanmean(int_depths)
+                _set_val(
+                    "depth_variance_ratio", float(np.nanstd(int_depths) / np.nanmean(int_depths))
                 )
             else:
-                self.tls_results["depth_variance_ratio"] = np.nan
+                _set_val("depth_variance_ratio", np.nan)
         except Exception:
-            self.tls_results["depth_variance_ratio"] = np.nan
+            _set_val("depth_variance_ratio", np.nan)
 
         # 2. Duration consistency ratio
         try:
             obs_dur = getattr(self.tls_results, "duration", None)
             exp_dur = getattr(self.tls_results, "duration_expected", None)
             if obs_dur and exp_dur and exp_dur > 0:
-                self.tls_results["duration_consistency_ratio"] = float(obs_dur / exp_dur)
+                _set_val("duration_consistency_ratio", float(obs_dur / exp_dur))
             else:
-                self.tls_results["duration_consistency_ratio"] = np.nan
+                _set_val("duration_consistency_ratio", np.nan)
         except Exception:
-            self.tls_results["duration_consistency_ratio"] = np.nan
+            _set_val("duration_consistency_ratio", np.nan)
 
         # 3. Secondary eclipse search in phase range [0.1, 0.9]
         try:
@@ -1103,16 +1116,14 @@ class TessQuickLook:
                     sec_std = np.nanstd(flux[sec_mask])
                     sec_min = np.nanmin(flux[sec_mask])
                     sec_depth = 1.0 - sec_min
-                    self.tls_results["secondary_depth"] = float(sec_depth)
-                    self.tls_results["secondary_sde"] = float(
-                        sec_depth / sec_std if sec_std > 0 else np.nan
-                    )
+                    _set_val("secondary_depth", float(sec_depth))
+                    _set_val("secondary_sde", float(sec_depth / sec_std if sec_std > 0 else np.nan))
                 else:
-                    self.tls_results["secondary_depth"] = np.nan
-                    self.tls_results["secondary_sde"] = np.nan
+                    _set_val("secondary_depth", np.nan)
+                    _set_val("secondary_sde", np.nan)
         except Exception:
-            self.tls_results["secondary_depth"] = np.nan
-            self.tls_results["secondary_sde"] = np.nan
+            _set_val("secondary_depth", np.nan)
+            _set_val("secondary_sde", np.nan)
 
     def run_iterative_tls(self, min_sde: float = 7.0):
         """Perform an iterative secondary transit search by masking the primary signal.
@@ -1539,7 +1550,7 @@ class TessQuickLook:
                     f"{self.toi_dur[0] * 24:.2f}{pm}{self.toi_dur[1] * 24:.2f} hr",
                 )
             )
-        candidate.append(("Depth (TLS)", f"{(1 - tls.depth) * 1e3:.2f} ppt"))
+        candidate.append(("Depth (TLS)", f"{_get_frac_depth(tls) * 1e3:.2f} ppt"))
         if self.toi_depth is not None:
             candidate.append(
                 ("Depth (TFOP)", f"{self.toi_depth[0]:.1f}{pm}{self.toi_depth[1]:.1f} ppt")
@@ -1805,7 +1816,7 @@ class TessQuickLook:
         # Append the period limits
         self.tls_results["Porb_min"] = self.Porb_min
         self.tls_results["Porb_max"] = self.Porb_max
-        self.tls_results["depth_ppt"] = (1 - self.tls_results.depth) * 1e3
+        self.tls_results["depth_ppt"] = _get_frac_depth(self.tls_results) * 1e3
 
         # Append the TFOP parameters (also available in meta)
         self.tls_results["period_toi"] = self.toi_period
@@ -2019,8 +2030,15 @@ class TessQuickLook:
         elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
             if self.verbose:
                 logger.info("Getting TPF with tesscut...")
-            self.tpf = self.get_tpf_tesscut()
-            self.sap_mask = "square"
+            try:
+                self.tpf = self.get_tpf_tesscut()
+                self.sap_mask = "square"
+            except (NoDataError, Exception) as exc:
+                logger.warning(
+                    f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+                )
+                self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
+                self.sap_mask = "pipeline"
         else:
             self.tpf = self.get_tpf(
                 sector=self.sector,
@@ -2064,7 +2082,7 @@ class TessQuickLook:
                 fov_rad=fov_rad,
                 gaia_sources=self.gaia_sources,
                 kmax=1,
-                depth=1 - self.tls_results.depth,
+                depth=_get_frac_depth(self.tls_results),
                 sap_mask=self.sap_mask,
                 aper_radius=2,
                 survey=self.archival_survey,
@@ -2080,7 +2098,7 @@ class TessQuickLook:
                 fov_rad=fov_rad,
                 gaia_sources=self.gaia_sources,
                 kmax=1,
-                depth=1 - self.tls_results.depth,
+                depth=_get_frac_depth(self.tls_results),
                 sap_mask=self.sap_mask,
                 aper_radius=2,
                 cmap="viridis",

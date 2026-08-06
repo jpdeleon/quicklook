@@ -125,14 +125,27 @@ def _plot_binned_phase_lc(lc, x_transform, bin_mins, ax, **kwargs):
     ax.errorbar(x, y, yerr=yerr, **kwargs)
 
 
+def _get_frac_depth(tls_results):
+    """Extract fractional transit depth delta in [0, 0.5] from various tls_results formats."""
+    if hasattr(tls_results, "depth") or (isinstance(tls_results, dict) and "depth" in tls_results):
+        raw_depth = tls_results["depth"] if isinstance(tls_results, dict) else tls_results.depth
+        depth_val = float(np.atleast_1d(_as_values(raw_depth))[0])
+        if depth_val > 1.0:
+            depth_val = depth_val / 1e3
+        return depth_val if depth_val < 0.5 else 1.0 - depth_val
+    return 0.0
+
+
 def plot_odd_even_transit(
     fold_lc, tls_results, bin_mins=10, markersize=6, ax=None, phase_xlim=None
 ):
     if ax is None:
         _, ax = pl.subplots()
-    yline = tls_results.depth
-    t14 = tls_results.duration
-    period = tls_results.period
+    frac_depth = _get_frac_depth(tls_results)
+    yline = 1.0 - frac_depth
+    t14 = _as_values(tls_results.duration)
+    period = _as_values(tls_results.period)
+    t0 = _as_values(tls_results.T0)
     t14_phase = t14 / period
     # Clip to transit window before binning to avoid creating thousands of
     # empty bins for long-period planets (phase range = period, not just t14).
@@ -150,13 +163,26 @@ def plot_odd_even_transit(
         zorder=1,
     )
 
+    # Determine even and odd transit masks
+    if hasattr(clipped_lc, "even_mask") and "even_mask" in clipped_lc.colnames:
+        even_mask = _as_values(clipped_lc.even_mask)
+        odd_mask = _as_values(clipped_lc.odd_mask)
+    elif hasattr(clipped_lc, "time_original") or "time_original" in clipped_lc.colnames:
+        t_orig = _as_values(clipped_lc.time_original)
+        transit_n = np.round((t_orig - t0) / period).astype(int)
+        even_mask = transit_n % 2 == 0
+        odd_mask = ~even_mask
+    else:
+        even_mask = np.ones(len(clipped_lc), dtype=bool)
+        odd_mask = np.zeros(len(clipped_lc), dtype=bool)
+
     # Force writeable deep copies; stacked boolean slices on the folded
     # LightCurve leave the underlying flux/time buffers non-writeable, which
     # breaks the in-place ufuncs used by LightCurve.bin() under numpy >= 2.0.
     # Strip non-numeric extra columns so aggregate_downsample doesn't choke
     # on string-typed columns carried by HLSP pipelines (QLP, TGLC, CDIPS).
-    even_lc = _strip_for_bin(clipped_lc[clipped_lc.even_mask].copy())
-    odd_lc = _strip_for_bin(clipped_lc[clipped_lc.odd_mask].copy())
+    even_lc = _strip_for_bin(clipped_lc[even_mask].copy())
+    odd_lc = _strip_for_bin(clipped_lc[odd_mask].copy())
 
     if len(even_lc) > 0:
         try:
@@ -191,14 +217,35 @@ def plot_odd_even_transit(
         except (ValueError, TypeError) as e:
             logger.warning(f"Could not bin odd-transit data: {e}")
 
-    ax.plot(
-        (tls_results.model_folded_phase - 0.5) * tls_results.period,
-        tls_results.model_folded_model,
-        "-k",
-        lw=3,
-        zorder=3,
-        label="TLS model",
-    )
+    if (
+        hasattr(tls_results, "model_lightcurve_model")
+        and hasattr(tls_results, "model_lightcurve_time")
+        and tls_results.model_lightcurve_model is not None
+        and tls_results.model_lightcurve_time is not None
+        and len(tls_results.model_lightcurve_model) > 0
+    ):
+        model_time = _as_values(tls_results.model_lightcurve_time)
+        model_flux = _as_values(tls_results.model_lightcurve_model)
+        model_phase = ((model_time - t0 + 0.5 * period) % period) / period - 0.5
+        sort_idx = np.argsort(model_phase)
+        near_model = (model_phase[sort_idx] >= phase_lo) & (model_phase[sort_idx] <= phase_hi)
+        ax.plot(
+            model_phase[sort_idx][near_model],
+            model_flux[sort_idx][near_model],
+            "-k",
+            lw=3,
+            zorder=3,
+            label="TLS model",
+        )
+    else:
+        ax.plot(
+            tls_results.model_folded_phase - 0.5,
+            tls_results.model_folded_model,
+            "-k",
+            lw=3,
+            zorder=3,
+            label="TLS model",
+        )
     ax.axhline(yline, 0, 1, lw=2, ls="--", c="k")
     ax.axvline(-t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
     ax.axvline(t14_phase / 2, 0, 1, label="__nolegend__", c="k", ls="--")
@@ -222,7 +269,8 @@ def plot_secondary_eclipse(
     )
     half_phase = 0.5
     eclipse_phase = fold_lc2.time.value + half_phase
-    yline = tls_results.depth
+    frac_depth = _get_frac_depth(tls_results)
+    yline = 1.0 - frac_depth
     t14 = tls_results.duration
     t14_phase = t14 / tls_results.period
     try:

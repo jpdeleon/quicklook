@@ -9,20 +9,22 @@ import sys
 import threading
 import time
 import traceback
+import warnings
 from collections import OrderedDict
 from pathlib import Path
-from threading import Thread, Event
-
+from threading import Event, Thread
 import matplotlib.pyplot as pl
-from flask import Flask, render_template, request, jsonify, url_for
+from flask import Flask, jsonify, render_template, request, url_for
 from flask_sock import Sock
 from loguru import logger
 from werkzeug.middleware.proxy_fix import ProxyFix
-from quicklook.tql import TessQuickLook
-from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
+
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import InvalidInputError, QuickLookError
+from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
 from quicklook.utils import get_available_pipelines, get_available_sectors
+
+warnings.filterwarnings("ignore", category=UserWarning, module="lightkurve")
 
 # Directories
 BASE_DIR = Path(__file__).parent.resolve()
@@ -303,6 +305,8 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 
         if cancel_event.is_set():
             raise InterruptedError("Job cancelled before start")
+        from quicklook.tql import TessQuickLook
+
         tql = TessQuickLook(
             target_name=target_name,
             sector=int(kwargs.get("sector", -1)),

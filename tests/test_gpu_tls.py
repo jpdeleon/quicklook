@@ -101,7 +101,7 @@ def test_gtls_result_is_adapted_to_tls_conventions():
 
     adapted = tql._adapt_gtls_result(result, Model())
 
-    assert adapted.depth == 0.99
+    assert adapted.depth == 0.01
     assert adapted["rp_rs"] == 0.1
     assert adapted.period_uncertainty == 1.0
     np.testing.assert_array_equal(adapted.model_folded_phase, [0.0, 0.5])
