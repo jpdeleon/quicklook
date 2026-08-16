@@ -67,6 +67,9 @@ def _run_ql_for_sector(
     tls_use_threads: int,
     phase_xlim: Optional[float],
     show_simbad: bool = False,
+    iterative_search: bool = False,
+    min_sde_iterative: float = 5.0,
+    max_planets: Optional[int] = None,
 ):
     import matplotlib.pyplot as pl
     from quicklook.tql import TessQuickLook
@@ -90,6 +93,9 @@ def _run_ql_for_sector(
         Porb_limits=period_limits,
         edge_cutoff=edge_cutoff,
         phase_xlim=phase_xlim,
+        iterative_search=iterative_search,
+        min_sde_iterative=min_sde_iterative,
+        max_planets=max_planets,
         archival_survey="dss1",
         show_simbad=show_simbad,
         savefig=save,
@@ -203,6 +209,7 @@ def _summarize_tls_to_csv(input_dir: str, param: str = "SDE_tls") -> str:
                 "amp_gls": data.get("amp_gls")[0] if data.get("amp_gls") else None,
                 "depth": (1 - data.get("depth")) * 1e3 if data.get("depth") is not None else None,
                 "per_transit_count": tuple(int(x) for x in data.get("per_transit_count")),
+                "n_planets": data.get("n_planets", 1),
                 "exptime": data.get("exptime"),
                 "pipeline": data.get("pipeline"),
                 "flux_type": data.get("flux_type"),
@@ -302,6 +309,21 @@ def run(
     ),
     mask_ephem: bool = typer.Option(False, "--mask-ephem", help="Mask transits using ephemerides"),
     suffix: Optional[str] = typer.Option(None, "--suffix", help="Suffix for output filenames"),
+    iterative: bool = typer.Option(
+        False,
+        "--iterative",
+        help="Iteratively mask detected transits and re-run TLS to find additional planets",
+    ),
+    min_sde_iterative: float = typer.Option(
+        5.0,
+        "--min-sde-iterative",
+        help="Minimum SDE for additional iterative candidates (default 5)",
+    ),
+    max_planets: Optional[int] = typer.Option(
+        None,
+        "--max-planets",
+        help="Maximum number of planets to search for (default: until SDE < --min-sde-iterative)",
+    ),
 ):
     """Run a quick-look analysis of a TESS lightcurve.
 
@@ -405,6 +427,9 @@ def run(
                     tls_use_threads,
                     phase_xlim,
                     show_simbad,
+                    iterative,
+                    min_sde_iterative,
+                    max_planets,
                 ): sector
                 for sector in sectors
             }
@@ -459,6 +484,9 @@ def run(
                     tls_use_threads,
                     phase_xlim,
                     show_simbad,
+                    iterative,
+                    min_sde_iterative,
+                    max_planets,
                 ): p
                 for p in pipelines
             }
@@ -505,6 +533,9 @@ def run(
         overwrite=overwrite,
         suffix=suffix,
         tls_use_threads=tls_use_threads,
+        iterative_search=iterative,
+        min_sde_iterative=min_sde_iterative,
+        max_planets=max_planets,
     )
     _ = ql.plot_tql()
     if not save:

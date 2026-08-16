@@ -339,7 +339,7 @@ _STAR_PARAMS = {
 }  # fmt: skip
 
 
-def _bare_summary_ql(distinct_transit_count=3, gaia_ruwe=1.42):
+def _bare_summary_ql(distinct_transit_count=3, gaia_ruwe=1.42, n_planets=1):
     from astropy.coordinates import SkyCoord
 
     ql = TessQuickLook.__new__(TessQuickLook)
@@ -365,6 +365,7 @@ def _bare_summary_ql(distinct_transit_count=3, gaia_ruwe=1.42):
     if distinct_transit_count is not None:
         tls_values["distinct_transit_count"] = distinct_transit_count
     ql.tls_results = _TLSResult(tls_values)
+    ql.iterative_tls_results = [ql.tls_results] * n_planets
     ql.exofop_data = {"magnitudes": [{"band": "T", "value": 11.2}]}
     return ql
 
@@ -395,6 +396,22 @@ def test_summary_omits_transits_and_ruwe_when_unavailable():
 
     assert "Num. Transits" not in dict(sections[0][1])
     assert "RUWE" not in dict(sections[1][1])
+
+
+def test_summary_adds_num_planets_row_when_multiple():
+    """A multi-planet iterative search surfaces its planet count."""
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = _bare_summary_ql(n_planets=3)._summary_sections()
+
+    assert dict(sections[0][1])["Num. Planets"] == "3"
+
+
+def test_summary_omits_num_planets_row_by_default():
+    """Single-planet runs must not show a planet-count row."""
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = _bare_summary_ql()._summary_sections()
+
+    assert "Num. Planets" not in dict(sections[0][1])
 
 
 # @pytest.mark.parametrize("pg_method", ["gls", "lombscargle", "bls"])

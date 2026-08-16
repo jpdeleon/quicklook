@@ -170,6 +170,9 @@ class TessQuickLook:
         tls_use_threads: int = None,
         use_star_priors: bool = False,
         phase_xlim: float = None,
+        iterative_search: bool = False,
+        min_sde_iterative: float = 5.0,
+        max_planets: int = None,
         cancel_check=None,
     ):
         # start timer
@@ -193,6 +196,9 @@ class TessQuickLook:
         self.tls_use_threads = tls_use_threads
         self.use_star_priors = use_star_priors
         self.phase_xlim = phase_xlim
+        self.iterative_search = iterative_search
+        self.min_sde_iterative = min_sde_iterative
+        self.max_planets = max_planets
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
@@ -263,6 +269,14 @@ class TessQuickLook:
             normalize_phase=False,
             wrap_phase=self.tls_results.period / 2,
         )
+        self._check_cancel("before iterative TLS search")
+        if self.iterative_search:
+            if self.verbose:
+                logger.info("Running iterative multi-planet TLS search...")
+            self.run_iterative_tls()
+        else:
+            self.iterative_tls_results = [self.tls_results] if self.tls_results is not None else []
+        self._check_cancel("after iterative TLS search")
         # if self.fold_lc.primary_key is None:
         #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
@@ -1030,25 +1044,8 @@ class TessQuickLook:
             powers.
         """
         # CDIPS light curve has no flux err
-        if math.isnan(np.median(self.flat_lc.flux_err.value)):
-            flux_err = np.zeros_like(self.flat_lc.flux_err)
-            flux_err += np.nanstd(self.flat_lc.flux)
-        else:
-            flux_err = self.flat_lc.flux_err.value
-        # Run TLS
-        power_kwargs = {
-            "period_min": self.Porb_min,  # Roche limit default
-            "period_max": self.Porb_max,
-        }
-        if self.tls_use_threads is not None:
-            power_kwargs["use_threads"] = self.tls_use_threads
-        if self.use_star_priors:
-            logger.info(
-                "use_priors=True: fetching ExoFOP stellar parameters (R_star, M_star) for TLS"
-            )
-            power_kwargs.update(self._stellar_prior_kwargs())
-        else:
-            logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
+        flux_err = self._tls_flux_err(self.flat_lc)
+        power_kwargs = self._tls_power_kwargs()
         gpu_tls = _get_gpu_tls()
         engine_args = (
             self.flat_lc.time.value,
@@ -1066,131 +1063,239 @@ class TessQuickLook:
                 logger.warning(f"GTLS failed ({exc}); retrying with CPU TLS")
 
         logger.info("Running TLS on CPU")
-        model = tls(*engine_args, verbose=self.verbose)
-        self.tls_results = model.power(**power_kwargs)
+        self.tls_results = self._tls_search(self.flat_lc)
 
         # Advanced vetting flags
         self.compute_advanced_vetting_metrics()
+
+    def _tls_flux_err(self, lc):
+        """Flux error array for TLS.
+
+        CDIPS light curves carry NaN flux errors, so fall back to the LC
+        scatter for those cadences instead of failing the search.
+        """
+        if math.isnan(np.median(lc.flux_err.value)):
+            flux_err = np.zeros_like(lc.flux_err)
+            flux_err += np.nanstd(lc.flux.value)
+        else:
+            flux_err = lc.flux_err.value
+        return flux_err
+
+    def _tls_power_kwargs(self, period_min=None, period_max=None):
+        """Build the shared ``power()`` kwargs for a TLS run."""
+        power_kwargs = {
+            "period_min": self.Porb_min
+            if period_min is None
+            else period_min,  # Roche limit default
+            "period_max": self.Porb_max if period_max is None else period_max,
+        }
+        if self.tls_use_threads is not None:
+            power_kwargs["use_threads"] = self.tls_use_threads
+        if self.use_star_priors:
+            logger.info(
+                "use_priors=True: fetching ExoFOP stellar parameters (R_star, M_star) for TLS"
+            )
+            power_kwargs.update(self._stellar_prior_kwargs())
+        else:
+            logger.info("use_priors=False: TLS will use Sun-like defaults (R_star=1, M_star=1)")
+        return power_kwargs
+
+    def _tls_search(self, lc, period_min=None, period_max=None):
+        """Run the TLS algorithm on ``lc`` and return its results.
+
+        Used both for the primary detection (on the full flattened light
+        curve) and for every iterative re-search (on the transit-masked
+        remainder), so threads/priors settings are applied consistently.
+        """
+        model = tls(
+            lc.time.value,
+            lc.flux.value,
+            self._tls_flux_err(lc),
+            verbose=self.verbose,
+        )
+        return model.power(**self._tls_power_kwargs(period_min, period_max))
 
     def compute_advanced_vetting_metrics(self):
         """Compute advanced vetting metrics for young variable star candidates."""
         if not hasattr(self, "tls_results") or self.tls_results is None:
             return
-
-        def _set_val(key, val):
+        for key, val in self._compute_vetting_metrics(
+            self.tls_results, getattr(self, "fold_lc", None)
+        ).items():
             try:
                 self.tls_results[key] = val
             except Exception:
                 pass
 
+    def _compute_vetting_metrics(self, results, fold_lc):
+        """Shared vetting-metric computation for primary and iterative candidates.
+
+        Returns a dict with ``depth_variance_ratio``, ``duration_consistency_ratio``,
+        ``secondary_depth`` and ``secondary_sde``. Metrics that cannot be computed
+        from the available data are set to NaN rather than raising.
+        """
+        metrics = {}
+
         # 1. Depth variance ratio
         try:
-            int_depths = getattr(self.tls_results, "transit_depths", None)
+            int_depths = getattr(results, "transit_depths", None)
             if int_depths is not None and len(int_depths) > 1 and np.nanmean(int_depths) > 0:
-                _set_val(
-                    "depth_variance_ratio", float(np.nanstd(int_depths) / np.nanmean(int_depths))
+                metrics["depth_variance_ratio"] = float(
+                    np.nanstd(int_depths) / np.nanmean(int_depths)
                 )
             else:
-                _set_val("depth_variance_ratio", np.nan)
+                metrics["depth_variance_ratio"] = np.nan
         except Exception:
-            _set_val("depth_variance_ratio", np.nan)
+            metrics["depth_variance_ratio"] = np.nan
 
         # 2. Duration consistency ratio
         try:
-            obs_dur = getattr(self.tls_results, "duration", None)
-            exp_dur = getattr(self.tls_results, "duration_expected", None)
+            obs_dur = getattr(results, "duration", None)
+            exp_dur = getattr(results, "duration_expected", None)
             if obs_dur and exp_dur and exp_dur > 0:
-                _set_val("duration_consistency_ratio", float(obs_dur / exp_dur))
+                metrics["duration_consistency_ratio"] = float(obs_dur / exp_dur)
             else:
-                _set_val("duration_consistency_ratio", np.nan)
+                metrics["duration_consistency_ratio"] = np.nan
         except Exception:
-            _set_val("duration_consistency_ratio", np.nan)
+            metrics["duration_consistency_ratio"] = np.nan
 
         # 3. Secondary eclipse search in phase range [0.1, 0.9]
         try:
-            if hasattr(self, "fold_lc") and self.fold_lc is not None:
-                phase = self.fold_lc.phase.value
-                flux = self.fold_lc.flux.value
+            if fold_lc is not None:
+                phase = fold_lc.phase.value
+                flux = fold_lc.flux.value
                 sec_mask = (phase >= 0.1) & (phase <= 0.9)
                 if np.sum(sec_mask) > 10:
                     sec_std = np.nanstd(flux[sec_mask])
                     sec_min = np.nanmin(flux[sec_mask])
                     sec_depth = 1.0 - sec_min
-                    _set_val("secondary_depth", float(sec_depth))
-                    _set_val("secondary_sde", float(sec_depth / sec_std if sec_std > 0 else np.nan))
+                    metrics["secondary_depth"] = float(sec_depth)
+                    metrics["secondary_sde"] = float(sec_depth / sec_std if sec_std > 0 else np.nan)
                 else:
-                    _set_val("secondary_depth", np.nan)
-                    _set_val("secondary_sde", np.nan)
+                    metrics["secondary_depth"] = np.nan
+                    metrics["secondary_sde"] = np.nan
         except Exception:
-            _set_val("secondary_depth", np.nan)
-            _set_val("secondary_sde", np.nan)
+            metrics["secondary_depth"] = np.nan
+            metrics["secondary_sde"] = np.nan
 
-    def run_iterative_tls(self, min_sde: float = 7.0):
-        """Perform an iterative secondary transit search by masking the primary signal.
+        return metrics
+
+    def run_iterative_tls(self, min_sde: float = None, max_planets: int = None):
+        """Iteratively search for additional planets by masking detected transits.
+
+        The primary TLS detection (``self.tls_results``) is candidate 1. If its
+        SDE is below ``min_sde`` no additional search is performed. Otherwise the
+        primary transits are masked and TLS is re-run on the remaining flattened
+        light curve, repeating until (a) no candidate reaches ``min_sde``, (b) too
+        few points remain, (c) the detected period duplicates an earlier
+        candidate, or (d) ``max_planets`` candidates have been found.
+
+        Each candidate (with its vetting metrics) is stored in
+        ``self.iterative_tls_results``; the primary is always element 0.
 
         Parameters
         ----------
-        min_sde : float
-            Minimum SDE required on the primary detection to trigger a secondary search.
+        min_sde : float, optional
+            Minimum SDE for the primary and for each additional candidate.
+            Defaults to ``self.min_sde_iterative`` (5.0).
+        max_planets : int, optional
+            Maximum number of planets to search for. Defaults to
+            ``self.max_planets`` (None = search until SDE < min_sde).
 
         Returns
         -------
-        secondary_results : dict or None
-            TLS results dict for the secondary transit search if executed, else None.
+        list
+            All candidates found (primary first).
         """
+        if min_sde is None:
+            min_sde = self.min_sde_iterative
+        if max_planets is None:
+            max_planets = self.max_planets
         if not hasattr(self, "tls_results") or self.tls_results is None:
-            return None
+            self.iterative_tls_results = []
+            return self.iterative_tls_results
+
+        candidates = [self.tls_results]
+        # Ensure the primary carries the advanced vetting metrics (the GPU/GTLS
+        # path returns early from run_tls without computing them).
+        if getattr(self.tls_results, "depth_variance_ratio", None) is None:
+            self.compute_advanced_vetting_metrics()
 
         primary_sde = getattr(self.tls_results, "SDE", 0)
         if primary_sde < min_sde:
             if self.verbose:
                 logger.info(
-                    f"Primary SDE={primary_sde:.2f} < {min_sde}; skipping secondary search."
+                    f"Primary SDE={primary_sde:.2f} < {min_sde}; skipping additional searches."
                 )
-            return None
+            self.iterative_tls_results = candidates
+            return candidates
 
-        p0 = self.tls_results.period
-        t0 = self.tls_results.T0
-        dur = getattr(self.tls_results, "duration", 0.1)
+        remaining = self.flat_lc[~self._transit_mask_for_lc(self.flat_lc, self.tls_results)]
 
-        if self.verbose:
-            logger.info(
-                f"Masking primary candidate (P={p0:.3f} d, T0={t0:.2f}, dur={dur:.3f} d) for secondary search..."
+        while True:
+            if len(remaining) < 50:
+                if self.verbose:
+                    logger.info("Too little data remains after masking; stopping iterative search.")
+                break
+            if max_planets is not None and len(candidates) >= max_planets:
+                if self.verbose:
+                    logger.info(f"Reached max_planets={max_planets}; stopping iterative search.")
+                break
+
+            results = self._tls_search(remaining)
+            sde = getattr(results, "SDE", 0)
+            if sde < min_sde:
+                if self.verbose:
+                    logger.info(f"SDE={sde:.2f} < {min_sde}; stopping iterative search.")
+                break
+            if self._period_is_duplicate(getattr(results, "period", np.nan), candidates):
+                if self.verbose:
+                    logger.warning(
+                        f"Period P={results.period:.4f} d duplicates an earlier candidate; "
+                        "stopping iterative search."
+                    )
+                break
+
+            fold_lc = remaining.fold(
+                period=results.period,
+                epoch_time=results.T0,
+                normalize_phase=False,
+                wrap_phase=results.period / 2,
             )
+            for key, val in self._compute_vetting_metrics(results, fold_lc).items():
+                try:
+                    results[key] = val
+                except Exception:
+                    pass
+            candidates.append(results)
+            if self.verbose:
+                logger.info(
+                    f"Found candidate {len(candidates)}: P={results.period:.4f} d, "
+                    f"T0={results.T0:.3f} BTJD, SDE={sde:.2f}, "
+                    f"depth={_get_frac_depth(results) * 1e3:.2f} ppt"
+                )
 
-        # Create transit mask for primary candidate
-        mask = self.flat_lc.create_transit_mask(transit_time=t0, period=p0, duration=dur * 1.2)
-        masked_flat_lc = self.flat_lc[~mask]
+            remaining = remaining[~self._transit_mask_for_lc(remaining, results)]
 
-        if len(masked_flat_lc) < 50:
-            logger.warning("Not enough data remaining after masking primary candidate.")
-            return None
+        self.iterative_tls_results = candidates
+        return candidates
 
-        # Re-run TLS on remaining data
-        flux_err = (
-            np.nanstd(masked_flat_lc.flux.value)
-            if math.isnan(np.median(masked_flat_lc.flux_err.value))
-            else masked_flat_lc.flux_err.value
+    @staticmethod
+    def _period_is_duplicate(period, candidates, rtol=1e-3, atol=1e-4):
+        """True if ``period`` (days) matches any already-found candidate period."""
+        for cand in candidates:
+            if np.isclose(period, getattr(cand, "period", np.inf), rtol=rtol, atol=atol):
+                return True
+        return False
+
+    @staticmethod
+    def _transit_mask_for_lc(lc, results, margin=1.2):
+        """Boolean transit mask covering the signal in ``results`` with extra margin."""
+        return lc.create_transit_mask(
+            transit_time=getattr(results, "T0", 0),
+            period=getattr(results, "period", 1),
+            duration=getattr(results, "duration", 0.1) * margin,
         )
-        power_kwargs = {
-            "period_min": self.Porb_min,
-            "period_max": self.Porb_max,
-        }
-        if self.tls_use_threads is not None:
-            power_kwargs["use_threads"] = self.tls_use_threads
-
-        model = tls(
-            masked_flat_lc.time.value, masked_flat_lc.flux.value, flux_err, verbose=self.verbose
-        )
-        sec_results = model.power(**power_kwargs)
-        self.secondary_tls_results = sec_results
-
-        if self.verbose:
-            logger.info(
-                f"Secondary TLS Search Completed: SDE={sec_results.SDE:.2f}, P={sec_results.period:.3f} d"
-            )
-
-        return sec_results
 
     def _stellar_prior_kwargs(self):
         """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
@@ -1578,6 +1683,9 @@ class TessQuickLook:
         if n_transits is not None:
             candidate.append(("Num. Transits", f"{int(n_transits)}"))
         candidate.append(("Available sectors", self._format_available_sectors(self.all_sectors)))
+        n_planets = len(getattr(self, "iterative_tls_results", None) or [])
+        if n_planets > 1:
+            candidate.append(("Num. Planets", f"{n_planets}"))
 
         # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
@@ -1836,6 +1944,15 @@ class TessQuickLook:
         self.tls_results["flatten_method"] = self.flatten_method
         self.tls_results["window_length"] = self.window_length
 
+        # Iterative multi-planet search metadata: whether it was requested and,
+        # if any additional candidates were found, their parameters and vetting
+        # metrics (as h5io-serializable summary rows).
+        self.tls_results["iterative_search"] = bool(getattr(self, "iterative_search", False))
+        n_planets = len(getattr(self, "iterative_tls_results", None) or [])
+        self.tls_results["n_planets"] = n_planets if n_planets else 1
+        if n_planets > 1:
+            self.tls_results["iterative_candidates"] = self._summarize_iterative_candidates()
+
         # Record whether ExoFOP stellar parameters were used as TLS priors,
         # and (if so) which prior values reached the search. Stored in the
         # HDF5 output so downstream analysis can tell prior-informed runs
@@ -1865,6 +1982,89 @@ class TessQuickLook:
         # Append the Simbad object type
         if self.simbad_obj_type is not None:
             self.tls_results["simbad_obj"] = self.simbad_obj_type
+
+    def _summarize_iterative_candidates(self):
+        """Serialize each found planet into an h5io-safe summary row dict."""
+        rows = []
+        for i, res in enumerate(getattr(self, "iterative_tls_results", []), start=1):
+            rows.append(
+                {
+                    "planet": i,
+                    "period": getattr(res, "period", np.nan),
+                    "period_uncertainty": getattr(res, "period_uncertainty", np.nan),
+                    "T0": getattr(res, "T0", np.nan),
+                    "duration": getattr(res, "duration", np.nan),
+                    "depth": getattr(res, "depth", np.nan),
+                    "rp_rs": getattr(res, "rp_rs", np.nan),
+                    "SDE": getattr(res, "SDE", np.nan),
+                    "FAP": getattr(res, "FAP", np.nan),
+                    "odd_even_mismatch": getattr(res, "odd_even_mismatch", np.nan),
+                    "per_transit_count": getattr(res, "distinct_transit_count", np.nan),
+                    "depth_variance_ratio": getattr(res, "depth_variance_ratio", np.nan),
+                    "duration_consistency_ratio": getattr(
+                        res, "duration_consistency_ratio", np.nan
+                    ),
+                    "secondary_depth": getattr(res, "secondary_depth", np.nan),
+                    "secondary_sde": getattr(res, "secondary_sde", np.nan),
+                }
+            )
+        return rows
+
+    def _mask_all_except(self, planet_index, margin=1.2):
+        """Boolean mask over ``self.flat_lc`` covering every candidate but ``planet_index``."""
+        mask = np.zeros(len(self.flat_lc), dtype=bool)
+        for j, res in enumerate(getattr(self, "iterative_tls_results", []), start=1):
+            if j == planet_index:
+                continue
+            mask |= self._transit_mask_for_lc(self.flat_lc, res, margin=margin)
+        return mask
+
+    def _save_iterative_candidates(self, fp):
+        """Save a periodogram + odd-even PNG and a TLS HDF5 for every extra planet.
+
+        Only the candidate's own transits are retained in the fold (all other
+        found candidates are masked out) so the panel shows the signal as it
+        appears in the raw flattened data.
+        """
+        for idx, results in enumerate(getattr(self, "iterative_tls_results", [])[1:], start=2):
+            cand_png = fp.with_stem(fp.stem + f"_p{idx}").with_suffix(".png")
+            cand_h5 = Path(self.outdir, fp.name + f"_tls_p{idx}").with_suffix(".h5")
+
+            fold_lc = self.flat_lc[~self._mask_all_except(idx)].fold(
+                period=results.period,
+                epoch_time=results.T0,
+                normalize_phase=False,
+                wrap_phase=results.period / 2,
+            )
+            fig2, axes2 = pl.subplots(1, 2, figsize=(14, 5), tight_layout=True)
+            plot_tls(
+                results,
+                toi_period=None,
+                period_min=self.Porb_min,
+                period_max=self.Porb_max,
+                ax=axes2[0],
+            )
+            plot_odd_even_transit(
+                fold_lc,
+                results,
+                bin_mins=10,
+                markersize=6,
+                ax=axes2[1],
+                phase_xlim=self.phase_xlim,
+            )
+            fig2.suptitle(
+                f"Planet {idx}: P={results.period:.4f} d | SDE={results.SDE:.2f} | "
+                f"Rp/Rs={results.rp_rs:.3f} | depth={_get_frac_depth(results) * 1e3:.2f} ppt",
+                y=1.0,
+                fontsize=14,
+            )
+            if self.savefig:
+                fig2.savefig(cand_png, dpi=150, bbox_inches="tight")
+                logger.info(f"Saved: {cand_png}")
+            if self.savetls:
+                h5io.save(cand_h5, results)
+                logger.info(f"Saved: {cand_h5}")
+            pl.close(fig2)
 
     def plot_tql(self, return_fig_and_paths=False, **kwargs: dict) -> pl.Figure:
         """
@@ -2162,6 +2362,11 @@ class TessQuickLook:
         if self.savetls:
             h5io.save(h5_file, self.tls_results)
             logger.info(f"Saved: {h5_file}")
+
+        if (self.savefig or self.savetls) and len(
+            getattr(self, "iterative_tls_results", None) or []
+        ) > 1:
+            self._save_iterative_candidates(fp)
 
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start

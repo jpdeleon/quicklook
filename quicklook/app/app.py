@@ -327,6 +327,9 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             Porb_limits=period_limits,
             mask_ephem=kwargs.get("mask_ephem", False),
             use_star_priors=kwargs.get("use_priors", False),
+            iterative_search=kwargs.get("iterative_search", False),
+            min_sde_iterative=kwargs.get("min_sde_iterative", 5.0),
+            max_planets=kwargs.get("max_planets"),
             phase_xlim=kwargs.get("phase_xlim"),
             custom_ephem=custom_ephem,
             archival_survey=kwargs.get("survey", "dss1"),
@@ -447,6 +450,9 @@ def _parse_params(form):
         "phase_xlim": safe_float(form.get("phase_xlim") or None, None),
         "mask_ephem": _is_truthy(form.get("mask_ephem")),
         "use_priors": _is_truthy(form.get("use_priors")),
+        "iterative_search": _is_truthy(form.get("iterative_search")),
+        "min_sde_iterative": safe_float(form.get("min_sde_iterative", 5.0), 5.0),
+        "max_planets": safe_int(form.get("max_planets") or None, None),
         "custom_ephem": form.get("custom_ephem"),
         "survey": form.get("survey", "dss1"),
         "show_simbad": _is_truthy(form.get("show_simbad")),
@@ -471,6 +477,7 @@ def _job_dedup_signature(params):
         params.get("sector", -1),
         params.get("fluxtype", "pdcsap"),
         params.get("exptime", None),
+        bool(params.get("iterative_search", False)),
     )
 
 

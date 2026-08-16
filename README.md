@@ -107,6 +107,11 @@ ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 # Restrict TLS period search range
 ql run --name TOI-125.01 --period-limits 1 5
 
+# Iteratively mask detected transits and re-run TLS to find additional planets.
+# Stops when SDE drops below --min-sde-iterative (default 5) or --max-planets
+# is reached; saves one periodogram + odd-even PNG and one TLS HDF5 per planet.
+ql run --name TOI-125.01 --iterative --min-sde-iterative 6 --max-planets 3 --save
+
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save
 
