@@ -30,6 +30,8 @@ _FLATTEN_CHOICES = {
     "cofiam",
     "supersmoother",
     "savgol",
+    "notch",
+    "locor",
 }
 _GP_KERNEL_CHOICES = {"periodic_auto", "periodic", "squared_exp"}
 _PG_CHOICES = {"gls", "ls", "bls"}
@@ -268,7 +270,9 @@ def run(
         "default", "--quality-bitmask", help=f"Quality bitmask ({'/'.join(_BITMASK_CHOICES)})"
     ),
     flatten_method: str = typer.Option(
-        "biweight", "--flatten-method", help=f"Wotan flatten method ({'/'.join(_FLATTEN_CHOICES)})"
+        "biweight",
+        "--flatten-method",
+        help=f"Flatten method ({'/'.join(sorted(_FLATTEN_CHOICES))})",
     ),
     gp_kernel: str = typer.Option(
         "periodic_auto", "--gp-kernel", help=f"Wotan GP kernel ({'/'.join(_GP_KERNEL_CHOICES)})"

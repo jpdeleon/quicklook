@@ -92,7 +92,7 @@ A text summary with:
 
 ## Detrending methods
 
-QuickLook uses [wotan](https://github.com/hippke/wotan) for detrending. The default is `biweight`, but any wotan method can be used:
+QuickLook uses [wotan](https://github.com/hippke/wotan) for most detrending methods. The default is `biweight`, but any wotan method can be used:
 
 | Method | Description | Best for |
 |--------|-------------|----------|
@@ -104,6 +104,18 @@ QuickLook uses [wotan](https://github.com/hippke/wotan) for detrending. The defa
 
 !!! warning
     GP flattening (`--flatten_method gp`) is not recommended for short-cadence data (exposure time <= 120s) due to computational cost.
+
+### Notch and LOCoR
+
+Two additional methods are implemented directly in QuickLook (`quicklook/notch_locor.py`), adapted from the Notch filter and Locally Optimized Combination of Rotations (LOCoR) algorithms of [Rizzuto et al. 2017](https://arxiv.org/abs/1709.09670) ([arizzuto/Notch_and_LOCoR](https://github.com/arizzuto/Notch_and_LOCoR)):
+
+| Method | Description | `--window-length` meaning |
+|--------|-------------|----------------------------|
+| `notch` | Sliding-window quadratic + notch-box fit, BIC-selected against a plain quadratic per window, so a real transit dip is preserved rather than divided out | Notch window size in days (default 0.5) |
+| `locor` | Phase-folds on the rotation period and fits each cycle as an optimal linear combination of neighboring cycles | Rotation period in days (auto-estimated via GLS if left unset) |
+
+!!! note
+    The reference implementation pins its per-window fits to `mpyfit`, a C-backed fitter that isn't on PyPI and needs a local compiler. QuickLook's port solves the same windowed model with `scipy.optimize.least_squares` instead, so results follow the same algorithm but aren't bit-for-bit identical to the upstream repository.
 
 ## Output files
 

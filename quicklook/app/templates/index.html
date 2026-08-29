@@ -410,7 +410,7 @@
         <div>
           <div class="label-row">
             <label for="flatten_method">Flatten Method</label>
-            <span class="help-tip" tabindex="0" data-tip="Detrending algorithm (wotan). 'biweight' is robust and fast; 'gp' uses Gaussian Processes; others are spline/filter variants.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Detrending algorithm. 'biweight' is robust and fast; 'gp' uses Gaussian Processes; 'notch'/'locor' (Rizzuto et al. 2017) preserve transit shape via a windowed BIC test / rotation-cycle combination, using Window Length as the notch window (days) or LOCoR period (days); others are spline/filter variants (wotan).">?</span>
           </div>
           <select name="flatten_method" id="flatten_method">
             <option value="biweight" selected>biweight</option>
@@ -424,12 +424,14 @@
             <option value="cofiam">cofiam</option>
             <option value="supersmoother">supersmoother</option>
             <option value="savgol">savgol</option>
+            <option value="notch">notch</option>
+            <option value="locor">locor</option>
           </select>
         </div>
         <div>
           <div class="label-row">
-            <label for="window_length">Window Length (days)</label>
-            <span class="help-tip" tabindex="0" data-tip="Window size for detrending in days. Leave blank for automatic selection based on the detected period.">?</span>
+            <label for="window_length" id="window_length_label">Window Length (days)</label>
+            <span class="help-tip" tabindex="0" id="window_length_tip" data-tip="Window size for detrending in days. Leave blank for automatic selection based on the detected period.">?</span>
           </div>
           <input type="number" step="0.01" name="window_length" id="window_length" placeholder="auto">
         </div>
@@ -936,6 +938,18 @@ function updateFieldStates() {
     gpKernel.disabled = disabled;
     gpKernel.title = disabled ? 'Ignored — only used when Flatten Method is "gp"' : '';
     gpKernel.style.opacity = disabled ? '0.5' : '';
+  }
+
+  const windowLabel = document.getElementById('window_length_label');
+  const windowTip = document.getElementById('window_length_tip');
+  if (flatten && windowLabel && windowTip) {
+    if (flatten.value === 'locor') {
+      windowLabel.textContent = 'Rotation Period (days)';
+      windowTip.dataset.tip = 'LOCoR rotation period in days. Leave blank to estimate it automatically from a GLS periodogram.';
+    } else {
+      windowLabel.textContent = 'Window Length (days)';
+      windowTip.dataset.tip = 'Window size for detrending in days. Leave blank for automatic selection based on the detected period.';
+    }
   }
 }
 

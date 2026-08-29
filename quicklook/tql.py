@@ -28,6 +28,7 @@ from astroquery.simbad import Simbad
 from astroquery.mast import Catalogs
 import lightkurve as lk
 from quicklook import h5io
+from quicklook.notch_locor import notch_flatten, locor_flatten
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -65,6 +66,9 @@ from quicklook.pipelines import (  # noqa: E402
 DATA_PATH = files("quicklook").joinpath("data")
 simbad_obj_list_file = Path(DATA_PATH, "simbad_obj_types.csv")
 use_style("science")
+
+# Flatten methods handled by quicklook.notch_locor instead of wotan.
+NOTCH_LOCOR_METHODS = ("notch", "locor")
 
 __all__ = ["TessQuickLook"]
 
@@ -219,7 +223,13 @@ class TessQuickLook:
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
 
-        if window_length is None:
+        if window_length is None and flatten_method == "locor":
+            # window_length doubles as LOCoR's rotation period, which the
+            # toi_dur/0.5 d heuristic below doesn't make sense for; defer to
+            # the GLS-based period estimate computed in flatten_raw_lc().
+            self._use_rotation_aware_window = False
+            self.window_length = 0.0
+        elif window_length is None:
             self._use_rotation_aware_window = True
             self.window_length = (
                 self.toi_dur[0] * 3
@@ -1373,7 +1383,8 @@ class TessQuickLook:
 
     def flatten_raw_lc(self):
         """
-        Flatten the raw light curve using WOTAN.
+        Flatten the raw light curve using wotan, or Notch/LOCoR for
+        ``flatten_method`` in ("notch", "locor").
 
         Returns
         -------
@@ -1384,8 +1395,31 @@ class TessQuickLook:
 
         """
         if self.verbose:
-            logger.info(f"Using wotan's {self.flatten_method} method to flatten raw lc.")
-        if float(self.window_length) == 0.0:
+            logger.info(f"Using {self.flatten_method} method to flatten raw lc.")
+        if float(self.window_length) == 0.0 and self.flatten_method in NOTCH_LOCOR_METHODS:
+            # Notch/LOCoR aren't wotan methods, so the injection-recovery grid
+            # search below (which calls wotan.flatten internally) can't tune
+            # their window/period. Fall back to a sensible default instead.
+            if self.flatten_method == "locor":
+                try:
+                    gls_obj = self.init_gls()
+                    self.window_length = float(gls_obj.P)
+                except Exception as exc:
+                    self.window_length = 1.0
+                    if self.verbose:
+                        logger.warning(
+                            f"Could not compute rotation period via GLS for LOCoR ({exc}); "
+                            f"using window_length={self.window_length:.2f} d."
+                        )
+            else:
+                self.window_length = 0.5
+            self.window_length_opt = None
+            if self.verbose:
+                logger.info(
+                    f"Auto window-length search isn't available for {self.flatten_method}; "
+                    f"using window_length={self.window_length:.2f} d."
+                )
+        elif float(self.window_length) == 0.0:
             np.random.default_rng(1)
 
             logger.info(
@@ -1422,10 +1456,13 @@ class TessQuickLook:
         else:
             self.window_length_opt = None
 
-        # Rotation-aware window and spline tuning if window_length is default or unset
+        # Rotation-aware window and spline tuning if window_length is default or unset.
+        # Skipped for LOCoR: its window_length is a rotation *period*, not a
+        # sub-day detrending window, so the 0.5/1.0 d heuristic below doesn't apply.
         if (
             getattr(self, "_use_rotation_aware_window", False)
             and getattr(self, "toi_dur", None) is None
+            and self.flatten_method != "locor"
         ):
             try:
                 gls_obj = self.init_gls()
@@ -1444,47 +1481,63 @@ class TessQuickLook:
                         f"Could not compute rotation period via GLS for dynamic window tuning ({exc})"
                     )
 
-        # Additional kwargs for wotan flatten
-        flatten_kwargs = {
-            "method": self.flatten_method,
-            "robust": True,
-            "kernel": self.gp_kernel,
-            "kernel_size": self.gp_kernel_size,
-            "window_length": self.window_length,
-            "edge_cutoff": self.edge_cutoff,
-            "break_tolerance": 1,
-            "return_trend": True,
-            "cval": 5.0,
-        }
+        if self.flatten_method in NOTCH_LOCOR_METHODS:
+            # Notch and LOCoR (Rizzuto et al. 2017; arizzuto/Notch_and_LOCoR),
+            # reimplemented in quicklook.notch_locor -- not part of wotan.
+            if self.flatten_method == "notch":
+                wflat_lc, wtrend_lc = notch_flatten(
+                    self.raw_lc.time.value,
+                    self.raw_lc.flux.value,
+                    window_length=self.window_length,
+                )
+            else:
+                wflat_lc, wtrend_lc = locor_flatten(
+                    self.raw_lc.time.value,
+                    self.raw_lc.flux.value,
+                    period=self.window_length,
+                )
+        else:
+            # Additional kwargs for wotan flatten
+            flatten_kwargs = {
+                "method": self.flatten_method,
+                "robust": True,
+                "kernel": self.gp_kernel,
+                "kernel_size": self.gp_kernel_size,
+                "window_length": self.window_length,
+                "edge_cutoff": self.edge_cutoff,
+                "break_tolerance": 1,
+                "return_trend": True,
+                "cval": 5.0,
+            }
 
-        # Dynamic max_splines calculation for spline methods based on P_rot
-        if self.flatten_method in ("rspline", "pspline", "spline"):
-            try:
-                gls_obj = self.init_gls()
-                prot = float(gls_obj.P)
-                if prot <= 2.0:
-                    max_splines = 200
-                elif prot <= 10.0:
-                    max_splines = int(200 / prot)
-                else:
-                    max_splines = 25
-                flatten_kwargs["max_splines"] = max_splines
-                if self.verbose:
-                    logger.info(
-                        f"Rotation-aware spline tuning: P_rot={prot:.2f} d -> max_splines={max_splines}"
-                    )
-            except Exception as exc:
-                if self.verbose:
-                    logger.warning(f"Could not set max_splines dynamically ({exc})")
+            # Dynamic max_splines calculation for spline methods based on P_rot
+            if self.flatten_method in ("rspline", "pspline", "spline"):
+                try:
+                    gls_obj = self.init_gls()
+                    prot = float(gls_obj.P)
+                    if prot <= 2.0:
+                        max_splines = 200
+                    elif prot <= 10.0:
+                        max_splines = int(200 / prot)
+                    else:
+                        max_splines = 25
+                    flatten_kwargs["max_splines"] = max_splines
+                    if self.verbose:
+                        logger.info(
+                            f"Rotation-aware spline tuning: P_rot={prot:.2f} d -> max_splines={max_splines}"
+                        )
+                except Exception as exc:
+                    if self.verbose:
+                        logger.warning(f"Could not set max_splines dynamically ({exc})")
 
-        # https://github.com/hippke/wotan#available-detrending-algorithms
-        wflat_lc, wtrend_lc = flatten(
-            # Array of time values
-            self.raw_lc.time.value,
-            # Array of flux values
-            self.raw_lc.flux.value,
-            **flatten_kwargs,
-        )
+            # https://github.com/hippke/wotan#available-detrending-algorithms
+            wflat_lc, wtrend_lc = flatten(
+                # Array of time values
+                self.raw_lc.time.value,
+                # Array of flux values
+                self.raw_lc.flux.value,
+                **flatten_kwargs,
+            )
 
         if self.sigma_clip_flat is not None:
             msg = "Applying sigma clip on flattened lc with "

@@ -187,6 +187,38 @@ def test_with_mock_light_curve(mock_light_curve, planet_inputs):
     assert ql.sector == inputs["sector"]
 
 
+@pytest.mark.parametrize("flatten_method", ["notch", "locor"])
+def test_with_mock_light_curve_notch_locor(mock_light_curve, planet_inputs, flatten_method):
+    """flatten_raw_lc() dispatches to quicklook.notch_locor for these methods
+    instead of wotan, including when the GLS-based auto period/window falls
+    back gracefully (get_lc is mocked here, so self.pipeline isn't set yet
+    when flatten_raw_lc() runs -- init_gls() should fail soft, not crash)."""
+    inputs = planet_inputs.copy()
+    inputs["tls_use_threads"] = 1
+    inputs["flatten_method"] = flatten_method
+    exofop_data = {
+        "basic_info": {
+            "star_names": "WASP-21, TIC 234523599, Gaia DR3 2345395591154370176",
+            "tic_id": "234523599",
+        },
+        "coordinates": {"ra": 349.8985, "dec": -10.3270},
+        "planet_parameters": [],
+    }
+
+    with (
+        patch("quicklook.tql.get_exofop_json", return_value=exofop_data),
+        patch.object(TessQuickLook, "get_simbad_obj_type", return_value=None),
+        patch.object(TessQuickLook, "get_lc", return_value=mock_light_curve),
+        patch.object(TessQuickLook, "check_output_file_exists", return_value=None),
+    ):
+        ql = TessQuickLook(**inputs)
+
+    assert isinstance(ql.flat_lc, lk.LightCurve)
+    assert isinstance(ql.trend_lc, lk.LightCurve)
+    assert np.isfinite(ql.flat_lc.flux.value).all()
+    assert ql.window_length > 0
+
+
 def _bare_ql(raw_lc, toi_epoch, toi_period, toi_dur, sector=1, all_sectors=None):
     """Build a TessQuickLook without running __init__ (no network).
 

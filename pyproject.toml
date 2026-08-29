@@ -47,6 +47,7 @@ dependencies = [
     "loguru",
     "flask",
     "typer>=0.12",
+    "scipy>=1.10",
 ]
 
 [project.optional-dependencies]

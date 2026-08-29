@@ -14,7 +14,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 
 - **Multi-pipeline support** -- SPOC, TESS-SPOC, QLP, CDIPS, PATHOS, TGLC, TASOC, T16
 - **Flux / light-curve type** -- PDCSAP or SAP for SPOC; aperture or PSF photometry for TGLC, with an automatic best-quality default
-- **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density
+- **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density, plus a built-in **Notch** and **LOCoR** filter (Rizzuto et al. 2017) that preserve transit shape via a windowed BIC test / rotation-cycle combination instead of dividing it out
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
@@ -103,6 +103,11 @@ ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
 # Custom detrending
 ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
+
+# Notch filter (window length in days) or LOCoR (window-length is the
+# rotation period in days; leave it unset to estimate it via GLS)
+ql run --name TOI-125.01 --flatten-method notch --window-length 0.5
+ql run --name TOI-125.01 --flatten-method locor
 
 # Restrict TLS period search range
 ql run --name TOI-125.01 --period-limits 1 5

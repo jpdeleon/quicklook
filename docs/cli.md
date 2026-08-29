@@ -38,8 +38,8 @@ ql run --name TARGET [options]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--flatten-method METHOD` | `biweight` | Detrending method (any [wotan](https://github.com/hippke/wotan) method) |
-| `--window-length DAYS` | auto | Detrending window length in days (0 = auto-optimize) |
+| `--flatten-method METHOD` | `biweight` | Detrending method: any [wotan](https://github.com/hippke/wotan) method, or `notch`/`locor` (see [Notch and LOCoR](pipeline.md#notch-and-locor)) |
+| `--window-length DAYS` | auto | Detrending window length in days (0 = auto-optimize); for `locor` this is the rotation period instead (0/unset = auto-estimate via GLS) |
 | `--edge-cutoff DAYS` | `0.1` | Cut this many days from each orbit edge |
 | `--sigma-clip-raw LO HI` | `10 5` | Sigma clipping on raw light curve before flattening |
 | `--sigma-clip-flat LO HI` | none | Sigma clipping on flattened light curve |
