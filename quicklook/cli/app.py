@@ -130,6 +130,11 @@ def _apply_rank_filters(
     min_depth: float = 1,
     max_depth: float = 100,
     min_SDE: float = 5,
+    max_odd_even_sigma: float = 3.0,
+    max_secondary_sde: float = 5.0,
+    max_depth_variance_ratio: float = 0.5,
+    duration_ratio_bounds: tuple = (0.3, 3.0),
+    max_ruwe: float = 1.4,
 ):
     import numpy as np
     import pandas as pd
@@ -152,6 +157,42 @@ def _apply_rank_filters(
     strong_signal = df["SDE_tls"] > min_SDE
     errmsg = f"No candidates satisfy `SDE>{min_SDE}`."
     assert strong_signal.sum() > 0, errmsg
+
+    # Advanced vetting metrics (odd-even depth mismatch, secondary eclipse,
+    # per-transit depth/duration consistency, Gaia astrometric blend flag).
+    # These are computed by TessQuickLook per candidate but were previously
+    # dropped before reaching this filter. A metric that is NaN (not
+    # computable for a given candidate, or absent from an older CSV) is
+    # treated as "not flagged" rather than excluded, matching the
+    # rotation-harmonic check above.
+    def _numeric_column(name, default=np.nan):
+        return pd.to_numeric(df2.get(name, pd.Series(default, index=df2.index)), errors="coerce")
+
+    odd_even = _numeric_column("odd_even_mismatch")
+    not_odd_even_eb = ~(odd_even.abs() > max_odd_even_sigma)
+    errmsg = f"No candidates satisfy `|odd_even_mismatch|<={max_odd_even_sigma}sigma`."
+    assert not_odd_even_eb.sum() > 0, errmsg
+
+    secondary_sde = _numeric_column("secondary_sde")
+    no_significant_secondary = ~(secondary_sde > max_secondary_sde)
+    errmsg = f"No candidates satisfy `secondary_sde<={max_secondary_sde}`."
+    assert no_significant_secondary.sum() > 0, errmsg
+
+    depth_variance_ratio = _numeric_column("depth_variance_ratio")
+    consistent_depth = ~(depth_variance_ratio > max_depth_variance_ratio)
+    errmsg = f"No candidates satisfy `depth_variance_ratio<={max_depth_variance_ratio}`."
+    assert consistent_depth.sum() > 0, errmsg
+
+    duration_ratio = _numeric_column("duration_consistency_ratio")
+    lo, hi = duration_ratio_bounds
+    consistent_duration = duration_ratio.isna() | duration_ratio.between(lo, hi)
+    errmsg = f"No candidates satisfy `duration_consistency_ratio` in {duration_ratio_bounds}."
+    assert consistent_duration.sum() > 0, errmsg
+
+    ruwe = _numeric_column("gaia_ruwe")
+    not_astrometric_blend = ~(ruwe > max_ruwe)
+    errmsg = f"No candidates satisfy `gaia_ruwe<={max_ruwe}`."
+    assert not_astrometric_blend.sum() > 0, errmsg
 
     not_toi = df2["TOI"].isna() | (df2["TOI"] == "")
 
@@ -179,7 +220,19 @@ def _apply_rank_filters(
     long_valid = (exp > 120) & (count > 5)
     not_sparse = short_valid | long_valid | (count == 0)
 
-    return df2[depth_range & not_near & not_eb & strong_signal & not_toi & not_sparse]
+    return df2[
+        depth_range
+        & not_near
+        & not_eb
+        & strong_signal
+        & not_odd_even_eb
+        & no_significant_secondary
+        & consistent_depth
+        & consistent_duration
+        & not_astrometric_blend
+        & not_toi
+        & not_sparse
+    ]
 
 
 # --- read-tls helper (heavy imports inside) ---
@@ -216,6 +269,12 @@ def _summarize_tls_to_csv(input_dir: str, param: str = "SDE_tls") -> str:
                 "pipeline": data.get("pipeline"),
                 "flux_type": data.get("flux_type"),
                 "simbad_object": data.get("simbad_obj"),
+                "odd_even_mismatch": data.get("odd_even_mismatch"),
+                "secondary_depth": data.get("secondary_depth"),
+                "secondary_sde": data.get("secondary_sde"),
+                "depth_variance_ratio": data.get("depth_variance_ratio"),
+                "duration_consistency_ratio": data.get("duration_consistency_ratio"),
+                "gaia_ruwe": data.get("gaia_ruwe"),
                 "filename": file,
             }
             records.append(pd.Series(d))
@@ -574,6 +633,23 @@ def rank_tls(
     min_sde: float = typer.Option(5.0, "--min-sde", help="Minimum SDE threshold"),
     min_depth: float = typer.Option(1.0, "--min-depth", help="Minimum transit depth (ppt)"),
     max_depth: float = typer.Option(100.0, "--max-depth", help="Maximum transit depth (ppt)"),
+    max_odd_even_sigma: float = typer.Option(
+        3.0, "--max-odd-even-sigma", help="Max odd/even transit-depth mismatch (sigma)"
+    ),
+    max_secondary_sde: float = typer.Option(
+        5.0, "--max-secondary-sde", help="Max significance of a secondary-eclipse-like dip"
+    ),
+    max_depth_variance_ratio: float = typer.Option(
+        0.5, "--max-depth-variance-ratio", help="Max relative scatter across per-transit depths"
+    ),
+    duration_ratio_bounds: Tuple[float, float] = typer.Option(
+        (0.3, 3.0),
+        "--duration-ratio-bounds",
+        help="Allowed (min, max) observed/expected transit duration ratio",
+    ),
+    max_ruwe: float = typer.Option(
+        1.4, "--max-ruwe", help="Max Gaia DR3 RUWE (flags likely unresolved binaries/blends)"
+    ),
 ):
     """Copy and prefix PNG files sorted by SDE_tls or a custom column.
 
@@ -613,6 +689,11 @@ def rank_tls(
             min_depth=min_depth,
             max_depth=max_depth,
             min_SDE=min_sde,
+            max_odd_even_sigma=max_odd_even_sigma,
+            max_secondary_sde=max_secondary_sde,
+            max_depth_variance_ratio=max_depth_variance_ratio,
+            duration_ratio_bounds=duration_ratio_bounds,
+            max_ruwe=max_ruwe,
         )
         if len(df2) == 0:
             typer.echo(

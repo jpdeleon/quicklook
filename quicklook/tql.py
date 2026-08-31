@@ -1062,20 +1062,23 @@ class TessQuickLook:
             self.flat_lc.flux.value,
             flux_err,
         )
+        ran_on_gpu = False
         if gpu_tls:
             logger.info("Running GTLS on GPU")
             try:
                 model = gpu_tls(*engine_args, verbose=self.verbose)
                 result = model.power(**power_kwargs)
                 self.tls_results = _adapt_gtls_result(result, model)
-                return
+                ran_on_gpu = True
             except Exception as exc:
                 logger.warning(f"GTLS failed ({exc}); retrying with CPU TLS")
 
-        logger.info("Running TLS on CPU")
-        self.tls_results = self._tls_search(self.flat_lc)
+        if not ran_on_gpu:
+            logger.info("Running TLS on CPU")
+            self.tls_results = self._tls_search(self.flat_lc)
 
-        # Advanced vetting flags
+        # Advanced vetting flags (also covers the GPU/GTLS path above, which
+        # does not compute them itself).
         self.compute_advanced_vetting_metrics()
 
     def _tls_flux_err(self, lc):
@@ -1184,6 +1187,9 @@ class TessQuickLook:
                 else:
                     metrics["secondary_depth"] = np.nan
                     metrics["secondary_sde"] = np.nan
+            else:
+                metrics["secondary_depth"] = np.nan
+                metrics["secondary_sde"] = np.nan
         except Exception:
             metrics["secondary_depth"] = np.nan
             metrics["secondary_sde"] = np.nan
@@ -2308,6 +2314,7 @@ class TessQuickLook:
         # Values >~1.4 flag a poor single-star astrometric fit — often an
         # unresolved companion or blend. Matched to the target by source_id.
         self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
+        self.tls_results["gaia_ruwe"] = float(self.gaia_ruwe)
         if len(self.gaia_sources) > 1:
             sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
             self.nearby_star_sep = sep.iloc[1] * u.arcmin
