@@ -1834,6 +1834,12 @@ def epsf(
                     near_edge=near_edge,
                     prior=prior,
                 )
+                # fit_lc_float_field doesn't build per-star postage stamps; keep
+                # lc_output's contamination fields well-defined (NaN) instead of
+                # leaving target_5x5/field_stars_5x5 unbound on the first star
+                # that takes this branch, or leaking a previous star's values.
+                target_5x5 = np.full((5, 5), np.nan)
+                field_stars_5x5 = np.full((5, 5), np.nan)
             else:
                 (
                     aperture,
@@ -2189,6 +2195,12 @@ def get_tglc_lc(
             source = None
     if source is None:
         source = Source_cut(target_name, size=size, sector=source_sector_arg, limit_mag=limit_mag)
+        # get_tglc_lc() always requests a single resolved sector and never calls
+        # select_sector() again, so the raw multi-extension MAST HDUList is dead
+        # weight after construction -- for a 200s-cadence sector it can bloat the
+        # live object (and its cache pickle) by several GB. select_sector() has
+        # already copied everything needed into self.time/flux/flux_err/quality/wcs.
+        source.hdulist = None
         if use_cache:
             try:
                 with open(source_pkl, "wb") as fh:
