@@ -88,6 +88,46 @@ def test_fit_lc_prior_requires_coordinate_arrays():
         )
 
 
+def test_get_tglc_lc_strips_hdulist_from_legacy_cache(tglc_inputs, tmp_path, monkeypatch):
+    """A cache pickle written before the hdulist guard existed must still be
+    memory-safe once loaded: get_tglc_lc must strip hdulist after pickle.load,
+    not just on the fresh-Source_cut-construction path."""
+    import pickle
+    from types import SimpleNamespace
+
+    cache_dir = str(tmp_path)
+    slug = tglc_inputs["target_name"].replace(" ", "")
+    sector_tag = f"s{tglc_inputs['sector']}"
+    source_dir = os.path.join(cache_dir, "source")
+    os.makedirs(source_dir, exist_ok=True)
+    source_pkl = os.path.join(
+        source_dir, f"source_{slug}_{sector_tag}_size{tglc_inputs['size']}.pkl"
+    )
+
+    # Simulate a legacy cache: a Source_cut-like object that still carries a
+    # raw hdulist attribute (a real one would be multi-GB for a 200s cadence
+    # sector; a sentinel is enough to prove it gets dropped).
+    legacy_source = SimpleNamespace(hdulist=["stand-in-for-a-huge-raw-hdulist"])
+    with open(source_pkl, "wb") as fh:
+        pickle.dump(legacy_source, fh)
+
+    captured = {}
+
+    def _capture_and_boom(source, *args, **kwargs):
+        captured["source"] = source
+        raise RuntimeError("stub-pipeline-reached")
+
+    # get_psf(source) is the first thing get_tglc_lc does after resolving
+    # source (from cache or fresh build); stubbing it lets us inspect the
+    # loaded source without running the rest of the pipeline.
+    monkeypatch.setattr("quicklook.tglc.get_psf", _capture_and_boom)
+
+    with pytest.raises(RuntimeError, match="stub-pipeline-reached"):
+        get_tglc_lc(**tglc_inputs, cache_dir=cache_dir)
+
+    assert captured["source"].hdulist is None
+
+
 def test_fit_lc_prior_none_keeps_default_behavior():
     """prior=None (default) must not require x_all/y_all and must not raise
     the new ValueError. We trigger a different failure later (missing data)

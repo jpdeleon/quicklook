@@ -2188,9 +2188,20 @@ def get_tglc_lc(
         try:
             with open(source_pkl, "rb") as fh:
                 source = pickle.load(fh)
+            # Cache files written before the hdulist guard below existed (or by
+            # any other Source_cut caller) may still carry the raw MAST HDUList;
+            # drop it here too so an old bloated cache doesn't reintroduce the
+            # multi-GB memory spike this guard exists to avoid.
+            source.hdulist = None
             if verbose:
                 logger.info(f"Loaded cached TGLC source from {source_pkl}")
-        except (pickle.UnpicklingError, EOFError, AttributeError, ImportError) as e:
+        except (
+            pickle.UnpicklingError,
+            EOFError,
+            AttributeError,
+            ImportError,
+            MemoryError,
+        ) as e:
             logger.warning(f"Cached source unreadable ({e}); rebuilding.")
             source = None
     if source is None:
