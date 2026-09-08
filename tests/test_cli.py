@@ -34,7 +34,9 @@ def test_run_requires_name():
 def test_read_tls_help_succeeds():
     result = runner.invoke(app, ["read-tls", "--help"])
     assert result.exit_code == 0
-    assert "INPUT_DIR" in result.output
+    # Typer/Click render the required-argument placeholder differently across
+    # versions (e.g. "INPUT_DIR" vs "{input_dir}"); match case-insensitively.
+    assert "input_dir" in result.output.lower()
     assert "Parameter to sort by" in result.output
 
 
@@ -47,7 +49,7 @@ def test_read_tls_fails_without_input():
 def test_rank_tls_help_succeeds():
     result = runner.invoke(app, ["rank-tls", "--help"])
     assert result.exit_code == 0
-    assert "INPUT_DIR" in result.output
+    assert "input_dir" in result.output.lower()
     assert "Minimum SDE" in result.output
 
 
