@@ -26,6 +26,22 @@ from quicklook.utils import get_available_pipelines, get_available_sectors
 
 warnings.filterwarnings("ignore", category=UserWarning, module="lightkurve")
 
+# Populated lazily by _get_tql_class() so GUI startup skips the heavy
+# quicklook.tql import chain until a job actually needs it. Left as a
+# module attribute (rather than a purely local import) so tests can
+# monkeypatch it.
+TessQuickLook = None
+
+
+def _get_tql_class():
+    global TessQuickLook
+    if TessQuickLook is None:
+        from quicklook.tql import TessQuickLook as _TessQuickLook
+
+        TessQuickLook = _TessQuickLook
+    return TessQuickLook
+
+
 # Directories
 BASE_DIR = Path(__file__).parent.resolve()
 OUTPUT_DIR = BASE_DIR / "static" / "outputs"
@@ -305,9 +321,8 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 
         if cancel_event.is_set():
             raise InterruptedError("Job cancelled before start")
-        from quicklook.tql import TessQuickLook
 
-        tql = TessQuickLook(
+        tql = _get_tql_class()(
             target_name=target_name,
             sector=int(kwargs.get("sector", -1)),
             pipeline=kwargs.get("pipeline", "spoc"),

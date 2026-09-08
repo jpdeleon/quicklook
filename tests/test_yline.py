@@ -1,7 +1,6 @@
+import lightkurve as lk
 import numpy as np
 import pytest
-from astropy.timeseries import TimeSeries
-import astropy.units as u
 from quicklook.plot import plot_odd_even_transit, plot_secondary_eclipse
 
 
@@ -15,11 +14,12 @@ class AttrDict(dict):
 
 @pytest.fixture
 def dummy_lc():
-    time = np.linspace(0, 10, 100) * u.day
+    # plot_odd_even_transit/plot_secondary_eclipse expect a lightkurve
+    # LightCurve (attribute-style column access, .fold(), time_original
+    # tracking), not a plain astropy TimeSeries.
+    time = np.linspace(0, 10, 100)
     flux = np.ones(100)
-    lc = TimeSeries(time=time, data={"flux": flux})
-    lc.colnames = ["time", "flux"]
-    return lc
+    return lk.LightCurve(time=time, flux=flux)
 
 
 @pytest.mark.parametrize(
