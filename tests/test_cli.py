@@ -1,5 +1,8 @@
 """Tests for the unified Typer CLI (quicklook.cli.app)."""
 
+import sys
+
+import pytest
 from click import unstyle
 from typer.testing import CliRunner
 from quicklook.cli.app import app
@@ -81,6 +84,12 @@ def test_run_default_flag_values():
     assert "periodic_auto" in result.output
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="the DISPLAY-based headless guard only applies on Linux; on macOS/Windows "
+    "matplotlib doesn't need $DISPLAY, so this run would fall through to the real, "
+    "network-touching pipeline instead of aborting",
+)
 def test_run_aborts_on_headless_without_save():
     import os
 
