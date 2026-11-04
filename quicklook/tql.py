@@ -455,19 +455,27 @@ class TessQuickLook:
             The result of the query, if the target is resolved.
             Otherwise, None.
         """
-        # See also: https://simbad.cds.unistra.fr/guide/otypes.htx
-        Simbad.add_votable_fields("otype")
+        # The object type is optional metadata, so an unreachable or failing
+        # Simbad service (e.g. a TAP outage) must not abort the whole run.
+        try:
+            # See also: https://simbad.cds.unistra.fr/guide/otypes.htx
+            Simbad.add_votable_fields("otype")
 
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
 
-            # Try resolving the target star by name
-            for name in self.star_names:
-                r = Simbad.query_object(name)
-                if r is not None:
-                    return r
-                if self.verbose:
-                    logger.info(f"Simbad cannot resolve {name}.")
+                # Try resolving the target star by name
+                for name in self.star_names:
+                    r = Simbad.query_object(name)
+                    if r is not None:
+                        return r
+                    if self.verbose:
+                        logger.info(f"Simbad cannot resolve {name}.")
+        except Exception as e:
+            logger.warning(
+                f"Simbad query failed ({type(e).__name__}: {e}); continuing without object type."
+            )
+        return None
 
     def get_simbad_obj_type(self):
         """
