@@ -189,6 +189,7 @@ class TessQuickLook:
         min_sde_iterative: float = 5.0,
         max_planets: int = None,
         cancel_check=None,
+        neighbor_check: bool = True,
     ):
         # start timer
         self.timer_start = timer()
@@ -218,6 +219,8 @@ class TessQuickLook:
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
         self.cancel_check = cancel_check
+        # False skips the TESS TPF/Gaia/DSS neighbor panel (e.g. non-TESS light curves).
+        self.neighbor_check = neighbor_check
         self._check_cancel("before light-curve download")
         self.raw_lc = self.get_lc(
             author=pipeline,
@@ -2094,6 +2097,13 @@ class TessQuickLook:
         # Append exofop data (TICv8)
         self.tls_results["exofop_data"] = self.exofop_data
 
+        # Prot_ls is set by whichever periodogram method actually succeeded
+        # (gls, or the astropy lombscargle fallback above, or the plain
+        # lombscargle/bls branch when pg_method != "gls") -- save it
+        # unconditionally so a rotation-period estimate survives even when
+        # self.gls itself is None.
+        self.tls_results["Prot_ls"] = getattr(self, "Prot_ls", None)
+
         # Append the Gls results
         if self.gls is not None:
             self.tls_results["power_gls"] = (
@@ -2260,6 +2270,14 @@ class TessQuickLook:
                     ax=ax,
                 )
                 self.Prot_ls = pg.period_at_max_power.value
+                # self.gls's periodogram is all-NaN (failed) -- append_tls_results()
+                # reads self.gls.hpstat directly, so leaving it set would save a
+                # degenerate Prot_gls/amp_gls/power_gls (observed landing at
+                # Porb_max, a boundary artifact) under the GLS field names while
+                # the plot and self.Prot_ls correctly show the astropy fallback
+                # period. Clear it so those fields are honestly left unset
+                # instead of silently wrong.
+                self.gls = None
             else:
                 pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
         else:
@@ -2350,93 +2368,104 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting TPF...")
         ax = axes.flatten()[5]
-        if self.pipeline in [
-            # "cdips",  # TODO: missing flux err raises error in errorbar plot
-            "gsfc-eleanor-lite",
-        ]:
-            err_msg = "Pipeline to be added soon."
-            logger.info(err_msg)
-            raise NotImplementedError(err_msg)
-        elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
-            if self.verbose:
-                logger.info("Getting TPF with tesscut...")
-            try:
-                self.tpf = self.get_tpf_tesscut()
-                self.sap_mask = "square"
-            except (NoDataError, Exception) as exc:
-                logger.warning(
-                    f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+        if not self.neighbor_check:
+            ax.text(
+                0.5,
+                0.5,
+                "Neighbor check skipped\n(no TESS TPF for this target)",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_axis_off()
+        else:
+            if self.pipeline in [
+                # "cdips",  # TODO: missing flux err raises error in errorbar plot
+                "gsfc-eleanor-lite",
+            ]:
+                err_msg = "Pipeline to be added soon."
+                logger.info(err_msg)
+                raise NotImplementedError(err_msg)
+            elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
+                if self.verbose:
+                    logger.info("Getting TPF with tesscut...")
+                try:
+                    self.tpf = self.get_tpf_tesscut()
+                    self.sap_mask = "square"
+                except (NoDataError, Exception) as exc:
+                    logger.warning(
+                        f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+                    )
+                    self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
+                    self.sap_mask = "pipeline"
+            else:
+                self.tpf = self.get_tpf(
+                    sector=self._tpf_sector,
+                    author=self.pipeline,
                 )
-                self.tpf = self.get_tpf(sector=self._tpf_sector, author="SPOC")
                 self.sap_mask = "pipeline"
-        else:
-            self.tpf = self.get_tpf(
-                sector=self._tpf_sector,
-                author=self.pipeline,
-            )
-            self.sap_mask = "pipeline"
 
-        ny, nx = self.tpf.flux.shape[1:]
-        diag = np.sqrt(nx**2 + ny**2)
-        fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
-        tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
-        self.gaia_sources = tab.to_pandas()
-        # RUWE (renormalised unit weight error) of the target from Gaia DR3.
-        # Values >~1.4 flag a poor single-star astrometric fit — often an
-        # unresolved companion or blend. Matched to the target by source_id.
-        self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
-        self.tls_results["gaia_ruwe"] = float(self.gaia_ruwe)
-        if len(self.gaia_sources) > 1:
-            sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
-            self.nearby_star_sep = sep.iloc[1] * u.arcmin
-        else:
-            self.nearby_star_sep = None
+            ny, nx = self.tpf.flux.shape[1:]
+            diag = np.sqrt(nx**2 + ny**2)
+            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
+            tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
+            self.gaia_sources = tab.to_pandas()
+            # RUWE (renormalised unit weight error) of the target from Gaia DR3.
+            # Values >~1.4 flag a poor single-star astrometric fit — often an
+            # unresolved companion or blend. Matched to the target by source_id.
+            self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
+            self.tls_results["gaia_ruwe"] = float(self.gaia_ruwe)
+            if len(self.gaia_sources) > 1:
+                sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
+                self.nearby_star_sep = sep.iloc[1] * u.arcmin
+            else:
+                self.nearby_star_sep = None
 
-        try:
-            if self.verbose:
-                logger.info("Querying DSS data...")
-            hdu = get_dss_data(
-                ra=self.target_coord.ra.deg,
-                dec=self.target_coord.dec.deg,
-                survey=self.archival_survey,
-                width=fov_rad.value,
-                height=fov_rad.value,
-            )
-            if hdu is None:
-                raise ValueError("DSS archival image not found")
-            ax.remove()
-            ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
-            _ = plot_gaia_sources_on_survey(
-                tpf=self.tpf,
-                target_gaiaid=self.gaiaid,
-                hdu=hdu,
-                fov_rad=fov_rad,
-                gaia_sources=self.gaia_sources,
-                kmax=1,
-                depth=_get_frac_depth(self.tls_results),
-                sap_mask=self.sap_mask,
-                aper_radius=2,
-                survey=self.archival_survey,
-                show_simbad=self.show_simbad,
-                verbose=self.verbose,
-                ax=ax,
-            )
-        except (OSError, FileNotFoundError, ValueError) as e:
-            logger.warning(f"Archival image failed ({e}); plotting TPF instead.")
-            _ = plot_gaia_sources_on_tpf(
-                tpf=self.tpf,
-                target_gaiaid=self.gaiaid,
-                fov_rad=fov_rad,
-                gaia_sources=self.gaia_sources,
-                kmax=1,
-                depth=_get_frac_depth(self.tls_results),
-                sap_mask=self.sap_mask,
-                aper_radius=2,
-                cmap="viridis",
-                dmag_limit=8,
-                verbose=self.verbose,
-                ax=ax,
-            )
+            try:
+                if self.verbose:
+                    logger.info("Querying DSS data...")
+                hdu = get_dss_data(
+                    ra=self.target_coord.ra.deg,
+                    dec=self.target_coord.dec.deg,
+                    survey=self.archival_survey,
+                    width=fov_rad.value,
+                    height=fov_rad.value,
+                )
+                if hdu is None:
+                    raise ValueError("DSS archival image not found")
+                ax.remove()
+                ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
+                _ = plot_gaia_sources_on_survey(
+                    tpf=self.tpf,
+                    target_gaiaid=self.gaiaid,
+                    hdu=hdu,
+                    fov_rad=fov_rad,
+                    gaia_sources=self.gaia_sources,
+                    kmax=1,
+                    depth=_get_frac_depth(self.tls_results),
+                    sap_mask=self.sap_mask,
+                    aper_radius=2,
+                    survey=self.archival_survey,
+                    show_simbad=self.show_simbad,
+                    verbose=self.verbose,
+                    ax=ax,
+                )
+            except (OSError, FileNotFoundError, ValueError) as e:
+                logger.warning(f"Archival image failed ({e}); plotting TPF instead.")
+                _ = plot_gaia_sources_on_tpf(
+                    tpf=self.tpf,
+                    target_gaiaid=self.gaiaid,
+                    fov_rad=fov_rad,
+                    gaia_sources=self.gaia_sources,
+                    kmax=1,
+                    depth=_get_frac_depth(self.tls_results),
+                    sap_mask=self.sap_mask,
+                    aper_radius=2,
+                    cmap="viridis",
+                    dmag_limit=8,
+                    verbose=self.verbose,
+                    ax=ax,
+                )
 
         if self.verbose:
             logger.info("Plotting odd-even transit...")
