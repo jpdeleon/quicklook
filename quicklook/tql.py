@@ -141,6 +141,17 @@ def _adapt_gtls_result(result, model):
     return _TLSResult(values)
 
 
+def format_sector_ranges(sectors):
+    """Compact sorted sector list: [66, 67, 68, 93] -> "66-68+93"."""
+    runs = []
+    for s in sorted({int(s) for s in sectors}):
+        if runs and s == runs[-1][1] + 1:
+            runs[-1][1] = s
+        else:
+            runs.append([s, s])
+    return "+".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
+
+
 class TessQuickLook:
     def __init__(
         self,
@@ -423,12 +434,22 @@ class TessQuickLook:
         return isinstance(self.sector, (list, tuple, np.ndarray))
 
     def _sector_label(self):
-        """Filename token for the sector: zero-padded number, or "all" if stitched."""
-        return "all" if self._is_multi_sector() else str(self.sector).zfill(2)
+        """Filename token for the sector.
+
+        Zero-padded number for one sector, "all" for a full stitch, or the
+        compact range (e.g. "66-68+93") when explicit sectors were requested.
+        """
+        if not self._is_multi_sector():
+            return str(self.sector).zfill(2)
+        requested = getattr(self, "_sectors_requested", None)
+        return format_sector_ranges(requested) if requested else "all"
 
     def _sector_display(self):
         """Human-readable sector text for plot titles."""
         if self._is_multi_sector():
+            requested = getattr(self, "_sectors_requested", None)
+            if requested:
+                return f"{format_sector_ranges(requested).replace('+', ', ')} ({len(self.sector)} sectors)"
             return f"{min(self.sector)}-{max(self.sector)} ({len(self.sector)} sectors)"
         return str(self.sector)
 
@@ -551,10 +572,16 @@ class TessQuickLook:
             The retrieved light curve object.
         """
         # Determine the sector of interest
+        requested_sectors = None
+        self._sectors_requested = None
         if kwargs.get("sector") is None:
             sector_orig = None
         else:
             sector_orig = kwargs.pop("sector")
+            # An explicit list of sectors is a partial "all": stitch only those.
+            if isinstance(sector_orig, (list, tuple, set)):
+                requested_sectors = sorted({int(s) for s in sector_orig})
+                sector_orig = "all"
             # sector = None if sector_orig in ["all", -1] else int(sector_orig)
             sector = (
                 None
@@ -565,8 +592,8 @@ class TessQuickLook:
 
         if sector_orig == "all":
             # assure data comes from single pipeline
-            if kwargs["exptime"] is None:
-                raise InvalidInputError("Supply exptime when using sector='all'.")
+            if kwargs.get("exptime") is None:
+                raise InvalidInputError("Supply exptime when using sector='all' or a sector list.")
 
         # Single MAST search, then filter locally
         search_result_all_lcs = lk.search_lightcurve(self.query_name)
@@ -635,6 +662,22 @@ class TessQuickLook:
         # TGLC ePSF fallback even when MAST had products.
         if kwargs.get("exptime"):
             mask &= np.array(tbl["t_exptime"]) == kwargs["exptime"]
+        if requested_sectors:
+            available = self.get_unique_sectors(search_result_all_lcs[mask])
+            missing = [s for s in requested_sectors if s not in available]
+            if missing:
+                raise NoDataError(
+                    f"Sectors {missing} not available for {self.query_name} with "
+                    f"author={kwargs.get('author')} exptime={kwargs.get('exptime')}; "
+                    f"available at this cadence: {available}."
+                )
+            mask &= np.array(
+                [
+                    len(m.split()) == 3 and int(m.split()[-1]) in requested_sectors
+                    for m in tbl["mission"]
+                ]
+            )
+            self._sectors_requested = requested_sectors
         search_result = search_result_all_lcs[mask]
         if len(search_result) == 0:
             if kwargs.get("author", "").upper() == "TGLC":
