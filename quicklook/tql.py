@@ -418,6 +418,25 @@ class TessQuickLook:
             )
             self.ephem_source = "TFOP" if self.toi_epoch is not None else None
 
+    def _is_multi_sector(self):
+        """True when the light curve stitches several sectors (``sector="all"``)."""
+        return isinstance(self.sector, (list, tuple, np.ndarray))
+
+    def _sector_label(self):
+        """Filename token for the sector: zero-padded number, or "all" if stitched."""
+        return "all" if self._is_multi_sector() else str(self.sector).zfill(2)
+
+    def _sector_display(self):
+        """Human-readable sector text for plot titles."""
+        if self._is_multi_sector():
+            return f"{min(self.sector)}-{max(self.sector)} ({len(self.sector)} sectors)"
+        return str(self.sector)
+
+    @property
+    def _tpf_sector(self):
+        """Single sector for the TPF/neighbor panel (latest one if stitched)."""
+        return max(self.sector) if self._is_multi_sector() else self.sector
+
     def check_output_file_exists(self):
         name = self.target_name.replace(" ", "")
         if name.lower()[:3] == "toi":
@@ -434,7 +453,7 @@ class TessQuickLook:
             lctype = self.pipeline
         fp = Path(
             self.outdir,
-            f"{name}_s{str(self.sector).zfill(2)}_{lctype}_{self.cadence[0]}c",
+            f"{name}_s{self._sector_label()}_{lctype}_{self.cadence[0]}c",
         )
         if self.mask_ephem:
             fp = fp.with_stem(fp.stem + "_mask_ephem")
@@ -640,7 +659,8 @@ class TessQuickLook:
             lc = self._download_with_retry(
                 lambda: search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
             )
-            self.sector = self.all_sectors
+            # only the sectors actually stitched (same pipeline and exptime)
+            self.sector = filtered_sectors
 
             if self.pipeline in ["spoc"]:
                 # exptime = int(lc.meta["EXPOSURE"] / 10) * 10
@@ -649,7 +669,7 @@ class TessQuickLook:
                 # estimate exp time
                 exptime = int(np.median(np.diff(lc.time.jd)) * 24 * 60 * 60)
             msg = f"Downloaded all {kwargs.get('author')} (exp={exptime} s) lcs "
-            msg += f"in sectors {', '.join([str(s) for s in self.all_sectors])}."
+            msg += f"in sectors {', '.join([str(s) for s in filtered_sectors])}."
             if self.verbose:
                 logger.info(msg)
         else:
@@ -950,7 +970,7 @@ class TessQuickLook:
             raise InvalidInputError("Provide sector for TESScut download.")
 
         def _download():
-            return lk.search_tesscut(self.query_name, sector=self.sector).download(
+            return lk.search_tesscut(self.query_name, sector=self._tpf_sector).download(
                 cutout_size=(15, 15), quality_bitmask=self.quality_bitmask
             )
 
@@ -1612,7 +1632,7 @@ class TessQuickLook:
         epoch, period = float(self.toi_epoch[0]), float(self.toi_period[0])
         msg = (
             f"No transit predicted by the {self.ephem_source} ephem falls "
-            f"within sector {self.sector} (BTJD {t_start:.2f}-{t_end:.2f}); "
+            f"within sector {self._sector_display()} (BTJD {t_start:.2f}-{t_end:.2f}); "
             "nothing to mask."
         )
         if period > 0:
@@ -2304,11 +2324,11 @@ class TessQuickLook:
                 logger.warning(
                     f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
                 )
-                self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
+                self.tpf = self.get_tpf(sector=self._tpf_sector, author="SPOC")
                 self.sap_mask = "pipeline"
         else:
             self.tpf = self.get_tpf(
-                sector=self.sector,
+                sector=self._tpf_sector,
                 author=self.pipeline,
             )
             self.sap_mask = "pipeline"
@@ -2407,7 +2427,7 @@ class TessQuickLook:
         title = ""
         if self.toiid is not None:
             title = f"TOI {self.toiid} | "
-        title += f"TIC {self.ticid} | sector {self.sector} | "
+        title += f"TIC {self.ticid} | sector {self._sector_display()} | "
         lctype = (
             f"{self.pipeline.upper()}/{self.flux_type}"
             if self.pipeline == "spoc"

@@ -48,6 +48,17 @@ def _validate_choice(value: str, choices: set[str], name: str) -> str:
 # --- batch helper (heavy imports inside) ---
 
 
+def _parse_sector(value: str):
+    """Parse ``--sector``: an integer (-1 = latest) or the string "all"."""
+    text = str(value).strip().lower()
+    if text == "all":
+        return "all"
+    try:
+        return int(text)
+    except ValueError:
+        raise typer.BadParameter(f"--sector must be an integer or 'all', got {value!r}")
+
+
 def _run_ql_for_sector(
     name: str,
     sector: int,
@@ -306,7 +317,16 @@ app = typer.Typer(
 @app.command()
 def run(
     name: str = typer.Option(..., "--name", help="Target name"),
-    sector: int = typer.Option(-1, "--sector", help="TESS sector (default=-1 for last available)"),
+    sector: str = typer.Option(
+        "-1",
+        "--sector",
+        help=(
+            "TESS sector number, -1 for the last available (default), or 'all' to stitch "
+            "every sector of one pipeline into a single light curve (requires --exptime "
+            "in seconds as listed by MAST, e.g. 200/600/1800; needed to recover periods "
+            "longer than one sector)"
+        ),
+    ),
     each_sector: bool = typer.Option(
         False, "--each-sector", help="Run on each available sector individually"
     ),
@@ -429,6 +449,22 @@ def run(
     if each_sector and each_pipeline:
         typer.echo("Error: --each-sector and --each-pipeline are mutually exclusive.", err=True)
         raise typer.Exit(2)
+
+    sector_arg = _parse_sector(sector)
+    if sector_arg == "all":
+        if each_sector or each_pipeline:
+            typer.echo(
+                "Error: --sector all cannot be combined with --each-sector or --each-pipeline.",
+                err=True,
+            )
+            raise typer.Exit(2)
+        if exptime is None:
+            typer.echo(
+                "Error: --sector all requires --exptime (seconds, e.g. 200, 600 or 1800) "
+                "so that sectors of a single cadence are stitched.",
+                err=True,
+            )
+            raise typer.Exit(2)
 
     if not save:
         import sys
@@ -569,7 +605,7 @@ def run(
 
     ql = TessQuickLook(
         target_name=target_name,
-        sector=sector,
+        sector=sector_arg,
         pipeline=pipeline_lower,
         exptime=exptime,
         flux_type=fluxtype,
