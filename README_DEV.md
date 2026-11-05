@@ -58,6 +58,13 @@ def test_tql_runtime(benchmark, planet_inputs):
 tox -r
 ```
 
+- **Releases**: handled by [release-please](https://github.com/googleapis/release-please).
+  Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
+  `feat!:` / `BREAKING CHANGE:`) on `main`; a release PR with the changelog and next
+  version is opened automatically. Merging it tags `vX.Y.Z`, creates the GitHub
+  release and publishes to PyPI (the package version comes from the tag via
+  `setuptools_scm`).
+
 - **Check minimum Python required by dependencies**:
 
 `check_pyproject_deps.py` reads `pyproject.toml`, looks up each dependency's

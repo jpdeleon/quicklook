@@ -4,6 +4,12 @@ on:
   workflow_dispatch: #optional manual run
   release:
     types: [published]
+  workflow_call: # called by release-please.yml after it creates a release
+    inputs:
+      ref:
+        description: Tag to build and publish
+        type: string
+        default: ""
 
 jobs:
   publish:
@@ -12,6 +18,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ inputs.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
