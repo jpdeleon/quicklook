@@ -6,6 +6,7 @@ inside the functions that need them so that ``--help`` on any subcommand or
 """
 
 import os
+import re
 from typing import Optional, Tuple
 
 import typer
@@ -57,6 +58,24 @@ def _parse_sector(value: str):
         return int(text)
     except ValueError:
         raise typer.BadParameter(f"--sector must be an integer or 'all', got {value!r}")
+
+
+def _parse_sectors(value: str):
+    """Parse ``--sectors`` such as "66-68,93" into a sorted, unique list of ints."""
+    sectors = set()
+    for part in str(value).split(","):
+        part = part.strip()
+        match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
+        if not match:
+            raise typer.BadParameter(
+                f"--sectors must look like '66-68,93' (numbers and ranges), got {value!r}"
+            )
+        first = int(match.group(1))
+        last = int(match.group(2)) if match.group(2) else first
+        if first < 1 or last < first:
+            raise typer.BadParameter(f"invalid sector range {part!r} in --sectors")
+        sectors.update(range(first, last + 1))
+    return sorted(sectors)
 
 
 def _run_ql_for_sector(
@@ -327,6 +346,15 @@ def run(
             "longer than one sector)"
         ),
     ),
+    sectors: Optional[str] = typer.Option(
+        None,
+        "--sectors",
+        help=(
+            "Stitch an explicit set of sectors, e.g. '66-68' or '66-68,93' (at least two; "
+            "requires --exptime). Consecutive sectors avoid the long gaps and aliasing of "
+            "'--sector all' when a target was observed years apart"
+        ),
+    ),
     each_sector: bool = typer.Option(
         False, "--each-sector", help="Run on each available sector individually"
     ),
@@ -451,7 +479,27 @@ def run(
         raise typer.Exit(2)
 
     sector_arg = _parse_sector(sector)
-    if sector_arg == "all":
+    if sectors is not None:
+        sector_list = _parse_sectors(sectors)
+        if sector != "-1" or each_sector or each_pipeline:
+            typer.echo(
+                "Error: --sectors cannot be combined with --sector, --each-sector or "
+                "--each-pipeline.",
+                err=True,
+            )
+            raise typer.Exit(2)
+        if len(sector_list) < 2:
+            typer.echo("Error: --sectors needs at least two sectors to stitch.", err=True)
+            raise typer.Exit(2)
+        if exptime is None:
+            typer.echo(
+                "Error: --sectors requires --exptime (seconds, e.g. 200, 600 or 1800) "
+                "so that sectors of a single cadence are stitched.",
+                err=True,
+            )
+            raise typer.Exit(2)
+        sector_arg = sector_list
+    elif sector_arg == "all":
         if each_sector or each_pipeline:
             typer.echo(
                 "Error: --sector all cannot be combined with --each-sector or --each-pipeline.",
