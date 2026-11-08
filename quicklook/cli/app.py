@@ -381,7 +381,7 @@ def run(
     ),
     exptime: Optional[int] = typer.Option(None, "--exptime", help="Exposure time (minutes)"),
     quality_bitmask: str = typer.Option(
-        "default", "--quality-bitmask", help=f"Quality bitmask ({'/'.join(_BITMASK_CHOICES)})"
+        "hard", "--quality-bitmask", help=f"Quality bitmask ({'/'.join(_BITMASK_CHOICES)})"
     ),
     flatten_method: str = typer.Option(
         "biweight",

@@ -180,7 +180,7 @@ class TessQuickLook:
         savetls: bool = False,
         overwrite: bool = False,
         suffix: str = None,
-        quality_bitmask: str = "default",
+        quality_bitmask: str = "hard",
         outdir: str = ".",
         tls_use_threads: int = None,
         use_star_priors: bool = False,
@@ -293,6 +293,14 @@ class TessQuickLook:
             normalize_phase=False,
             wrap_phase=self.tls_results.period / 2,
         )
+        # compute_advanced_vetting_metrics() already ran once inside run_tls(),
+        # but self.fold_lc didn't exist yet at that point, so secondary_depth
+        # and secondary_sde (which need it) were always computed against
+        # fold_lc=None and left as NaN on the primary candidate regardless of
+        # whether the data could support them. Re-run now that fold_lc is
+        # available; depth_variance_ratio/duration_consistency_ratio (which
+        # don't need fold_lc) just recompute to the same values.
+        self.compute_advanced_vetting_metrics()
         self._check_cancel("before iterative TLS search")
         if self.iterative_search:
             if self.verbose:
@@ -1502,10 +1510,21 @@ class TessQuickLook:
         elif float(self.window_length) == 0.0:
             np.random.default_rng(1)
 
+            # Window grid must safely cover the injected duration range below
+            # at Hippke & Heller 2019's ~2.2-3x duration ratio (below ~2.2x a
+            # wotan window starts distorting the transit it's supposed to
+            # preserve). The grid used to be a fixed 0.1-0.6 d regardless of
+            # these durations; with duration_max=0.5 d that excluded every
+            # window >=3x the longest duration actually being tested, so the
+            # grid search could never select a safely wide window for it.
+            duration_min, duration_max = 0.05, 0.5
+            window_low = 2.2 * duration_min
+            window_high = 3.0 * duration_max
             logger.info(
-                "Optimizing window length between 0.1 and 0.6 d. This may take several minutes."
+                f"Optimizing window length between {window_low:.2f} and "
+                f"{window_high:.2f} d. This may take several minutes."
             )
-            window_lengths = np.linspace(0.1, 0.6, 10)
+            window_lengths = np.linspace(window_low, window_high, 10)
 
             time = self.raw_lc.time.value
             flux = self.raw_lc.flux.value
@@ -1515,7 +1534,7 @@ class TessQuickLook:
             Nmodels = 5
             t0s = np.random.uniform(low=0, high=half_baseline, size=Nmodels)
             periods = np.random.uniform(low=0.1, high=half_baseline, size=Nmodels)
-            durations = np.random.uniform(low=0.05, high=0.5, size=Nmodels)
+            durations = np.random.uniform(low=duration_min, high=duration_max, size=Nmodels)
             depths = np.random.uniform(low=0.005, high=0.05, size=Nmodels)
 
             injections = []
@@ -2067,6 +2086,25 @@ class TessQuickLook:
         self.toi_rp = self.get_toi_radius()
         self.tls_results["Rp_toi"] = self.toi_rp
 
+        # A detection built on fewer than 2 transits with actual in-transit
+        # data can't establish periodicity at all -- TLS can still report a
+        # high SDE by pairing one real dip with an empty data gap. Flag that
+        # here instead of leaving it to be discovered downstream.
+        counts = self.tls_results.get("per_transit_count")
+        depths = self.tls_results.get("transit_depths")
+        if counts is not None and depths is not None:
+            n = min(len(counts), len(depths))
+            n_valid = int(np.sum((np.asarray(counts[:n], dtype=float) > 0) & ~np.isnan(depths[:n])))
+            self.tls_results["n_valid_transits"] = n_valid
+            if n_valid < 2:
+                logger.warning(
+                    f"Only {n_valid} transit(s) have both in-transit data and a "
+                    f"measurable depth (SDE={self.tls_results.get('SDE')}); "
+                    "periodicity can't be established from this alone."
+                )
+        else:
+            self.tls_results["n_valid_transits"] = None
+
         # Append the Gaia ID, TIC ID, and TOI ID
         self.tls_results["gaiaid"] = int(self.gaiaid)
         self.tls_results["ticid"] = int(self.ticid)
@@ -2092,7 +2130,19 @@ class TessQuickLook:
         # apart from Sun-like-default runs.
         self.tls_results["use_star_priors"] = bool(self.use_star_priors)
         if self.use_star_priors:
-            self.tls_results["star_prior_kwargs"] = self._stellar_prior_kwargs()
+            prior_kwargs = self._stellar_prior_kwargs()
+            self.tls_results["star_prior_kwargs"] = prior_kwargs
+            # Also expose R_star/M_star as plain top-level fields -- nested
+            # only inside star_prior_kwargs, a downstream reader has to know
+            # that dict and its TLS-kwarg-style key names (R_star, not
+            # Rstar) exist to find them. Without this, computing a planet
+            # radius in physical units (R_Earth) downstream was only
+            # possible from the dimensionless rp_rs ratio, which is how a
+            # 3.6 R_Jup eclipsing binary (rp_rs=0.227 around a 1.62 R_sun
+            # star) passed a rp_rs-only size check during vetting work on
+            # this pipeline's output.
+            self.tls_results["Rstar"] = prior_kwargs.get("R_star")
+            self.tls_results["Mstar"] = prior_kwargs.get("M_star")
 
         # Append exofop data (TICv8)
         self.tls_results["exofop_data"] = self.exofop_data
@@ -2118,6 +2168,26 @@ class TessQuickLook:
                 self.gls.hpstat["amp"],
                 self.gls.hpstat["e_amp"],
             )
+
+        # Flag when the TLS period aliases the star's own rotation period --
+        # manually re-derived by hand several times during vetting work on
+        # this pipeline's output (e.g. a candidate at period=0.806d next to
+        # Prot_ls=0.804d, an almost exact 1:1 alias masquerading as a
+        # transit). Prefer Prot_gls when the GLS periodogram succeeded,
+        # otherwise fall back to Prot_ls.
+        prot = None
+        if self.tls_results.get("Prot_gls") is not None:
+            prot = self.tls_results["Prot_gls"][0]
+        elif self.tls_results.get("Prot_ls") is not None:
+            prot = self.tls_results["Prot_ls"]
+        porb = self.tls_results.get("period")
+        if prot is not None and porb is not None and prot > 0:
+            rel_tol = 0.03
+            self.tls_results["rotation_alias_risk"] = any(
+                abs(porb - n * prot) <= rel_tol * n * prot for n in (1, 2, 3, 1 / 2, 1 / 3)
+            )
+        else:
+            self.tls_results["rotation_alias_risk"] = None
 
         # Append the Simbad object type
         if self.simbad_obj_type is not None:
