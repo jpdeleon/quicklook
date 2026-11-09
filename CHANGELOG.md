@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.0](https://github.com/jpdeleon/quicklook/compare/v1.7.0...v1.8.0) (2026-11-09)
+
+
+### Features
+
+* neighbor_check option; save Prot_ls and clear failed GLS ([1dc5b1f](https://github.com/jpdeleon/quicklook/commit/1dc5b1f76ccf296edd5f5053aa8707cb2a5c5f46))
+* six detection/vetting improvements from gallery false-positive review ([7773344](https://github.com/jpdeleon/quicklook/commit/77733443dcdcd0e970ca416b7794f17bc5624355))
+
+
+### Bug Fixes
+
+* guard against missing per_transit_count in read-tls summary ([102b089](https://github.com/jpdeleon/quicklook/commit/102b08936b044a584b951cb894e2068a1ec9900a))
+* penalize depth_ratio symmetrically in select_best_window ([933df68](https://github.com/jpdeleon/quicklook/commit/933df682350e426b0a8333b7b1cf69d25883e76a))
+
 ## [1.7.0](https://github.com/jpdeleon/quicklook/compare/v1.6.0...v1.7.0) (2026-11-05)
 
 
