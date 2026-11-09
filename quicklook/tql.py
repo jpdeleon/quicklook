@@ -180,7 +180,7 @@ class TessQuickLook:
         savetls: bool = False,
         overwrite: bool = False,
         suffix: str = None,
-        quality_bitmask: str = "default",
+        quality_bitmask: str = "hard",
         outdir: str = ".",
         tls_use_threads: int = None,
         use_star_priors: bool = False,
@@ -189,6 +189,7 @@ class TessQuickLook:
         min_sde_iterative: float = 5.0,
         max_planets: int = None,
         cancel_check=None,
+        neighbor_check: bool = True,
     ):
         # start timer
         self.timer_start = timer()
@@ -218,6 +219,8 @@ class TessQuickLook:
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
         self.cancel_check = cancel_check
+        # False skips the TESS TPF/Gaia/DSS neighbor panel (e.g. non-TESS light curves).
+        self.neighbor_check = neighbor_check
         self._check_cancel("before light-curve download")
         self.raw_lc = self.get_lc(
             author=pipeline,
@@ -290,6 +293,14 @@ class TessQuickLook:
             normalize_phase=False,
             wrap_phase=self.tls_results.period / 2,
         )
+        # compute_advanced_vetting_metrics() already ran once inside run_tls(),
+        # but self.fold_lc didn't exist yet at that point, so secondary_depth
+        # and secondary_sde (which need it) were always computed against
+        # fold_lc=None and left as NaN on the primary candidate regardless of
+        # whether the data could support them. Re-run now that fold_lc is
+        # available; depth_variance_ratio/duration_consistency_ratio (which
+        # don't need fold_lc) just recompute to the same values.
+        self.compute_advanced_vetting_metrics()
         self._check_cancel("before iterative TLS search")
         if self.iterative_search:
             if self.verbose:
@@ -1499,10 +1510,21 @@ class TessQuickLook:
         elif float(self.window_length) == 0.0:
             np.random.default_rng(1)
 
+            # Window grid must safely cover the injected duration range below
+            # at Hippke & Heller 2019's ~2.2-3x duration ratio (below ~2.2x a
+            # wotan window starts distorting the transit it's supposed to
+            # preserve). The grid used to be a fixed 0.1-0.6 d regardless of
+            # these durations; with duration_max=0.5 d that excluded every
+            # window >=3x the longest duration actually being tested, so the
+            # grid search could never select a safely wide window for it.
+            duration_min, duration_max = 0.05, 0.5
+            window_low = 2.2 * duration_min
+            window_high = 3.0 * duration_max
             logger.info(
-                "Optimizing window length between 0.1 and 0.6 d. This may take several minutes."
+                f"Optimizing window length between {window_low:.2f} and "
+                f"{window_high:.2f} d. This may take several minutes."
             )
-            window_lengths = np.linspace(0.1, 0.6, 10)
+            window_lengths = np.linspace(window_low, window_high, 10)
 
             time = self.raw_lc.time.value
             flux = self.raw_lc.flux.value
@@ -1512,7 +1534,7 @@ class TessQuickLook:
             Nmodels = 5
             t0s = np.random.uniform(low=0, high=half_baseline, size=Nmodels)
             periods = np.random.uniform(low=0.1, high=half_baseline, size=Nmodels)
-            durations = np.random.uniform(low=0.05, high=0.5, size=Nmodels)
+            durations = np.random.uniform(low=duration_min, high=duration_max, size=Nmodels)
             depths = np.random.uniform(low=0.005, high=0.05, size=Nmodels)
 
             injections = []
@@ -2064,6 +2086,25 @@ class TessQuickLook:
         self.toi_rp = self.get_toi_radius()
         self.tls_results["Rp_toi"] = self.toi_rp
 
+        # A detection built on fewer than 2 transits with actual in-transit
+        # data can't establish periodicity at all -- TLS can still report a
+        # high SDE by pairing one real dip with an empty data gap. Flag that
+        # here instead of leaving it to be discovered downstream.
+        counts = self.tls_results.get("per_transit_count")
+        depths = self.tls_results.get("transit_depths")
+        if counts is not None and depths is not None:
+            n = min(len(counts), len(depths))
+            n_valid = int(np.sum((np.asarray(counts[:n], dtype=float) > 0) & ~np.isnan(depths[:n])))
+            self.tls_results["n_valid_transits"] = n_valid
+            if n_valid < 2:
+                logger.warning(
+                    f"Only {n_valid} transit(s) have both in-transit data and a "
+                    f"measurable depth (SDE={self.tls_results.get('SDE')}); "
+                    "periodicity can't be established from this alone."
+                )
+        else:
+            self.tls_results["n_valid_transits"] = None
+
         # Append the Gaia ID, TIC ID, and TOI ID
         self.tls_results["gaiaid"] = int(self.gaiaid)
         self.tls_results["ticid"] = int(self.ticid)
@@ -2089,10 +2130,29 @@ class TessQuickLook:
         # apart from Sun-like-default runs.
         self.tls_results["use_star_priors"] = bool(self.use_star_priors)
         if self.use_star_priors:
-            self.tls_results["star_prior_kwargs"] = self._stellar_prior_kwargs()
+            prior_kwargs = self._stellar_prior_kwargs()
+            self.tls_results["star_prior_kwargs"] = prior_kwargs
+            # Also expose R_star/M_star as plain top-level fields -- nested
+            # only inside star_prior_kwargs, a downstream reader has to know
+            # that dict and its TLS-kwarg-style key names (R_star, not
+            # Rstar) exist to find them. Without this, computing a planet
+            # radius in physical units (R_Earth) downstream was only
+            # possible from the dimensionless rp_rs ratio, which is how a
+            # 3.6 R_Jup eclipsing binary (rp_rs=0.227 around a 1.62 R_sun
+            # star) passed a rp_rs-only size check during vetting work on
+            # this pipeline's output.
+            self.tls_results["Rstar"] = prior_kwargs.get("R_star")
+            self.tls_results["Mstar"] = prior_kwargs.get("M_star")
 
         # Append exofop data (TICv8)
         self.tls_results["exofop_data"] = self.exofop_data
+
+        # Prot_ls is set by whichever periodogram method actually succeeded
+        # (gls, or the astropy lombscargle fallback above, or the plain
+        # lombscargle/bls branch when pg_method != "gls") -- save it
+        # unconditionally so a rotation-period estimate survives even when
+        # self.gls itself is None.
+        self.tls_results["Prot_ls"] = getattr(self, "Prot_ls", None)
 
         # Append the Gls results
         if self.gls is not None:
@@ -2108,6 +2168,26 @@ class TessQuickLook:
                 self.gls.hpstat["amp"],
                 self.gls.hpstat["e_amp"],
             )
+
+        # Flag when the TLS period aliases the star's own rotation period --
+        # manually re-derived by hand several times during vetting work on
+        # this pipeline's output (e.g. a candidate at period=0.806d next to
+        # Prot_ls=0.804d, an almost exact 1:1 alias masquerading as a
+        # transit). Prefer Prot_gls when the GLS periodogram succeeded,
+        # otherwise fall back to Prot_ls.
+        prot = None
+        if self.tls_results.get("Prot_gls") is not None:
+            prot = self.tls_results["Prot_gls"][0]
+        elif self.tls_results.get("Prot_ls") is not None:
+            prot = self.tls_results["Prot_ls"]
+        porb = self.tls_results.get("period")
+        if prot is not None and porb is not None and prot > 0:
+            rel_tol = 0.03
+            self.tls_results["rotation_alias_risk"] = any(
+                abs(porb - n * prot) <= rel_tol * n * prot for n in (1, 2, 3, 1 / 2, 1 / 3)
+            )
+        else:
+            self.tls_results["rotation_alias_risk"] = None
 
         # Append the Simbad object type
         if self.simbad_obj_type is not None:
@@ -2260,6 +2340,14 @@ class TessQuickLook:
                     ax=ax,
                 )
                 self.Prot_ls = pg.period_at_max_power.value
+                # self.gls's periodogram is all-NaN (failed) -- append_tls_results()
+                # reads self.gls.hpstat directly, so leaving it set would save a
+                # degenerate Prot_gls/amp_gls/power_gls (observed landing at
+                # Porb_max, a boundary artifact) under the GLS field names while
+                # the plot and self.Prot_ls correctly show the astropy fallback
+                # period. Clear it so those fields are honestly left unset
+                # instead of silently wrong.
+                self.gls = None
             else:
                 pg = self.raw_lc[~self.tmask].to_periodogram(method="lombscargle")
         else:
@@ -2350,93 +2438,104 @@ class TessQuickLook:
         if self.verbose:
             logger.info("Plotting TPF...")
         ax = axes.flatten()[5]
-        if self.pipeline in [
-            # "cdips",  # TODO: missing flux err raises error in errorbar plot
-            "gsfc-eleanor-lite",
-        ]:
-            err_msg = "Pipeline to be added soon."
-            logger.info(err_msg)
-            raise NotImplementedError(err_msg)
-        elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
-            if self.verbose:
-                logger.info("Getting TPF with tesscut...")
-            try:
-                self.tpf = self.get_tpf_tesscut()
-                self.sap_mask = "square"
-            except (NoDataError, Exception) as exc:
-                logger.warning(
-                    f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+        if not self.neighbor_check:
+            ax.text(
+                0.5,
+                0.5,
+                "Neighbor check skipped\n(no TESS TPF for this target)",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_axis_off()
+        else:
+            if self.pipeline in [
+                # "cdips",  # TODO: missing flux err raises error in errorbar plot
+                "gsfc-eleanor-lite",
+            ]:
+                err_msg = "Pipeline to be added soon."
+                logger.info(err_msg)
+                raise NotImplementedError(err_msg)
+            elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
+                if self.verbose:
+                    logger.info("Getting TPF with tesscut...")
+                try:
+                    self.tpf = self.get_tpf_tesscut()
+                    self.sap_mask = "square"
+                except (NoDataError, Exception) as exc:
+                    logger.warning(
+                        f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+                    )
+                    self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
+                    self.sap_mask = "pipeline"
+            else:
+                self.tpf = self.get_tpf(
+                    sector=self._tpf_sector,
+                    author=self.pipeline,
                 )
-                self.tpf = self.get_tpf(sector=self._tpf_sector, author="SPOC")
                 self.sap_mask = "pipeline"
-        else:
-            self.tpf = self.get_tpf(
-                sector=self._tpf_sector,
-                author=self.pipeline,
-            )
-            self.sap_mask = "pipeline"
 
-        ny, nx = self.tpf.flux.shape[1:]
-        diag = np.sqrt(nx**2 + ny**2)
-        fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
-        tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
-        self.gaia_sources = tab.to_pandas()
-        # RUWE (renormalised unit weight error) of the target from Gaia DR3.
-        # Values >~1.4 flag a poor single-star astrometric fit — often an
-        # unresolved companion or blend. Matched to the target by source_id.
-        self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
-        self.tls_results["gaia_ruwe"] = float(self.gaia_ruwe)
-        if len(self.gaia_sources) > 1:
-            sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
-            self.nearby_star_sep = sep.iloc[1] * u.arcmin
-        else:
-            self.nearby_star_sep = None
+            ny, nx = self.tpf.flux.shape[1:]
+            diag = np.sqrt(nx**2 + ny**2)
+            fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
+            tab = Catalogs.query_region(self.target_coord, radius=fov_rad, catalog="gaiadr3")
+            self.gaia_sources = tab.to_pandas()
+            # RUWE (renormalised unit weight error) of the target from Gaia DR3.
+            # Values >~1.4 flag a poor single-star astrometric fit — often an
+            # unresolved companion or blend. Matched to the target by source_id.
+            self.gaia_ruwe = self._extract_ruwe(self.gaia_sources, self.gaiaid)
+            self.tls_results["gaia_ruwe"] = float(self.gaia_ruwe)
+            if len(self.gaia_sources) > 1:
+                sep = self.gaia_sources.sort_values(by="distance", ascending=True)["distance"]
+                self.nearby_star_sep = sep.iloc[1] * u.arcmin
+            else:
+                self.nearby_star_sep = None
 
-        try:
-            if self.verbose:
-                logger.info("Querying DSS data...")
-            hdu = get_dss_data(
-                ra=self.target_coord.ra.deg,
-                dec=self.target_coord.dec.deg,
-                survey=self.archival_survey,
-                width=fov_rad.value,
-                height=fov_rad.value,
-            )
-            if hdu is None:
-                raise ValueError("DSS archival image not found")
-            ax.remove()
-            ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
-            _ = plot_gaia_sources_on_survey(
-                tpf=self.tpf,
-                target_gaiaid=self.gaiaid,
-                hdu=hdu,
-                fov_rad=fov_rad,
-                gaia_sources=self.gaia_sources,
-                kmax=1,
-                depth=_get_frac_depth(self.tls_results),
-                sap_mask=self.sap_mask,
-                aper_radius=2,
-                survey=self.archival_survey,
-                show_simbad=self.show_simbad,
-                verbose=self.verbose,
-                ax=ax,
-            )
-        except (OSError, FileNotFoundError, ValueError) as e:
-            logger.warning(f"Archival image failed ({e}); plotting TPF instead.")
-            _ = plot_gaia_sources_on_tpf(
-                tpf=self.tpf,
-                target_gaiaid=self.gaiaid,
-                fov_rad=fov_rad,
-                gaia_sources=self.gaia_sources,
-                kmax=1,
-                depth=_get_frac_depth(self.tls_results),
-                sap_mask=self.sap_mask,
-                aper_radius=2,
-                cmap="viridis",
-                dmag_limit=8,
-                verbose=self.verbose,
-                ax=ax,
-            )
+            try:
+                if self.verbose:
+                    logger.info("Querying DSS data...")
+                hdu = get_dss_data(
+                    ra=self.target_coord.ra.deg,
+                    dec=self.target_coord.dec.deg,
+                    survey=self.archival_survey,
+                    width=fov_rad.value,
+                    height=fov_rad.value,
+                )
+                if hdu is None:
+                    raise ValueError("DSS archival image not found")
+                ax.remove()
+                ax = fig.add_subplot(3, 3, 6, projection=WCS(hdu.header))
+                _ = plot_gaia_sources_on_survey(
+                    tpf=self.tpf,
+                    target_gaiaid=self.gaiaid,
+                    hdu=hdu,
+                    fov_rad=fov_rad,
+                    gaia_sources=self.gaia_sources,
+                    kmax=1,
+                    depth=_get_frac_depth(self.tls_results),
+                    sap_mask=self.sap_mask,
+                    aper_radius=2,
+                    survey=self.archival_survey,
+                    show_simbad=self.show_simbad,
+                    verbose=self.verbose,
+                    ax=ax,
+                )
+            except (OSError, FileNotFoundError, ValueError) as e:
+                logger.warning(f"Archival image failed ({e}); plotting TPF instead.")
+                _ = plot_gaia_sources_on_tpf(
+                    tpf=self.tpf,
+                    target_gaiaid=self.gaiaid,
+                    fov_rad=fov_rad,
+                    gaia_sources=self.gaia_sources,
+                    kmax=1,
+                    depth=_get_frac_depth(self.tls_results),
+                    sap_mask=self.sap_mask,
+                    aper_radius=2,
+                    cmap="viridis",
+                    dmag_limit=8,
+                    verbose=self.verbose,
+                    ax=ax,
+                )
 
         if self.verbose:
             logger.info("Plotting odd-even transit...")

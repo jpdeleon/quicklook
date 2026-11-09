@@ -331,7 +331,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             # treats it as "let MAST decide" instead of filtering for an
             # empty-string exptime and accidentally excluding every row.
             exptime=(kwargs.get("exptime") or None),
-            quality_bitmask=kwargs.get("quality_bitmask", "default"),
+            quality_bitmask=kwargs.get("quality_bitmask", "hard"),
             flatten_method=kwargs.get("flatten_method", "biweight"),
             gp_kernel=kwargs.get("gp_kernel", "periodic_auto"),
             window_length=kwargs.get("window_length"),

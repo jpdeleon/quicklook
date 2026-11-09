@@ -127,7 +127,20 @@ def select_best_window(df, depth_min=0.9, duration_tol=0.2, asym_max=0.002):
     if good.empty:
         return None, df
 
-    good["score"] = good.depth_ratio - 2 * abs(good.duration_ratio - 1) - 1.5 * good.asymmetry
+    # depth_ratio is penalized symmetrically around 1, same as duration_ratio
+    # and asymmetry below -- NOT rewarded for climbing past 1. A too-narrow
+    # window overfits noise near the transit and inflates the recovered
+    # depth above the true injected depth (Hippke & Heller 2019 note transit
+    # signal starts getting distorted below ~2.2x the transit duration).
+    # Rewarding depth_ratio unboundedly, as this used to, systematically
+    # picked the narrowest window in the grid: on real data this produced
+    # window_size=0.10 (the grid minimum) for stars whose light curves
+    # showed no sign of needing that short a window, including two that
+    # turned out to be rotation-period false positives riding on an
+    # overfit baseline.
+    good["score"] = (
+        -abs(good.depth_ratio - 1) - 2 * abs(good.duration_ratio - 1) - 1.5 * good.asymmetry
+    )
 
     best = good.sort_values("score", ascending=False).iloc[0]
     return best.window, good
