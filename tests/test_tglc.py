@@ -5,7 +5,9 @@ import requests
 import lightkurve as lk
 from astroquery.exceptions import RemoteServiceError
 
-from quicklook.tglc import fit_lc, get_tglc_lc
+from astropy.table import Table
+
+from quicklook.tglc import find_target_index, fit_lc, get_tglc_lc
 
 _NETWORK_ERRORS = (
     RemoteServiceError,
@@ -147,3 +149,41 @@ def test_fit_lc_prior_none_keeps_default_behavior():
         )
     # The failure must NOT be the prior-coord-array guard.
     assert "requires x_all and y_all" not in str(excinfo.value)
+
+
+# --- target identification (regression for the gaia[0] bug) ------------------
+
+
+def _fake_source(with_coords=True):
+    """Stand-in Source_cut: gaia sorted by brightness, target is NOT row 0."""
+    from types import SimpleNamespace
+
+    gaia = Table(
+        {
+            "designation": ["bright-neighbour", "target", "faint"],
+            "tess_mag": [8.5, 10.6, 14.0],
+            "ra": [68.174, 68.416, 68.417],
+            "dec": [-51.755, -51.957, -51.950],
+            "sector_3_x": [10.0, 49.2, 50.5],
+            "sector_3_y": [80.0, 48.9, 60.0],
+        }
+    )
+    src = SimpleNamespace(gaia=gaia, size=99, sector=3)
+    if with_coords:
+        src.target_ra, src.target_dec = 68.4161, -51.9574
+    return src
+
+
+def test_find_target_index_matches_target_coordinates_not_brightest():
+    assert find_target_index(_fake_source()) == 1
+
+
+def test_find_target_index_falls_back_to_cutout_centre_for_legacy_cache():
+    assert find_target_index(_fake_source(with_coords=False)) == 1
+
+
+def test_find_target_index_empty_gaia_raises():
+    src = _fake_source()
+    src.gaia = src.gaia[:0]
+    with pytest.raises(ValueError, match="No Gaia stars"):
+        find_target_index(src)

@@ -402,6 +402,10 @@ class Source_cut(object):
             )
         ra = target[0]["ra"]
         dec = target[0]["dec"]
+        # Remember where the requested target is: self.gaia is sorted by
+        # brightness, so its first row is not necessarily the target.
+        self.target_ra = float(ra)
+        self.target_dec = float(dec)
         coord = SkyCoord(ra=ra, dec=dec, unit=(u.degree, u.degree), frame="icrs")
         radius = u.Quantity((self.size + 6) * 21 * 0.707 / 3600, u.deg)
         logger.info(f"Target Gaia: {target[0]['designation']}")
@@ -2089,6 +2093,37 @@ def _choose_photometry(
     return "aperture", "default (aperture, upstream convention)", metrics
 
 
+def find_target_index(source):
+    """Return the row of ``source.gaia`` that is the requested target.
+
+    ``source.gaia`` is sorted by TESS magnitude, so the target is the star
+    closest on the sky to the position ``Source_cut`` resolved for the target
+    name.  Cached ``Source_cut`` pickles written before ``target_ra`` /
+    ``target_dec`` existed fall back to the star nearest the cutout centre
+    (TESScut centres the cutout on the target).
+    """
+    gaia = source.gaia
+    if len(gaia) == 0:
+        raise ValueError("No Gaia stars in the cutout; cannot identify the target.")
+    target_ra = getattr(source, "target_ra", None)
+    target_dec = getattr(source, "target_dec", None)
+    if target_ra is not None and target_dec is not None:
+        ra = np.asarray(gaia["ra"], dtype=float)
+        dec = np.asarray(gaia["dec"], dtype=float)
+        dra = (ra - target_ra) * np.cos(np.deg2rad(target_dec))
+        sep2 = dra**2 + (dec - target_dec) ** 2
+    else:
+        logger.warning(
+            "Cached source lacks target coordinates; picking the star nearest "
+            "the cutout centre. Re-run with use_cache=False to refresh the cache."
+        )
+        centre = (source.size - 1) / 2
+        x = np.asarray(gaia[f"sector_{source.sector}_x"], dtype=float)
+        y = np.asarray(gaia[f"sector_{source.sector}_y"], dtype=float)
+        sep2 = (x - centre) ** 2 + (y - centre) ** 2
+    return int(np.nanargmin(sep2))
+
+
 def get_tglc_lc(
     target_name,
     sector=None,
@@ -2266,8 +2301,9 @@ def get_tglc_lc(
         np.where(quality_raw == 0)[0],
     )
 
-    # 5. Identify the target star (index 0 = brightest / closest match)
-    star_idx = 0
+    # 5. Identify the target star.  source.gaia is sorted by brightness, so
+    #    row 0 is the brightest star in the cutout, not necessarily the target.
+    star_idx = find_target_index(source)
 
     # Determine edge proximity
     in_frame = np.where(np.invert(np.isnan(source.flux[0])))
