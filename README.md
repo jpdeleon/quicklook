@@ -171,6 +171,24 @@ value (including the default) uses automatic selection of the less-contaminated,
 lower-scatter light curve. TGLC light curves absent from MAST are extracted
 locally via effective-PSF (ePSF) photometry.
 
+#### Benchmarking local TGLC against MAST
+
+`scripts/benchmark_tglc.py` checks that the local ePSF pipeline
+(`quicklook.tglc.get_tglc_lc`) reproduces the TGLC HLSP light curve hosted at
+MAST (downloaded with `lightkurve`). It matches the two light curves cadence by
+cadence, compares `cal_aper_flux`, `cal_psf_flux`, `aperture_flux` and
+`psf_flux`, and exits non-zero if the calibrated fluxes disagree (Pearson
+r < 0.9 or robust residual > 0.5x the MAST point-to-point scatter):
+
+```bash
+uv run scripts/benchmark_tglc.py                         # default: TIC 259377017 (TOI-270), sector 3
+uv run scripts/benchmark_tglc.py "TIC 12345" --sector 10 --size 99 --outdir bench/
+```
+
+It writes a JSON report and an overlay plot to `--outdir`. Columns that are
+all-NaN in the MAST file (some HLSPs have no PSF flux) are reported as
+unavailable rather than failed.
+
 ### Web GUI
 
 ```bash
