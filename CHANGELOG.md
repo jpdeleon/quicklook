@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/jpdeleon/quicklook/compare/v1.8.0...v1.9.0) (2026-11-11)
+
+
+### Features
+
+* extend TLS period ceiling to ~baseline and add catalogue epoch check ([242dd97](https://github.com/jpdeleon/quicklook/commit/242dd97e1424246aee03a804154163b53fb0ef36))
+* extend TLS period ceiling to ~baseline and add catalogue epoch check ([c7f0db9](https://github.com/jpdeleon/quicklook/commit/c7f0db99de7a15e8f95b1953cec5bd37a7f10613))
+
 ## [1.8.0](https://github.com/jpdeleon/quicklook/compare/v1.7.0...v1.8.0) (2026-11-09)
 
 
