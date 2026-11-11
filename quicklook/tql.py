@@ -29,6 +29,7 @@ from astroquery.mast import Catalogs
 import lightkurve as lk
 from quicklook import h5io
 from quicklook.notch_locor import notch_flatten, locor_flatten
+from quicklook.long_period import default_period_ceiling, epoch_check, needs_standard_fallback
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -172,6 +173,7 @@ class TessQuickLook:
         custom_ephem: list = None,
         mask_ephem: bool = False,
         Porb_limits: tuple = None,
+        extend_period_ceiling: bool = True,
         archival_survey="dss1",
         show_simbad: bool = False,
         show_plot: bool = True,
@@ -279,13 +281,15 @@ class TessQuickLook:
         flat_time = self.flat_lc.time.value
         self._flat_time_min = flat_time.min()
         self._flat_time_max = flat_time.max()
+        self.extend_period_ceiling = extend_period_ceiling
         self.Porb_max = (
-            (self._flat_time_max - self._flat_time_min) / 2
+            default_period_ceiling(self._flat_time_max - self._flat_time_min, extend_period_ceiling)
             if Porb_limits is None
             else Porb_limits[1]
         )
         self._check_cancel("before TLS transit search")
         self.run_tls()
+        self.run_epoch_check()
         self._check_cancel("after TLS transit search")
         self.fold_lc = self.flat_lc.fold(
             period=self.tls_results.period,
@@ -1202,13 +1206,63 @@ class TessQuickLook:
         curve) and for every iterative re-search (on the transit-masked
         remainder), so threads/priors settings are applied consistently.
         """
-        model = tls(
-            lc.time.value,
-            lc.flux.value,
-            self._tls_flux_err(lc),
-            verbose=self.verbose,
+        time = lc.time.value
+        flux, flux_err = lc.flux.value, self._tls_flux_err(lc)
+        span = float(np.ptp(time))
+        kwargs = self._tls_power_kwargs(period_min, period_max)
+        # Beyond half the baseline TLS only searches if told a single transit
+        # may define the grid; winners with <2 transits are discarded below.
+        extended = kwargs["period_max"] > span / 2
+        if extended:
+            kwargs["n_transits_min"] = 1
+        results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        if extended and needs_standard_fallback(
+            getattr(results, "distinct_transit_count", 2), kwargs["period_max"], span
+        ):
+            if self.verbose:
+                logger.info(
+                    f"Extended-range TLS winner (P={float(results.period):.2f} d) has "
+                    "<2 transits; falling back to the standard period range."
+                )
+            kwargs["period_max"] = span / 2
+            kwargs.pop("n_transits_min")
+            results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        return results
+
+    def run_epoch_check(self):
+        """Stack the flattened flux at the catalogue ephemeris (if one is known).
+
+        Adds ``epoch_snr``, ``epoch_n_covered``, ``epoch_control_snr_p95`` and
+        ``epoch_detected`` to ``tls_results`` (and hence the saved HDF5).
+        """
+        epoch = getattr(self, "toi_epoch", None)
+        period = getattr(self, "toi_period", None)
+        dur = getattr(self, "toi_dur", None)
+        if epoch is None or period is None or dur is None or self.tls_results is None:
+            return None
+        res = epoch_check(
+            self.flat_lc.time.value,
+            self.flat_lc.flux.value,
+            float(period[0]),
+            float(epoch[0]),
+            float(dur[0]),
         )
-        return model.power(**self._tls_power_kwargs(period_min, period_max))
+        for key, val in res.items():
+            try:
+                self.tls_results[key] = val
+            except Exception:
+                pass
+        if self.verbose:
+            if res["epoch_n_covered"] == 0:
+                logger.info("Epoch check: no predicted transit is covered by the data.")
+            else:
+                logger.info(
+                    f"Epoch check ({self.ephem_source} ephem): {res['epoch_n_covered']} covered "
+                    f"transit(s), stacked dip SNR={res['epoch_snr']:.1f} "
+                    f"(random-phase 95th pct {res['epoch_control_snr_p95']:.1f}) -> "
+                    f"{'DETECTED' if res['epoch_detected'] else 'not detected'}"
+                )
+        return res
 
     def compute_advanced_vetting_metrics(self):
         """Compute advanced vetting metrics for young variable star candidates."""

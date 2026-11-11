@@ -112,6 +112,14 @@ ql run --name TOI-125.01 --flatten-method locor
 # Restrict TLS period search range
 ql run --name TOI-125.01 --period-limits 1 5
 
+# By default the TLS period ceiling is ~0.98x the baseline (so a 20 d planet with
+# 2 transits in one ~27 d sector is in range); a winner with <2 transits falls back
+# to the standard half-baseline search. Restore the old half-baseline ceiling with:
+ql run --name TOI-125.01 --no-extend-period-ceiling
+# When the target has a catalogue ephemeris, the log and the saved HDF5 also carry an
+# "epoch check": the stacked dip SNR at the predicted transit times (epoch_snr,
+# epoch_n_covered, epoch_control_snr_p95, epoch_detected), independent of TLS.
+
 # Iteratively mask detected transits and re-run TLS to find additional planets.
 # Stops when SDE drops below --min-sde-iterative (default 5) or --max-planets
 # is reached; saves one periodogram + odd-even PNG and one TLS HDF5 per planet.

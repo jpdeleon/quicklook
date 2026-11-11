@@ -102,6 +102,7 @@ def _run_ql_for_sector(
     iterative_search: bool = False,
     min_sde_iterative: float = 5.0,
     max_planets: Optional[int] = None,
+    extend_period_ceiling: bool = True,
 ):
     import matplotlib.pyplot as pl
     from quicklook.tql import TessQuickLook
@@ -128,6 +129,7 @@ def _run_ql_for_sector(
         iterative_search=iterative_search,
         min_sde_iterative=min_sde_iterative,
         max_planets=max_planets,
+        extend_period_ceiling=extend_period_ceiling,
         archival_survey="dss1",
         show_simbad=show_simbad,
         savefig=save,
@@ -408,6 +410,13 @@ def run(
     period_limits: Optional[Tuple[float, float]] = typer.Option(
         None, "--period-limits", help="Period limits for TLS search (low high) in days"
     ),
+    extend_period_ceiling: bool = typer.Option(
+        True,
+        "--extend-period-ceiling/--no-extend-period-ceiling",
+        help="Search TLS periods up to ~0.98x the baseline (default) instead of half "
+        "the baseline; keeps long-period (2-3 transit) planets in range. Ignored if "
+        "--period-limits is given.",
+    ),
     phase_xlim: Optional[float] = typer.Option(
         None, "--phase-xlim", help="Phase half-width for transit/eclipse panels"
     ),
@@ -584,6 +593,7 @@ def run(
                     iterative,
                     min_sde_iterative,
                     max_planets,
+                    extend_period_ceiling,
                 ): sector
                 for sector in sectors
             }
@@ -641,6 +651,7 @@ def run(
                     iterative,
                     min_sde_iterative,
                     max_planets,
+                    extend_period_ceiling,
                 ): p
                 for p in pipelines
             }
@@ -690,6 +701,7 @@ def run(
         iterative_search=iterative,
         min_sde_iterative=min_sde_iterative,
         max_planets=max_planets,
+        extend_period_ceiling=extend_period_ceiling,
     )
     _ = ql.plot_tql()
     if not save:
