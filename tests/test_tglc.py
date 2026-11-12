@@ -206,3 +206,37 @@ def test_get_tglc_lc_accepts_valid_prior(good_prior, tglc_inputs, monkeypatch):
     monkeypatch.setattr("quicklook.tglc.Source_cut", _boom)
     with pytest.raises(RuntimeError, match="stub-pipeline-reached"):
         get_tglc_lc(**tglc_inputs, prior=good_prior, use_cache=False)
+
+
+def _flagged_lc():
+    """Light curve with get_tglc_lc-style TESS and TGLC flag columns."""
+    lc = lk.TessLightCurve(time=np.arange(6.0), flux=np.ones(6))
+    tess = np.array([0, 128, 2048, 0, 0, 16384], dtype=np.int32)  # manual, straylight, badcal
+    lc["tess_flags"] = tess
+    lc["quality"] = tess
+    lc["tglc_flags"] = np.array([0, 0, 0, 1, 0, 0], dtype=np.int16)
+    return lc
+
+
+@pytest.mark.parametrize(
+    "bitmask,expected",
+    [
+        ("none", [True] * 6),
+        # default: manual exclude + bad calibration, not straylight; TGLC flag always
+        ("default", [True, False, True, False, True, False]),
+        ("hard", [True, False, False, False, True, False]),
+        ("hardest", [True, False, False, False, True, False]),
+        (128, [True, False, True, False, True, True]),
+    ],
+)
+def test_tglc_quality_mask_combines_tess_bitmask_and_tglc_flag(bitmask, expected):
+    from quicklook.tglc import tglc_quality_mask
+
+    assert tglc_quality_mask(_flagged_lc(), bitmask).tolist() == expected
+
+
+def test_tglc_quality_mask_without_flag_columns_keeps_everything():
+    from quicklook.tglc import tglc_quality_mask
+
+    lc = lk.LightCurve(time=np.arange(3.0), flux=np.ones(3))
+    assert tglc_quality_mask(lc, "hard").tolist() == [True, True, True]

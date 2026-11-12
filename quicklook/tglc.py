@@ -2093,6 +2093,28 @@ def _choose_photometry(
     return "aperture", "default (aperture, upstream convention)", metrics
 
 
+def tglc_quality_mask(lc, quality_bitmask="default"):
+    """Boolean mask of good cadences for a light curve from :func:`get_tglc_lc`.
+
+    Follows the MAST TGLC convention: a cadence is good when its TESS flags
+    pass ``quality_bitmask`` (lightkurve semantics: "none", "default",
+    "hard", "hardest" or an int) and its TGLC background flag is unset.
+    ``quality_bitmask="none"`` keeps every cadence.
+    """
+    from lightkurve.utils import TessQualityFlags
+
+    n = len(lc)
+    if isinstance(quality_bitmask, str) and quality_bitmask.lower() == "none":
+        return np.ones(n, dtype=bool)
+    if "tess_flags" not in lc.colnames or "tglc_flags" not in lc.colnames:
+        logger.warning("Light curve has no TGLC quality columns; keeping all cadences.")
+        return np.ones(n, dtype=bool)
+    # int32 avoids lightkurve's int16 overflow with the 'hardest' bitmask.
+    tess_flags = np.asarray(lc["tess_flags"]).astype(np.int32)
+    good = TessQualityFlags.create_quality_mask(tess_flags, bitmask=quality_bitmask)
+    return good & (np.asarray(lc["tglc_flags"]).astype(int) == 0)
+
+
 def find_target_index(source):
     """Return the row of ``source.gaia`` that is the requested target.
 
@@ -2433,6 +2455,15 @@ def get_tglc_lc(
     lc["cal_psf_flux"] = cal_psf_lc
     lc["aperture_flux"] = aper_lc / portion
     lc["psf_flux"] = psf_lc
+    # Quality flags, mirroring the MAST TGLC HLSP columns.  ``quality`` holds
+    # the TESS flags so lightkurve-style bitmasks apply; ``tglc_flags`` marks
+    # cadences whose fitted background is a >=3 sigma outlier (this is what
+    # catches scattered-light ramps that carry no TESS flag).  Use
+    # tglc_quality_mask() to select good cadences.
+    tess_flags = np.asarray(source.quality).astype(np.int32)
+    lc["quality"] = tess_flags
+    lc["tess_flags"] = tess_flags
+    lc["tglc_flags"] = quality_raw
     lc.sector = source.sector
 
     if verbose:

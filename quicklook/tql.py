@@ -50,7 +50,7 @@ from quicklook.plot import (
     plot_gls_periodogram,
 )
 from quicklook.inject import InjectionParams, run_grid, select_best_window
-from quicklook.tglc import get_tglc_lc
+from quicklook.tglc import get_tglc_lc, tglc_quality_mask
 
 # FITSFixedWarning: 'datfix' made the change 'Invalid time in DATE-OBS
 warnings.filterwarnings("ignore", category=Warning, message=".*datfix.*")
@@ -944,6 +944,15 @@ class TessQuickLook:
             verbose=self.verbose,
             cancel_check=getattr(self, "cancel_check", None),
         )
+        good = tglc_quality_mask(lc, self.quality_bitmask)
+        if not good.all():
+            logger.info(
+                f"Masked {int((~good).sum())}/{len(lc)} TGLC cadences "
+                f"(quality_bitmask={self.quality_bitmask!r} + TGLC background flag)."
+            )
+        sector = lc.sector
+        lc = lc[good]
+        lc.sector = sector
         self.sector = lc.sector
         self.all_sectors = [lc.sector]
         self.exptime = lc.meta.get("EXPOSURE", 1800)
