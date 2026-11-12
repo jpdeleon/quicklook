@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.10.0](https://github.com/jpdeleon/quicklook/compare/v1.9.0...v1.10.0) (2026-11-12)
+
+
+### Features
+
+* add TOI-519 sectors 7 and 8 to the TGLC benchmark targets ([fcdff17](https://github.com/jpdeleon/quicklook/commit/fcdff175570c6b9b334165e9e167206e9d865a99))
+* benchmark local TGLC light curves against the MAST HLSP ([57ba4f3](https://github.com/jpdeleon/quicklook/commit/57ba4f36c3d4f380aed4ed6c29e0282c22c30010))
+* export TGLC quality flags and mask them in ql's local TGLC path ([6c783d7](https://github.com/jpdeleon/quicklook/commit/6c783d7a446938053b168ec415098e52d1d5cb00))
+* expose the field-star prior in get_tglc_lc and the TGLC benchmark ([728f6f8](https://github.com/jpdeleon/quicklook/commit/728f6f803c17220740cb3e12c957e0684df2b4c3))
+
+
+### Bug Fixes
+
+* extract the requested target in get_tglc_lc, not the brightest star ([d1f24ac](https://github.com/jpdeleon/quicklook/commit/d1f24acd02c6ad7a7e171413ad3d63a7af93e7a1))
+
 ## [1.9.0](https://github.com/jpdeleon/quicklook/compare/v1.8.0...v1.9.0) (2026-11-11)
 
 
