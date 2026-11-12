@@ -47,6 +47,14 @@ for _mast_client in (Catalogs, Tesscut):
         _conn.TIMEOUT = _MAST_TIMEOUT
 
 
+# Allowed TESScut cutout sizes (pixels) for get_tglc_lc.  The upper bound is
+# set by TESScut itself, which rejects cutouts above 100 px with
+# InvalidQueryError (checked Nov 2026 for sizes 101, 120 and 150).  MAST builds
+# its TGLC HLSP from 150 px FFI cuts, so local fits always see a smaller field.
+MIN_CUTSIZE = 50
+MAX_CUTSIZE = 99
+
+
 def _gaia_async_query(query_str, max_retries=3, timeout=120):
     """Run a Gaia TAP async query with retries and a timeout."""
     for attempt in range(max_retries):
@@ -2212,8 +2220,10 @@ def get_tglc_lc(
     valid_modes = ("auto", "aperture", "psf")
     if photometry not in valid_modes:
         raise ValueError(f"photometry must be one of {valid_modes}, got {photometry!r}")
-    if not (50 <= int(size) <= 99):
-        raise ValueError(f"FFI cutsize must be between 50 and 99 pixels, got {size}")
+    if not (MIN_CUTSIZE <= int(size) <= MAX_CUTSIZE):
+        raise ValueError(
+            f"FFI cutsize must be between {MIN_CUTSIZE} and {MAX_CUTSIZE} pixels, got {size}"
+        )
     if prior is not None and not float(prior) > 0:
         raise ValueError(f"prior must be a positive float or None, got {prior!r}")
     import lightkurve as lk
