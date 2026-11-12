@@ -24,8 +24,15 @@ from quicklook.benchmark_tglc import (
     run_benchmark,
 )
 
-# Non-saturated, uncrowded default targets with MAST TGLC coverage.
-DEFAULT_TARGETS = (("TIC 259377017", 3),)
+# Default targets with MAST TGLC coverage (target, sector):
+#   TOI-270 (TIC 259377017): Tmag 10.6, uncrowded -- the easy case.
+#   TOI-519 (TIC 218795833): faint M dwarf with a ~10% deep, 1.27 d transit;
+#     MAST has PSF fluxes, so it exercises the PSF columns too.
+DEFAULT_TARGETS = (
+    ("TIC 259377017", 3),
+    ("TIC 218795833", 7),
+    ("TIC 218795833", 8),
+)
 
 
 def _parse_args(argv=None) -> argparse.Namespace:
