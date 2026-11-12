@@ -169,7 +169,11 @@ For **SPOC**, `flux_type` selects `"pdcsap"` or `"sap"`. For **TGLC**, the same
 argument selects the photometry method -- `"aperture"` or `"psf"`; any other
 value (including the default) uses automatic selection of the less-contaminated,
 lower-scatter light curve. TGLC light curves absent from MAST are extracted
-locally via effective-PSF (ePSF) photometry.
+locally via effective-PSF (ePSF) photometry. Locally extracted light curves carry the same
+`tess_flags` / `tglc_flags` columns as the MAST HLSP, and quicklook drops
+flagged cadences using `--quality-bitmask` plus TGLC's background-outlier flag
+(which catches scattered-light ramps that carry no TESS flag); pass
+`--quality-bitmask none` to keep every cadence.
 
 #### Benchmarking local TGLC against MAST
 
