@@ -314,6 +314,7 @@ def run_benchmark(
     cache_dir: str | None = None,
     use_cache: bool = True,
     verbose: bool = False,
+    prior: float | None = 0.1,
     **compare_kwargs,
 ):
     """Run the local pipeline, download MAST, and compare.
@@ -331,6 +332,7 @@ def run_benchmark(
         cache_dir=cache_dir,
         use_cache=use_cache,
         verbose=verbose,
+        prior=prior,
     )
     result = compare_light_curves(local_lc, mast_lc, target=target, sector=sector, **compare_kwargs)
     return result, local_lc, mast_lc

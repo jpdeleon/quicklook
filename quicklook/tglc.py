@@ -2134,6 +2134,7 @@ def get_tglc_lc(
     use_cache=True,
     verbose=True,
     cancel_check=None,
+    prior=0.1,
 ):
     """Run the TGLC ePSF pipeline for a single target and return a TessLightCurve.
 
@@ -2154,7 +2155,9 @@ def get_tglc_lc(
     size : int
         Side length in pixels of the TESScut FFI cutout (default 50).
     limit_mag : float
-        Faintest TESS magnitude to include in the PSF model (default 16).
+        Faintest TESS magnitude of the TIC catalog query used to cross-match
+        TIC IDs (default 16).  It does not limit the PSF model: every Gaia
+        star in the cutout (G < 25) is fitted regardless.
     photometry : str
         Which light curve becomes the primary ``flux`` column:
         ``"auto"`` (default) lets :func:`_choose_photometry` decide,
@@ -2169,6 +2172,11 @@ def get_tglc_lc(
         ``False`` to force a fresh download and ePSF fit.
     verbose : bool
         Print progress information.
+    prior : float or None
+        Width of the Gaussian prior that pulls field-star amplitudes toward
+        their Gaia-predicted brightness in the per-target fit (default 0.1).
+        ``None`` fits field stars freely, as the MAST TGLC HLSP v1 files do
+        (their headers carry no ``PRIOR`` keyword).
 
     Returns
     -------
@@ -2184,9 +2192,8 @@ def get_tglc_lc(
         raise ValueError(f"photometry must be one of {valid_modes}, got {photometry!r}")
     if not (50 <= int(size) <= 99):
         raise ValueError(f"FFI cutsize must be between 50 and 99 pixels, got {size}")
-    # Field-star Gaussian-prior width; tighter values pull field-star amplitudes
-    # closer to their Gaia-predicted brightness.
-    prior = 0.1
+    if prior is not None and not float(prior) > 0:
+        raise ValueError(f"prior must be a positive float or None, got {prior!r}")
     import lightkurve as lk
     from astropy.time import Time
 
@@ -2415,6 +2422,7 @@ def get_tglc_lc(
             "PHOT_SEL": photometry,
             "PHOT_RSN": reason,
             "CONTAMRT": contamination,
+            "PRIOR": prior,
             "NEAREDGE": near_edge,
             "APER_P2P": metrics["APER_P2P"],
             "PSF_P2P": metrics["PSF_P2P"],

@@ -187,3 +187,22 @@ def test_find_target_index_empty_gaia_raises():
     src.gaia = src.gaia[:0]
     with pytest.raises(ValueError, match="No Gaia stars"):
         find_target_index(src)
+
+
+@pytest.mark.parametrize("bad_prior", [0, -0.1, 0.0])
+def test_get_tglc_lc_rejects_non_positive_prior(bad_prior, tglc_inputs):
+    """prior must be a positive float or None; reject before any network call."""
+    with pytest.raises(ValueError, match="prior must be a positive float or None"):
+        get_tglc_lc(**tglc_inputs, prior=bad_prior)
+
+
+@pytest.mark.parametrize("good_prior", [None, 0.1, 1.0])
+def test_get_tglc_lc_accepts_valid_prior(good_prior, tglc_inputs, monkeypatch):
+    """Valid priors pass validation and reach the pipeline (stubbed offline)."""
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("stub-pipeline-reached")
+
+    monkeypatch.setattr("quicklook.tglc.Source_cut", _boom)
+    with pytest.raises(RuntimeError, match="stub-pipeline-reached"):
+        get_tglc_lc(**tglc_inputs, prior=good_prior, use_cache=False)

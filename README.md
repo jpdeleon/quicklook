@@ -181,9 +181,13 @@ cadence, compares `cal_aper_flux`, `cal_psf_flux`, `aperture_flux` and
 r < 0.9 or robust residual > 0.5x the MAST point-to-point scatter):
 
 ```bash
-uv run scripts/benchmark_tglc.py                         # defaults: TOI-270 s3, TOI-519 s7 and s8
+uv run scripts/benchmark_tglc.py                         # defaults: TOI-270 s3, TOI-519 s7-8, TOI-674 s9-10
 uv run scripts/benchmark_tglc.py "TIC 12345" --sector 10 --size 99 --outdir bench/
 ```
+
+`--prior none` fits field stars without the Gaia-brightness prior, matching
+how the MAST HLSP v1 files were made (their headers carry no `PRIOR` keyword);
+the default `0.1` is what `get_tglc_lc` uses.
 
 It writes a JSON report and an overlay plot to `--outdir`. Columns that are
 all-NaN in the MAST file (some HLSPs have no PSF flux) are reported as

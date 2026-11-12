@@ -28,10 +28,14 @@ from quicklook.benchmark_tglc import (
 #   TOI-270 (TIC 259377017): Tmag 10.6, uncrowded -- the easy case.
 #   TOI-519 (TIC 218795833): faint M dwarf with a ~10% deep, 1.27 d transit;
 #     MAST has PSF fluxes, so it exercises the PSF columns too.
+#   TOI-674 (TIC 158588995): M dwarf with a ~1% deep transit; s10 has neighbour
+#     signals that the two pipelines' PSF fits attribute differently.
 DEFAULT_TARGETS = (
     ("TIC 259377017", 3),
     ("TIC 218795833", 7),
     ("TIC 218795833", 8),
+    ("TIC 158588995", 9),
+    ("TIC 158588995", 10),
 )
 
 
@@ -41,6 +45,12 @@ def _parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--sector", type=int, help="TESS sector (required with target)")
     p.add_argument("--size", type=int, default=99, help="TESScut size in px (50-99)")
     p.add_argument("--limit-mag", type=float, default=16)
+    p.add_argument(
+        "--prior",
+        type=lambda v: None if v.lower() == "none" else float(v),
+        default=0.1,
+        help="field-star prior width, or 'none' (MAST HLSP v1 uses none)",
+    )
     p.add_argument("--outdir", default="benchmark_tglc_output")
     p.add_argument("--no-cache", action="store_true", help="force fresh FFI download + ePSF fit")
     p.add_argument("--no-plot", action="store_true")
@@ -78,6 +88,7 @@ def main(argv=None) -> int:
             size=args.size,
             limit_mag=args.limit_mag,
             use_cache=not args.no_cache,
+            prior=args.prior,
             min_pearson=args.min_pearson,
             max_resid_to_scatter=args.max_resid_to_scatter,
             min_overlap_frac=args.min_overlap_frac,
