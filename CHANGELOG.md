@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.1](https://github.com/jpdeleon/quicklook/compare/v1.10.0...v1.10.1) (2026-11-13)
+
+
+### Performance Improvements
+
+* cache TLS summary rows so /tls-summary stops hanging the GUI ([2d42a47](https://github.com/jpdeleon/quicklook/commit/2d42a47e32b0c573abcf6e69e30321965cfa1cf7))
+* cache TLS summary rows so /tls-summary stops hanging the GUI ([ac45977](https://github.com/jpdeleon/quicklook/commit/ac4597755bdc9307acd3d3b011ef684adf2d8c16))
+
 ## [1.10.0](https://github.com/jpdeleon/quicklook/compare/v1.9.0...v1.10.0) (2026-11-12)
 
 
