@@ -31,7 +31,7 @@ from quicklook.pipelines import HLSP_PIPELINES
 
 # Bump whenever ``extract_fields`` changes what it stores, so rows cached by
 # an older version are re-extracted instead of being served stale.
-FIELDS_VERSION = 2
+FIELDS_VERSION = 3
 _VERSION_KEY = "_v"
 
 TLS_GLOB = "*_tls.h5"
@@ -201,6 +201,7 @@ def extract_fields(data: dict[str, Any], stem: str) -> dict[str, Any]:
         "event_class": coerce_scalar(data.get("event_class")),
         "n_events": coerce_scalar(data.get("n_events")),
         "p_min": coerce_scalar(data.get("p_min")),
+        "n_aliases": coerce_scalar(data.get("n_aliases")),
     }
     return {key: _json_safe(val) for key, val in fields.items()}
 

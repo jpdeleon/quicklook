@@ -100,3 +100,38 @@ def mark_events(ax, events, color: str = EVENT_COLOR):
     for ev in events:
         ax.axvspan(ev.t0 - ev.duration / 2, ev.t0 + ev.duration / 2, color=color, alpha=0.25)
     return ax
+
+
+def plot_duo_zoom(time, flux, pair, ax):
+    """Panel 7 (duo layout): both events overlaid, aligned on their own mid-times."""
+    for ev, color, name in ((pair.first, "C0", "1st"), (pair.second, EVENT_COLOR, "2nd")):
+        m = local_models(time, flux, ev.t0, ev.duration)
+        hours = (m.time - ev.t0) * 24
+        width = max(ev.duration * _ZOOM_BIN_FRACTION, _MIN_BIN) * 24
+        bx, by = _binned(hours, m.flux, width)
+        ax.plot(bx, by, "o", color=color, ms=3, alpha=0.7)
+        ax.plot(hours, m.transit, color=color, lw=2, label=f"{name}: T0={ev.t0:.2f}")
+    ax.set_xlabel("Hours from each event's T0")
+    ax.set_ylabel("Normalized flux")
+    ax.set_title(
+        f"depth ratio {pair.depth_ratio:.2f}, duration ratio {pair.duration_ratio:.2f}",
+        fontsize="medium",
+    )
+    ax.legend(loc="lower left", fontsize="small")
+    return ax
+
+
+def plot_alias_weights(pair, ax):
+    """Panel 8 (duo layout): allowed periods dT/n with their relative probability."""
+    periods = np.array([a.period for a in pair.aliases])
+    weights = np.array([a.weight for a in pair.aliases])
+    widths = np.maximum(periods * 0.02, 0.05)
+    ax.bar(periods, weights, width=widths, color="C2", edgecolor="k", lw=0.3)
+    best = pair.best
+    ax.axvline(best.period, color="k", ls="--", lw=1, label=f"most likely {best.period:.2f} d")
+    ax.set_xscale("log")
+    ax.set_xlabel("Period [d] (allowed aliases dT/n)")
+    ax.set_ylabel("Relative probability")
+    ax.set_title(f"{len(periods)} allowed of dT={pair.delta_t:.2f} d / n", fontsize="medium")
+    ax.legend(loc="upper right", fontsize="small")
+    return ax

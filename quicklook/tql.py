@@ -1906,7 +1906,7 @@ class TessQuickLook(SingleEventMixin):
         if n_planets > 1:
             candidate.append(("Num. Planets", f"{n_planets}"))
 
-        if self.event_class == "mono":
+        if self.event_class in ("mono", "duo"):
             candidate = self._single_event_candidate_rows(params["srad"])
 
         # --- Stellar properties ---
@@ -2483,7 +2483,7 @@ class TessQuickLook(SingleEventMixin):
         )
         ax.set_xlabel("Rotation Phase [days]")
 
-        single_layout = self.event_class == "mono"
+        single_layout = self.event_class in ("mono", "duo")
         if single_layout:
             if self.verbose:
                 logger.info("Plotting single-event panels...")

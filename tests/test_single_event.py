@@ -225,3 +225,16 @@ def test_classify_periodic_when_tls_explains_events():
 
 def test_classify_periodic_wins_even_with_extra_event():
     assert classify_events(n_events=4, tls_periodic=True, n_unexplained=1) == "periodic"
+
+
+def test_short_transit_found_in_multi_year_gappy_light_curve():
+    # Duration grid must follow the longest contiguous segment, not the total
+    # span: a 2000-day stitched light curve still contains 2 h transits.
+    rng = np.random.default_rng(5)
+    t = np.concatenate([np.arange(s, s + 27.0, CADENCE) for s in range(0, 2000, 350)])
+    f = 1 + rng.normal(0, 5e-4, t.size)
+    f[np.abs(t - 1060.0) < 1 / 24] -= 0.004
+    res = single_event_search(t, f)
+    assert res.durations[0] < 2 / 24
+    assert len(res.events) == 1
+    assert res.events[0].t0 == pytest.approx(1060.0, abs=0.02)
