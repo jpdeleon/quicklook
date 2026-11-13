@@ -322,6 +322,8 @@
         <th data-key="p_min" data-type="num" title="Period lower limit: from the strongest unexplained event, or the shortest allowed duotransit alias">P_min [d] <span class="arrow"></span></th>
         <th data-key="n_aliases" data-type="num" title="Duotransit: number of allowed periods dT/n">N_alias <span class="arrow"></span></th>
         <th data-key="se_window" data-type="num" title="Single-event detrending window (days); hover a value for why it was chosen">SE win [d] <span class="arrow"></span></th>
+        <th data-key="ttv_amp_min" data-type="num" title="TTV search: half the O-C peak-to-peak (minutes); red when TTVs are detected">TTV [min] <span class="arrow"></span></th>
+        <th data-key="ttv_pvalue" data-type="num" title="TTV search: chi-square p-value of a linear ephemeris (small = TTVs)">p_TTV <span class="arrow"></span></th>
         <th data-key="Prot_gls" data-type="num">Prot [d] <span class="arrow"></span></th>
         <th data-key="power_gls" data-type="num">GLS power <span class="arrow"></span></th>
         <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
@@ -351,6 +353,8 @@
         <th><input type="text" data-col="19" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="20" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="21" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="22" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="23" data-type="num" placeholder="> < .."></th>
         <th></th>
       </tr>
     </thead>
@@ -406,6 +410,12 @@
         </td>
         <td class="num" data-v="{{ r.se_window if r.se_window is not none and r.se_window == r.se_window else '' }}"{% if r.se_window_reason %} title="{{ r.se_window_reason }}"{% endif %}>
           {% if r.se_window is not none and r.se_window == r.se_window %}{{ "%.2f"|format(r.se_window) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.ttv_amp_min if r.ttv_amp_min is not none and r.ttv_amp_min == r.ttv_amp_min else '' }}"{% if r.ttv_detected %} style="color:#c0392b;font-weight:600" title="TTVs detected"{% endif %}>
+          {% if r.ttv_amp_min is not none and r.ttv_amp_min == r.ttv_amp_min %}{{ "%.1f"|format(r.ttv_amp_min) }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.ttv_pvalue if r.ttv_pvalue is not none and r.ttv_pvalue == r.ttv_pvalue else '' }}">
+          {% if r.ttv_pvalue is not none and r.ttv_pvalue == r.ttv_pvalue %}{{ "%.1e"|format(r.ttv_pvalue) }}{% endif %}
         </td>
         <td class="num" data-v="{{ r.Prot_gls if r.Prot_gls is not none else '' }}">
           {% if r.Prot_gls is not none %}{{ "%.3f"|format(r.Prot_gls) }}{% endif %}

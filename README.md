@@ -18,6 +18,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
 - **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, its own wider detrending window that is re-fitted with detected events masked, a period lower limit, duotransit pairing with ranked period aliases, and a `none`/`mono`/`duo`/`periodic` classification ([docs](docs/single-transit.md))
+- **TTV search** -- optional per-transit timing fits (free mid-time, depth and duration), an O−C diagram with a robust χ² test against a linear ephemeris, masking at the fitted times in the iterative search, cycle-count alternatives across sector gaps, and chaining of three or more single events ([docs](docs/ttv-search.md))
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
@@ -133,6 +134,10 @@ ql run --name TOI-2180 --sector 48 --single-event-search --save
 # Stitch sectors to pair two transits into a duotransit; panels 7 and 8 then show
 # both events overlaid and the allowed periods dT/n with their probabilities.
 ql run --name TOI-2180 --sectors 19,48 --exptime 120 --single-event-search --save
+
+# Fit each transit separately and test for transit-timing variations (needs >=3
+# transits); panels 7 and 8 become the aligned transits and the O-C diagram.
+ql run --name TOI-216 --sectors 1,2,3,4,5,6 --exptime 120 --ttv-search --save
 
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save

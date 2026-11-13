@@ -24,6 +24,7 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 2. Adjust pipeline parameters (sector, pipeline, flux type, etc.)
 3. Optionally toggle **Show SIMBAD** to overlay nearby non-stellar SIMBAD objects on the archival image (on by default in the GUI)
    - Under **Period Search**, tick **Single-transit search** to also look for individual transits; see [Single-transit search](single-transit.md). The TLS summary page then shows each target's `Class`, `N_ev`, `P_min` and `N_alias` (duotransit aliases)
+   - Tick **TTV search** to fit every transit separately and test the O−C for transit-timing variations; see [TTV search](ttv-search.md). The TLS summary page then shows `TTV [min]` and `p_TTV`
 
    ![Period Search options](img/ql-gui-period-search.png)
 4. Click **Run QuickLook**

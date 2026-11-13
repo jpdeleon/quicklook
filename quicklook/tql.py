@@ -32,6 +32,7 @@ from quicklook.notch_locor import notch_flatten, locor_flatten
 from quicklook.long_period import default_period_ceiling, epoch_check, needs_standard_fallback
 from quicklook.broken_axis import finish_broken_axes
 from quicklook.single_event_pipeline import SingleEventMixin
+from quicklook.ttv_pipeline import TTVMixin
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -155,7 +156,7 @@ def format_sector_ranges(sectors):
     return "+".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
 
 
-class TessQuickLook(SingleEventMixin):
+class TessQuickLook(SingleEventMixin, TTVMixin):
     def __init__(
         self,
         target_name: str,
@@ -195,6 +196,7 @@ class TessQuickLook(SingleEventMixin):
         cancel_check=None,
         neighbor_check: bool = True,
         single_event_search: bool = False,
+        ttv_search: bool = False,
     ):
         # start timer
         self.timer_start = timer()
@@ -221,6 +223,7 @@ class TessQuickLook(SingleEventMixin):
         self.min_sde_iterative = min_sde_iterative
         self.max_planets = max_planets
         self.single_event_search = single_event_search
+        self.ttv_search = ttv_search
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
@@ -309,6 +312,8 @@ class TessQuickLook(SingleEventMixin):
         # available; depth_variance_ratio/duration_consistency_ratio (which
         # don't need fold_lc) just recompute to the same values.
         self.compute_advanced_vetting_metrics()
+        # Before the iterative search, so it can mask transits at their fitted times.
+        self.run_ttv_search()
         self._check_cancel("before iterative TLS search")
         if self.iterative_search:
             if self.verbose:
@@ -318,6 +323,7 @@ class TessQuickLook(SingleEventMixin):
             self.iterative_tls_results = [self.tls_results] if self.tls_results is not None else []
         self._check_cancel("after iterative TLS search")
         self.run_single_event_search()
+        self.run_ttv_from_chain()
         # if self.fold_lc.primary_key is None:
         #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
@@ -1396,7 +1402,7 @@ class TessQuickLook(SingleEventMixin):
             self.iterative_tls_results = candidates
             return candidates
 
-        remaining = self.flat_lc[~self._transit_mask_for_lc(self.flat_lc, self.tls_results)]
+        remaining = self.flat_lc[~self.primary_transit_mask(self.flat_lc)]
 
         while True:
             if len(remaining) < 50:
@@ -1909,6 +1915,8 @@ class TessQuickLook(SingleEventMixin):
 
         if self.event_class in ("mono", "duo"):
             candidate = self._single_event_candidate_rows(params["srad"])
+        elif self.has_ttv_layout:
+            candidate.extend(self._ttv_candidate_rows())
 
         # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
@@ -2510,7 +2518,12 @@ class TessQuickLook(SingleEventMixin):
                 period=self.tls_results.period,
                 duration=self.tls_results.duration,
             )
-            self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
+            if self.has_ttv_layout:
+                # Transits at their individually fitted times, not the linear ephemeris.
+                ttv_lc_mask = self.ttv_transit_mask(self.flat_lc)
+                self.flat_lc[ttv_lc_mask].scatter(ax=ax, color="r", label="transit (fitted times)")
+            else:
+                self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
 
         if self.verbose:
             logger.info("Plotting TPF...")
@@ -2614,7 +2627,11 @@ class TessQuickLook(SingleEventMixin):
                     ax=ax,
                 )
 
-        if not single_layout:
+        if not single_layout and self.has_ttv_layout:
+            if self.verbose:
+                logger.info("Plotting TTV panels...")
+            self._plot_ttv_panels(axes.flatten())
+        elif not single_layout:
             if self.verbose:
                 logger.info("Plotting odd-even transit...")
             ax = axes.flatten()[6]

@@ -344,6 +344,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             use_star_priors=kwargs.get("use_priors", False),
             iterative_search=kwargs.get("iterative_search", False),
             single_event_search=kwargs.get("single_event_search", False),
+            ttv_search=kwargs.get("ttv_search", False),
             min_sde_iterative=kwargs.get("min_sde_iterative", 5.0),
             max_planets=kwargs.get("max_planets"),
             phase_xlim=kwargs.get("phase_xlim"),
@@ -468,6 +469,7 @@ def _parse_params(form):
         "use_priors": _is_truthy(form.get("use_priors")),
         "iterative_search": _is_truthy(form.get("iterative_search")),
         "single_event_search": _is_truthy(form.get("single_event_search")),
+        "ttv_search": _is_truthy(form.get("ttv_search")),
         "min_sde_iterative": safe_float(form.get("min_sde_iterative", 5.0), 5.0),
         "max_planets": safe_int(form.get("max_planets") or None, None),
         "custom_ephem": form.get("custom_ephem"),
@@ -496,6 +498,7 @@ def _job_dedup_signature(params):
         params.get("exptime", None),
         bool(params.get("iterative_search", False)),
         bool(params.get("single_event_search", False)),
+        bool(params.get("ttv_search", False)),
     )
 
 

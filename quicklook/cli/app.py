@@ -104,6 +104,7 @@ def _run_ql_for_sector(
     max_planets: Optional[int] = None,
     extend_period_ceiling: bool = True,
     single_event_search: bool = False,
+    ttv_search: bool = False,
 ):
     import matplotlib.pyplot as pl
     from quicklook.tql import TessQuickLook
@@ -132,6 +133,7 @@ def _run_ql_for_sector(
         max_planets=max_planets,
         extend_period_ceiling=extend_period_ceiling,
         single_event_search=single_event_search,
+        ttv_search=ttv_search,
         archival_survey="dss1",
         show_simbad=show_simbad,
         savefig=save,
@@ -459,6 +461,13 @@ def run(
         help="Also search for individual transits (mono-transits) that TLS cannot find; "
         "classifies the target as none/mono/periodic",
     ),
+    ttv_search: bool = typer.Option(
+        False,
+        "--ttv-search",
+        help="Fit each transit of a periodic TLS signal (or of >=3 chained single events) "
+        "on its own and test the O-C against a linear ephemeris for transit-timing "
+        "variations; needs >=3 transits",
+    ),
 ):
     """Run a quick-look analysis of a TESS lightcurve.
 
@@ -603,6 +612,7 @@ def run(
                     max_planets,
                     extend_period_ceiling,
                     single_event_search,
+                    ttv_search,
                 ): sector
                 for sector in sectors
             }
@@ -662,6 +672,7 @@ def run(
                     max_planets,
                     extend_period_ceiling,
                     single_event_search,
+                    ttv_search,
                 ): p
                 for p in pipelines
             }
@@ -713,6 +724,7 @@ def run(
         max_planets=max_planets,
         extend_period_ceiling=extend_period_ceiling,
         single_event_search=single_event_search,
+        ttv_search=ttv_search,
     )
     _ = ql.plot_tql()
     if not save:
