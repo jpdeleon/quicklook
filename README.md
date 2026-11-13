@@ -212,6 +212,14 @@ Each running job streams its output log live. Finished jobs (done, error, or can
 
 ![QuickLook Web GUI](docs/img/ql-gui.png)
 
+The **TLS Summary** page tabulates every `*_tls.h5` result in a folder. The
+values it shows are cached in `static/outputs/jobs.db` by path, modification
+time and size, so only new or changed files are opened on each visit: the
+first visit to a large folder takes a while, and later visits load in well
+under a second. Deleting `jobs.db` simply rebuilds the cache (and clears job
+history). Opening the GUI upgrades `jobs.db` to a newer schema, which older
+QuickLook versions will refuse to open.
+
 The Flask debugger is off by default. Pass `--debug` (or set `QUICKLOOK_DEBUG=1`)
 to enable it and the auto-reloader while developing:
 

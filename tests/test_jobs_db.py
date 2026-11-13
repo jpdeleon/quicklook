@@ -116,3 +116,85 @@ def test_migrate_is_idempotent(tmp_path):
         assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     finally:
         conn.close()
+
+
+def _tables(path):
+    conn = sqlite3.connect(str(path))
+    try:
+        return {
+            r[0]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        }
+    finally:
+        conn.close()
+
+
+def test_init_creates_tls_summary_cache_table(tmp_path):
+    db = JobsDB(tmp_path / "jobs.db")
+    assert "tls_summary_cache" in _tables(db.path)
+
+
+def test_migrate_v1_to_current_keeps_job_history(tmp_path):
+    path = tmp_path / "v1.db"
+    conn = sqlite3.connect(str(path))
+    try:
+        conn.execute(
+            "CREATE TABLE job_history (name TEXT PRIMARY KEY, status TEXT NOT NULL, "
+            "error TEXT DEFAULT '', params TEXT DEFAULT '{}', submitted_at REAL, "
+            "finished_at REAL, step_times TEXT DEFAULT '{}')"
+        )
+        conn.execute("INSERT INTO job_history (name, status) VALUES ('old', 'done')")
+        conn.execute("PRAGMA user_version = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+    JobsDB(path)
+
+    conn = sqlite3.connect(str(path))
+    try:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        assert conn.execute("SELECT name FROM job_history").fetchall() == [("old",)]
+    finally:
+        conn.close()
+    assert "tls_summary_cache" in _tables(path)
+
+
+def test_tls_cache_store_and_lookup_round_trip(tmp_path):
+    db = JobsDB(tmp_path / "jobs.db")
+    db.tls_cache_store([("/d/a_tls.h5", 10.0, 100, {"SDE": 9.5, "toi": None})])
+    got = db.tls_cache_lookup("/d")
+    assert got == {"/d/a_tls.h5": (10.0, 100, {"SDE": 9.5, "toi": None})}
+
+
+def test_tls_cache_store_replaces_existing_entry(tmp_path):
+    db = JobsDB(tmp_path / "jobs.db")
+    db.tls_cache_store([("/d/a_tls.h5", 10.0, 100, {"SDE": 1})])
+    db.tls_cache_store([("/d/a_tls.h5", 20.0, 200, {"SDE": 2})])
+    assert db.tls_cache_lookup("/d")["/d/a_tls.h5"] == (20.0, 200, {"SDE": 2})
+
+
+def test_tls_cache_lookup_is_scoped_to_one_directory(tmp_path):
+    db = JobsDB(tmp_path / "jobs.db")
+    db.tls_cache_store(
+        [
+            ("/d/a_tls.h5", 1.0, 1, {}),
+            ("/d/sub/b_tls.h5", 1.0, 1, {}),
+            ("/dx/c_tls.h5", 1.0, 1, {}),
+        ]
+    )
+    assert set(db.tls_cache_lookup("/d")) == {"/d/a_tls.h5"}
+
+
+def test_tls_cache_prune_drops_only_missing_files_in_directory(tmp_path):
+    db = JobsDB(tmp_path / "jobs.db")
+    db.tls_cache_store(
+        [
+            ("/d/keep_tls.h5", 1.0, 1, {}),
+            ("/d/gone_tls.h5", 1.0, 1, {}),
+            ("/other/x_tls.h5", 1.0, 1, {}),
+        ]
+    )
+    db.tls_cache_prune("/d", keep={"/d/keep_tls.h5"})
+    assert set(db.tls_cache_lookup("/d")) == {"/d/keep_tls.h5"}
+    assert set(db.tls_cache_lookup("/other")) == {"/other/x_tls.h5"}

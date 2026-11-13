@@ -83,16 +83,26 @@ def _load_legacy_group(group):
     return None
 
 
-def load(path):
+def load(path, keys=None):
     """Load a dict from an HDF5 file.
 
     Supports both the current h5io format (_scalar_data JSON attribute) and
     the legacy deepdish/flammkuchen format (scalars in file-level attrs,
     tuples as Groups with i0/i1/... attrs).
+
+    Parameters
+    ----------
+    path : str or Path
+        HDF5 file to read.
+    keys : iterable of str, optional
+        When given, only these datasets/groups are read (missing ones are
+        ignored). Scalar attributes are always returned. Use this to skip
+        large light-curve arrays when only summary values are needed.
     """
     result = {}
     with h5py.File(path, "r") as f:
-        for key in f.keys():
+        wanted = f.keys() if keys is None else [k for k in keys if k in f]
+        for key in wanted:
             obj = f[key]
             if isinstance(obj, h5py.Dataset):
                 result[key] = obj[()]

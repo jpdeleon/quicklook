@@ -14,38 +14,76 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Seconds to wait on a locked database before raising; the GUI server is
+# threaded, so a job finishing while /tls-summary writes cache rows can
+# briefly contend for the write lock.
+_BUSY_TIMEOUT_S = 10.0
+
+# A cache entry: (absolute path, mtime, size in bytes, extracted fields).
+TLSCacheEntry = tuple[str, float, int, dict[str, Any]]
 
 
 def _connect(path: Path) -> sqlite3.Connection:
-    return sqlite3.connect(str(path))
+    return sqlite3.connect(str(path), timeout=_BUSY_TIMEOUT_S)
+
+
+def _create_job_history(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS job_history (
+            name         TEXT PRIMARY KEY,
+            status       TEXT NOT NULL,
+            error        TEXT DEFAULT '',
+            params       TEXT DEFAULT '{}',
+            submitted_at REAL,
+            finished_at  REAL,
+            step_times   TEXT DEFAULT '{}'
+        )"""
+    )
+
+
+def _create_tls_summary_cache(conn: sqlite3.Connection) -> None:
+    # One row per *_tls.h5 file. ``directory`` is stored separately so a
+    # page load can fetch one folder's rows with an indexed equality match.
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS tls_summary_cache (
+            path      TEXT PRIMARY KEY,
+            directory TEXT NOT NULL,
+            mtime     REAL NOT NULL,
+            size      INTEGER NOT NULL,
+            fields    TEXT NOT NULL
+        )"""
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tls_summary_cache_dir ON tls_summary_cache (directory)"
+    )
 
 
 def _migrate(conn: sqlite3.Connection) -> None:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     if current == SCHEMA_VERSION:
         return
-    if current == 0:
-        conn.execute(
-            """CREATE TABLE IF NOT EXISTS job_history (
-                name         TEXT PRIMARY KEY,
-                status       TEXT NOT NULL,
-                error        TEXT DEFAULT '',
-                params       TEXT DEFAULT '{}',
-                submitted_at REAL,
-                finished_at  REAL,
-                step_times   TEXT DEFAULT '{}'
-            )"""
+    if current > SCHEMA_VERSION:
+        # Never silently downgrade.
+        raise RuntimeError(
+            f"jobs.db user_version={current} is newer than SCHEMA_VERSION={SCHEMA_VERSION}; "
+            "refusing to run against an unknown future schema."
         )
-        conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
-        conn.commit()
-        return
-    # Future versions: add elif current == N branches that migrate
-    # forward to SCHEMA_VERSION. Never silently downgrade.
-    raise RuntimeError(
-        f"jobs.db user_version={current} is newer than SCHEMA_VERSION={SCHEMA_VERSION}; "
-        "refusing to run against an unknown future schema."
-    )
+    # Step forward one version at a time so every older database follows the
+    # same path. Add a new ``if current == N`` block for each future bump.
+    if current == 0:
+        _create_job_history(conn)
+        current = 1
+    if current == 1:
+        _create_tls_summary_cache(conn)
+        current = 2
+    conn.execute(f"PRAGMA user_version = {current}")
+    conn.commit()
+
+
+def _parent_dir(path: str) -> str:
+    return str(Path(path).parent)
 
 
 class JobsDB:
@@ -109,6 +147,51 @@ class JobsDB:
         conn = _connect(self.path)
         try:
             conn.execute("DELETE FROM job_history WHERE name = ?", (name,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    # -- TLS summary cache --------------------------------------------------
+
+    def tls_cache_lookup(self, directory: str) -> dict[str, tuple[float, int, dict[str, Any]]]:
+        """Return ``{path: (mtime, size, fields)}`` for files directly in *directory*."""
+        conn = _connect(self.path)
+        try:
+            rows = conn.execute(
+                "SELECT path, mtime, size, fields FROM tls_summary_cache WHERE directory = ?",
+                (directory,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return {path: (mtime, size, json.loads(fields)) for path, mtime, size, fields in rows}
+
+    def tls_cache_store(self, entries: list[TLSCacheEntry]) -> None:
+        """Insert or replace cache rows in a single transaction."""
+        if not entries:
+            return
+        conn = _connect(self.path)
+        try:
+            conn.executemany(
+                "INSERT OR REPLACE INTO tls_summary_cache "
+                "(path, directory, mtime, size, fields) VALUES (?, ?, ?, ?, ?)",
+                [
+                    (path, _parent_dir(path), mtime, size, json.dumps(fields))
+                    for path, mtime, size, fields in entries
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def tls_cache_prune(self, directory: str, keep: set[str]) -> None:
+        """Delete rows for files in *directory* whose path is not in *keep*."""
+        cached = self.tls_cache_lookup(directory)
+        stale = [(p,) for p in cached if p not in keep]
+        if not stale:
+            return
+        conn = _connect(self.path)
+        try:
+            conn.executemany("DELETE FROM tls_summary_cache WHERE path = ?", stale)
             conn.commit()
         finally:
             conn.close()

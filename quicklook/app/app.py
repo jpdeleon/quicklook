@@ -1078,56 +1078,6 @@ def gallery():
     )
 
 
-def _parse_tls_filename(stem):
-    """Best-effort parse of pipeline, flux_type, cadence from a TLS filename.
-
-    Filenames follow `{name}_s{NN}_{lctype}_{c}c[_mask_ephem][_{suffix}]_tls`
-    (see TessQuickLook.check_output_file_exists). ``lctype`` is the flux type
-    when pipeline=="spoc" (pdcsap/sap), else the pipeline name itself.
-    Returns a dict of fallbacks; values are None when not confidently
-    recoverable.
-    """
-    SPOC_FLUX = {"pdcsap", "sap"}
-    # Trailing "_tls" already stripped by Path.stem callers
-    if stem.endswith("_tls"):
-        stem = stem[: -len("_tls")]
-    tokens = stem.split("_")
-    pipeline = flux_type = cadence = None
-    # Find the sector token (sNN) and the cadence token ((s|l)c).
-    sec_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"s\d{1,3}", t)), None)
-    cad_idx = next((i for i, t in enumerate(tokens) if re.fullmatch(r"[sl]c", t)), None)
-    if sec_idx is not None and cad_idx is not None and cad_idx > sec_idx + 1:
-        lctype = tokens[sec_idx + 1]
-        if lctype in SPOC_FLUX:
-            pipeline, flux_type = "spoc", lctype
-        elif lctype in HLSP_PIPELINES:
-            pipeline = lctype
-        cadence = "short" if tokens[cad_idx] == "sc" else "long"
-    return {"pipeline": pipeline, "flux_type": flux_type, "cadence": cadence}
-
-
-def _coerce_scalar(val):
-    """Unwrap 0-d/1-elem numpy arrays so Jinja sees a plain Python scalar."""
-    if val is None:
-        return None
-    try:
-        import numpy as _np
-
-        if isinstance(val, _np.ndarray):
-            if val.ndim == 0:
-                return val.item()
-            if val.size == 1:
-                return val.flat[0].item()
-    except Exception:
-        pass
-    if isinstance(val, bytes):
-        try:
-            return val.decode()
-        except Exception:
-            return None
-    return val
-
-
 def _get_allowed_browse_roots():
     """Roots the /list-dirs endpoint is allowed to descend into.
 
@@ -1312,6 +1262,46 @@ def list_dirs():
     )
 
 
+def _tls_summary_row(entry, output_root):
+    """Combine cached data fields with per-request link columns for one file."""
+    path = entry.path
+    stem = path.stem  # foo_s12_pdcsap_sc_tls
+    png_name = stem[: -len("_tls")] + ".png" if stem.endswith("_tls") else stem + ".png"
+
+    # Emit /static/outputs/... URLs only when the file lives inside
+    # OUTPUT_DIR; otherwise show the absolute path as plain text so we
+    # don't have to add a generic file-streaming endpoint.
+    try:
+        resolved = path.resolve()
+        external = not resolved.is_relative_to(output_root)
+    except (OSError, ValueError):
+        resolved = path
+        external = True
+
+    if external:
+        png_path = h5_path = None
+        disk_path = str(resolved)
+    else:
+        png_path = (
+            url_for("static", filename=f"outputs/{png_name}")
+            if (OUTPUT_DIR / png_name).exists()
+            else None
+        )
+        h5_path = url_for("static", filename=f"outputs/{path.name}")
+        disk_path = None
+
+    return {
+        "filename": path.name,
+        "stem": stem,
+        "png": png_path,
+        "h5": h5_path,
+        "external": external,
+        "disk_path": disk_path,
+        "mtime": entry.mtime,
+        **entry.fields,
+    }
+
+
 @app.route("/tls-summary")
 def tls_summary():
     """Sortable, searchable summary table of every saved TLS .h5 result.
@@ -1319,7 +1309,8 @@ def tls_summary():
     Reads from ``OUTPUT_DIR`` by default; accepts ``?dir=<absolute_path>``
     to point at any other directory containing ``*_tls.h5`` files.
     """
-    from quicklook import h5io
+    # Imported lazily: pulls in h5py, which the rest of the GUI doesn't need.
+    from quicklook.app.tls_summary import scan as scan_tls_results
 
     req_dir = request.args.get("dir", "").strip()
     chosen_dir = OUTPUT_DIR
@@ -1339,100 +1330,9 @@ def tls_summary():
     is_default_dir = chosen_dir.resolve() == OUTPUT_DIR.resolve()
     output_root = OUTPUT_DIR.resolve()
 
-    files = sorted(chosen_dir.glob("*_tls.h5"), key=os.path.getmtime, reverse=True)
-    rows = []
-    skipped = []
-    for fp in files:
-        try:
-            data = h5io.load(str(fp))
-        except Exception as e:
-            skipped.append({"name": fp.name, "error": str(e)})
-            continue
-
-        stem = fp.stem  # foo_s12_pdcsap_sc_tls
-        png_name = stem[: -len("_tls")] + ".png" if stem.endswith("_tls") else stem + ".png"
-
-        # Emit /static/outputs/... URLs only when the file lives inside
-        # OUTPUT_DIR; otherwise show the absolute path as plain text so we
-        # don't have to add a generic file-streaming endpoint.
-        try:
-            fp_resolved = fp.resolve()
-            external = not fp_resolved.is_relative_to(output_root)
-        except (OSError, ValueError):
-            external = True
-            fp_resolved = fp
-
-        if external:
-            png_path = None
-            h5_path = None
-            disk_path = str(fp_resolved)
-        else:
-            png_path = (
-                url_for("static", filename=f"outputs/{png_name}")
-                if (OUTPUT_DIR / png_name).exists()
-                else None
-            )
-            h5_path = url_for("static", filename=f"outputs/{fp.name}")
-            disk_path = None
-
-        def first(seq):
-            try:
-                return seq[0] if seq is not None and len(seq) > 0 else None
-            except Exception:
-                return None
-
-        ptc = data.get("per_transit_count")
-        try:
-            ptc_str = ",".join(str(int(x)) for x in ptc) if ptc is not None else ""
-        except Exception:
-            ptc_str = str(ptc) if ptc is not None else ""
-
-        # Filename-based fallbacks for older h5 files that pre-date the
-        # "save pipeline/flux_type/exptime/cadence" fix in tql.py.
-        fallback = _parse_tls_filename(stem)
-        pipeline = _coerce_scalar(data.get("pipeline")) or fallback["pipeline"]
-        flux_type = _coerce_scalar(data.get("flux_type")) or fallback["flux_type"]
-        exptime = _coerce_scalar(data.get("exptime"))
-        if exptime is None and fallback["cadence"] == "short":
-            # Use a hint, not a hard claim; surface in the table so users
-            # know it's inferred. 120s is the typical SPOC 2-min cadence.
-            exptime_hint = 120 if pipeline == "spoc" else None
-            exptime = exptime_hint
-
-        depth = data.get("depth")
-        duration_days = _coerce_scalar(data.get("duration"))
-        rows.append(
-            {
-                "filename": fp.name,
-                "stem": stem,
-                "png": png_path,
-                "h5": h5_path,
-                "external": external,
-                "disk_path": disk_path,
-                "mtime": os.path.getmtime(fp),
-                "toi": _coerce_scalar(data.get("toiid")),
-                "tic": _coerce_scalar(data.get("ticid")),
-                "gaiaid": _coerce_scalar(data.get("gaiaid")),
-                "pipeline": pipeline,
-                "flux_type": flux_type,
-                "exptime": exptime,
-                "sector": _coerce_scalar(data.get("sector")),
-                "Porb": _coerce_scalar(data.get("period")),
-                "duration_hr": duration_days * 24.0 if duration_days is not None else None,
-                "rp_rs": _coerce_scalar(data.get("rp_rs")),
-                "SDE": _coerce_scalar(data.get("SDE")),
-                "snr": _coerce_scalar(data.get("snr")),
-                "FAP": _coerce_scalar(data.get("FAP")),
-                "odd_even": _coerce_scalar(data.get("odd_even_mismatch")),
-                "n_tr": _coerce_scalar(data.get("distinct_transit_count")),
-                "depth_ppt": (1 - depth) * 1e3 if depth is not None else None,
-                "Prot_gls": first(data.get("Prot_gls")),
-                "amp_gls": first(data.get("amp_gls")),
-                "power_gls": first(data.get("power_gls")),
-                "per_transit_count": ptc_str,
-                "simbad_obj": _coerce_scalar(data.get("simbad_obj")),
-            }
-        )
+    result = scan_tls_results(chosen_dir, _jobs_db)
+    rows = [_tls_summary_row(entry, output_root) for entry in result.entries]
+    skipped = result.skipped
 
     return render_template(
         "tls_summary.html",

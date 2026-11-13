@@ -110,3 +110,27 @@ def test_save_overwrites_existing(tmp_path):
     out = h5io.load(path)
     assert "a" not in out
     np.testing.assert_array_equal(out["b"], np.array([10, 20]))
+
+
+def test_load_keys_reads_only_requested_datasets(tmp_path):
+    """keys= restricts dataset reads; JSON scalars always come back."""
+    path = tmp_path / "sel.h5"
+    h5io.save(
+        path,
+        {
+            "flux_raw": np.ones(10_000),
+            "Prot_gls": np.array([3.2, 0.1]),
+            "period": 1.5,
+        },
+    )
+    out = h5io.load(path, keys=["Prot_gls", "missing_key"])
+    assert "flux_raw" not in out
+    assert "missing_key" not in out
+    np.testing.assert_array_equal(out["Prot_gls"], np.array([3.2, 0.1]))
+    assert out["period"] == pytest.approx(1.5)
+
+
+def test_load_keys_none_reads_everything(tmp_path):
+    path = tmp_path / "all.h5"
+    h5io.save(path, {"a": np.arange(3), "b": np.arange(4)})
+    assert set(h5io.load(path, keys=None)) == {"a", "b"}
