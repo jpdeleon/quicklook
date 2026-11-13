@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.11.0](https://github.com/jpdeleon/quicklook/compare/v1.10.1...v1.11.0) (2026-11-13)
+
+
+### Features
+
+* add opt-in single-transit (mono) search with none/mono/periodic classification ([809dbd0](https://github.com/jpdeleon/quicklook/commit/809dbd023f3cd792b503aaed25568016767c7d3f))
+* break the time axis between separate sectors in mono/duo panels ([6b9646f](https://github.com/jpdeleon/quicklook/commit/6b9646f7a34f3e2a7478d42239d9e374914437d6))
+* pair single events into duotransits with ranked period aliases ([6880468](https://github.com/jpdeleon/quicklook/commit/6880468cfd3bc4ed1f6c27e09e739be363ab0f62))
+* pair single events into duotransits with ranked period aliases ([e8e06d0](https://github.com/jpdeleon/quicklook/commit/e8e06d0d05bb2fb3a51d8884e70e39bbb0e4ea3b))
+* single-transit (mono) search with none/mono/periodic classification ([bfd7bd4](https://github.com/jpdeleon/quicklook/commit/bfd7bd44a1479d1e04ca8bdadf7eae4bb972c178))
+
 ## [1.10.1](https://github.com/jpdeleon/quicklook/compare/v1.10.0...v1.10.1) (2026-11-13)
 
 
