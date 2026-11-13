@@ -100,12 +100,12 @@ ql run --name TOI-2180 --sectors 19,48 --exptime 120 --single-event-search --sav
 
 ![TOI-2180 sectors 19+48, duo layout](img/duo-transit-toi2180-s19-48.png)
 
-The two events agree in depth (4.2 and 4.0 ppt) and duration. Of the 780.48/n
-aliases, 31 survive the coverage check (P ≥ 25 d). With the host's density
-(0.24 ρ<sub>☉</sub>), the true period, 260.16 d (n = 3), gets 38% and
-390.24 d (n = 2) 41%. Two sectors alone cannot tell these apart, which is the
-honest answer. A third sector, or a targeted observation at a predicted time,
-settles it.
+The two events agree in depth (4.3 and 4.1 ppt) and duration (22 h each). Of
+the 780.44/n aliases, 31 survive the coverage check (P ≥ 25.2 d). With the
+host's density (0.24 ρ<sub>☉</sub>), the true period, 260.15 d (n = 3), is the
+most likely at 39%, but 390.22 d (n = 2) is close at 37% and 195.11 d (n = 4)
+gets 17%. Two sectors alone cannot settle the period. A third sector, or a
+targeted observation at a predicted time, would.
 
 ## Figure layout
 
