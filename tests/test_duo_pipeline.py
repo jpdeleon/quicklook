@@ -109,3 +109,29 @@ def test_stellar_density_skips_entries_without_mass():
         ]
     }
     assert ql._stellar_density() == pytest.approx(1.025 / 1.62762**3)
+
+
+def test_duo_time_panels_are_broken_between_sectors():
+    ql = _ql(_two_sector_lc())
+    ql.run_single_event_search()
+    fig, axes = pl.subplots(3, 3)
+    flat = axes.flatten()
+    ql._plot_single_event_panels(flat)
+    # Panels 4 and 5 (flattened flux, single-event SNR) each become 2 sub-axes.
+    for idx in (3, 4):
+        subs = ql._broken_panels[idx]
+        assert len(subs) == 2
+        assert subs[0].get_xlim()[1] < 100 < subs[1].get_xlim()[0]
+    assert flat[3] not in fig.axes and flat[4] not in fig.axes
+    pl.close(fig)
+
+
+def test_single_sector_mono_time_panels_are_not_broken():
+    from test_single_event_pipeline import _ql as mono_ql
+
+    ql = mono_ql()
+    ql.run_single_event_search()
+    fig, axes = pl.subplots(3, 3)
+    ql._plot_single_event_panels(axes.flatten())
+    assert all(len(v) == 1 for v in ql._broken_panels.values())
+    pl.close(fig)

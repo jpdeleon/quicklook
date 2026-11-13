@@ -30,6 +30,7 @@ import lightkurve as lk
 from quicklook import h5io
 from quicklook.notch_locor import notch_flatten, locor_flatten
 from quicklook.long_period import default_period_ceiling, epoch_check, needs_standard_fallback
+from quicklook.broken_axis import finish_broken_axes
 from quicklook.single_event_pipeline import SingleEventMixin
 from quicklook.utils import (
     get_exofop_json,
@@ -2367,18 +2368,18 @@ class TessQuickLook(SingleEventMixin):
 
         if self.verbose:
             logger.info("Plotting raw light curve...")
-        ax = axes.flatten()[0]
-        self.raw_lc.scatter(ax=ax, label=f"raw (exp={self.exptime} s)")
-
-        if self.verbose:
-            logger.info("Plotting trend...")
+        # Mono/duo layouts break the time axis between separate sectors.
+        self._panel0_axes = self._time_panel_axes(axes.flatten()[0])
         label = f"baseline trend\nmethod={self.flatten_method}"
         if self.window_length_opt is None:
             label += "(window_size="
         else:
             label += "(optim. window_size="
         label += f"{self.window_length:.2f})"
-        self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
+        for ax in self._panel0_axes:
+            self.raw_lc.scatter(ax=ax, label=f"raw (exp={self.exptime} s)")
+            self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
+        finish_broken_axes(self._panel0_axes)
 
         if self.verbose:
             logger.info("Running Lomb-Scargle periodogram...")

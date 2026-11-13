@@ -121,6 +121,13 @@ For a `periodic` (or `none`) target the 9-panel figure is unchanged. For a
 | 8 | Secondary eclipse | Periods not excluded by the data, with `P min` | Allowed aliases ΔT/n and their relative probability |
 | 9 | Summary | Class, event T0, duration, depth, SNR, ΔBIC, `P min`, gap distance and radius estimate | Class, both T0s, ΔT, mean duration and depth, depth ratio, SNRs, number of aliases, most likely P, `P min`, radius estimate |
 
+When the light curve spans separate sectors (any gap longer than 10 d), the
+time panels (1, 4 and 5) use a broken x-axis: one sub-panel per sector, a
+shared flux axis and diagonal break marks, so years-long gaps do not squeeze
+each sector into a sliver. Orbit gaps and consecutive sectors stay on one axis.
+The helper (`quicklook/broken_axis.py`) is ported from
+[allesfitter2](https://github.com/jpdeleon/allesfitter2/blob/main/allesfitter/plot_utils.py).
+
 ## Saved outputs
 
 When the search is enabled, these fields are added to `*_tls.h5`:

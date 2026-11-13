@@ -14,6 +14,7 @@ import matplotlib.pyplot as pl
 import numpy as np
 from loguru import logger
 
+from quicklook.broken_axis import broken_time_axes, finish_broken_axes
 from quicklook.duo import DuoPair, find_duo
 from quicklook.plot_single import (
     mark_events,
@@ -83,6 +84,8 @@ class SingleEventMixin:
     event_class: Optional[str] = None
     p_min: float = np.nan
     duo: Optional[DuoPair] = None
+    _panel0_axes: Optional[list] = None
+    _broken_panels: dict = {}
 
     # --- search -------------------------------------------------------------
 
@@ -265,17 +268,32 @@ class SingleEventMixin:
 
     # --- figure ---------------------------------------------------------------
 
+    def _time_panel_axes(self, ax) -> list:
+        """``[ax]``, or one axes per sector for mono/duo layouts with sector gaps."""
+        if self.event_class not in ("mono", "duo"):
+            return [ax]
+        return broken_time_axes(ax, self.flat_lc.time.value)
+
     def _plot_single_event_panels(self, axes):
         """Fill panels 1, 4, 5, 7 and 8 (indices 0, 3, 4, 6, 7) for the mono/duo layout."""
         assert self.single_event_result is not None
         time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
         events = self.unexplained_events
-        mark_events(axes[0], events)
-        axes[3].plot(time, flux, ".", color="k", ms=1)
-        mark_events(axes[3], events)
-        axes[3].set_xlabel("Time [BTJD]")
-        axes[3].set_ylabel("Normalized flux")
-        plot_single_event_statistic(self.single_event_result, axes[4], events)
+        panel0 = self._panel0_axes or [axes[0]]
+        for ax in panel0:
+            mark_events(ax, events)
+        panel3 = self._time_panel_axes(axes[3])
+        for ax in panel3:
+            ax.plot(time, flux, ".", color="k", ms=1)
+            mark_events(ax, events)
+            ax.set_xlabel("Time [BTJD]")
+            ax.set_ylabel("Normalized flux")
+        finish_broken_axes(panel3)
+        panel4 = self._time_panel_axes(axes[4])
+        for ax in panel4:
+            plot_single_event_statistic(self.single_event_result, ax, events)
+        finish_broken_axes(panel4)
+        self._broken_panels = {0: panel0, 3: panel3, 4: panel4}
         ev = self.primary_event
         if ev is None:
             for ax in (axes[6], axes[7]):
