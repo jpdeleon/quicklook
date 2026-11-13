@@ -321,6 +321,7 @@
         <th data-key="n_events" data-type="num" title="Individually detected single events">N_ev <span class="arrow"></span></th>
         <th data-key="p_min" data-type="num" title="Period lower limit: from the strongest unexplained event, or the shortest allowed duotransit alias">P_min [d] <span class="arrow"></span></th>
         <th data-key="n_aliases" data-type="num" title="Duotransit: number of allowed periods dT/n">N_alias <span class="arrow"></span></th>
+        <th data-key="se_window" data-type="num" title="Single-event detrending window (days); hover a value for why it was chosen">SE win [d] <span class="arrow"></span></th>
         <th data-key="Prot_gls" data-type="num">Prot [d] <span class="arrow"></span></th>
         <th data-key="power_gls" data-type="num">GLS power <span class="arrow"></span></th>
         <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
@@ -349,6 +350,7 @@
         <th><input type="text" data-col="18" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="19" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="20" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="21" data-type="num" placeholder="> < .."></th>
         <th></th>
       </tr>
     </thead>
@@ -401,6 +403,9 @@
         </td>
         <td class="num" data-v="{{ r.n_aliases if r.n_aliases is not none else '' }}">
           {% if r.n_aliases %}{{ r.n_aliases }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.se_window if r.se_window is not none and r.se_window == r.se_window else '' }}"{% if r.se_window_reason %} title="{{ r.se_window_reason }}"{% endif %}>
+          {% if r.se_window is not none and r.se_window == r.se_window %}{{ "%.2f"|format(r.se_window) }}{% endif %}
         </td>
         <td class="num" data-v="{{ r.Prot_gls if r.Prot_gls is not none else '' }}">
           {% if r.Prot_gls is not none %}{{ "%.3f"|format(r.Prot_gls) }}{% endif %}

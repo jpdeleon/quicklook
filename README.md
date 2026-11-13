@@ -17,7 +17,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density, plus a built-in **Notch** and **LOCoR** filter (Rizzuto et al. 2017) that preserve transit shape via a windowed BIC test / rotation-cycle combination instead of dividing it out
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
-- **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, a period lower limit, duotransit pairing with ranked period aliases, and a `none`/`mono`/`duo`/`periodic` classification ([docs](docs/single-transit.md))
+- **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, its own wider detrending window that is re-fitted with detected events masked, a period lower limit, duotransit pairing with ranked period aliases, and a `none`/`mono`/`duo`/`periodic` classification ([docs](docs/single-transit.md))
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms

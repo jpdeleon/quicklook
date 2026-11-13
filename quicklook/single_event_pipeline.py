@@ -1,7 +1,9 @@
 """Single-event search glue for ``TessQuickLook`` (kept out of tql.py for size).
 
-``SingleEventMixin`` expects the host to provide ``flat_lc``, ``tls_results``,
-``exofop_data``, ``verbose`` and ``single_event_search``.
+``SingleEventMixin`` expects the host to provide ``raw_lc``, ``flat_lc``,
+``tls_results``, ``exofop_data``, ``window_length``, ``verbose`` and
+``single_event_search``. The search detrends ``raw_lc`` itself (see
+``quicklook.single_event_detrend``); ``flat_lc`` stays TLS's.
 """
 
 from __future__ import annotations
@@ -27,9 +29,19 @@ from quicklook.plot_single import (
 from quicklook.single_event import (
     SingleEvent,
     SingleEventResult,
+    _cadence,
     classify_events,
+    duration_grid,
+    longest_segment,
     min_period,
     single_event_search,
+)
+from quicklook.single_event_detrend import (
+    WINDOW_TO_DURATION,
+    choose_window,
+    detrend,
+    event_mask,
+    is_fast_rotator,
 )
 from quicklook.utils import get_params_from_exofop
 
@@ -40,6 +52,7 @@ from quicklook.utils import get_params_from_exofop
 PERIODIC_SDE_MIN = 7.0
 PERIODIC_MIN_TRANSITS = 3
 MONO_FIGURE_SUFFIX = "_mono.png"
+MAX_REDETREND_ITER = 3  # mask-and-re-detrend passes after the first search
 
 _EVENT_ARRAY_FIELDS = {
     "event_t0s": "t0",
@@ -73,7 +86,9 @@ class SingleEventMixin:
     """Runs the single-event search and draws its panels."""
 
     # Provided by the host class (TessQuickLook).
+    raw_lc: Any
     flat_lc: Any
+    window_length: float
     tls_results: Any
     exofop_data: Any
     verbose: bool
@@ -85,6 +100,14 @@ class SingleEventMixin:
     p_min: float = np.nan
     duo: Optional[DuoPair] = None
     _panel0_axes: Optional[list] = None
+    # The search's own detrended light curve and settings (PR 3 of #42).
+    se_time: Optional[np.ndarray] = None
+    se_flux: Optional[np.ndarray] = None
+    se_trend: Optional[np.ndarray] = None
+    se_window: float = np.nan
+    se_window_reason: str = ""
+    se_max_duration: float = np.nan
+    se_redetrended: bool = False
     _broken_panels: dict = {}
 
     # --- search -------------------------------------------------------------
@@ -137,9 +160,8 @@ class SingleEventMixin:
         """
         if not getattr(self, "single_event_search", False):
             return None
-        time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
         rho_star = self._stellar_density()
-        res = single_event_search(time, flux, rho_star=rho_star)
+        time, flux, res = self._detrend_and_search(rho_star)
         periodic = self._tls_is_periodic()
         unexplained = tuple(e for e in res.events if not (periodic and self._explained_by_tls(e)))
         self.single_event_result = res
@@ -159,6 +181,62 @@ class SingleEventMixin:
             self._log_single_event_results()
         return res
 
+    def _raw_normalised(self):
+        t = np.asarray(self.raw_lc.time.value, dtype=float)
+        f = np.asarray(self.raw_lc.flux.value, dtype=float)
+        return t, f / np.nanmedian(f)
+
+    def _search_durations(self, grid) -> np.ndarray:
+        """The stellar duration grid, capped at window / 3 (with a warning)."""
+        cap = self.se_window / WINDOW_TO_DURATION
+        self.se_max_duration = float(min(grid[-1], cap))
+        if grid[-1] <= cap:
+            return grid
+        logger.warning(
+            f"Single-event search: detrending window {self.se_window:.2f} d preserves "
+            f"dips up to ~{cap * 24:.1f} h, so the first pass skips longer trial "
+            f"durations (up to {grid[-1] * 24:.1f} h); detected events are then "
+            "re-measured on a light curve detrended with them masked."
+        )
+        return np.geomspace(grid[0], max(cap, 2 * grid[0]), grid.size)
+
+    def _detrend_and_search(self, rho_star):
+        """Detrend ``raw_lc`` for the search, search, then repeat with events masked.
+
+        The first pass caps trial durations at window / 3, since longer dips are
+        partly removed by the detrending. With the events masked the trend no
+        longer depends on the window inside them, so the second pass uses the
+        full stellar grid and measures long transits at their real duration.
+        """
+        time, raw = self._raw_normalised()
+        # LOCoR also disables the rotation-aware window but leaves it at 0 d;
+        # only a positive window counts as one the user chose.
+        user_set = not getattr(self, "_use_rotation_aware_window", True) and (
+            float(self.window_length) > 0
+        )
+        fast = is_fast_rotator(time, raw)
+        self.se_window, self.se_window_reason = choose_window(
+            float(self.window_length), rho_star, user_set, fast
+        )
+        full_grid = duration_grid(longest_segment(time), _cadence(time), rho_star)
+        durations = self._search_durations(full_grid)
+        edge = float(getattr(self, "edge_cutoff", 0.0) or 0.0)
+        flux, trend = detrend(time, raw, self.se_window, edge_cutoff=edge)
+        res = single_event_search(time, flux, rho_star=rho_star, durations=durations)
+        self.se_redetrended = bool(res.events)
+        mask = np.zeros(time.size, dtype=bool)
+        for _ in range(MAX_REDETREND_ITER):
+            grown = mask | event_mask(time, res.events)
+            if not res.events or np.array_equal(grown, mask):
+                break
+            # The mask only grows: a first-pass event capped below its real
+            # duration masks too little, and the next pass measures it longer.
+            mask = grown
+            flux, trend = detrend(time, raw, self.se_window, mask=mask, edge_cutoff=edge)
+            res = single_event_search(time, flux, rho_star=rho_star, durations=full_grid)
+        self.se_time, self.se_flux, self.se_trend = time, flux, trend
+        return time, flux, res
+
     def _store_single_event_results(self):
         res, ev = self.single_event_result, self.primary_event
         assert res is not None
@@ -168,6 +246,10 @@ class SingleEventMixin:
             "n_events": len(res.events),
             "n_unexplained_events": len(self.unexplained_events),
             "p_min": float(self.p_min),
+            "single_event_window": float(self.se_window),
+            "single_event_window_reason": self.se_window_reason,
+            "single_event_max_duration": float(self.se_max_duration),
+            "single_event_redetrended": bool(self.se_redetrended),
         }
         for name in _PRIMARY_FIELDS:
             values[f"single_event_{name}"] = float(getattr(ev, name)) if ev else np.nan
@@ -203,7 +285,10 @@ class SingleEventMixin:
         ev = self.primary_event
         msg = (
             f"Single-event search: {len(self.single_event_result.events)} event(s), "
-            f"{len(self.unexplained_events)} not explained by TLS -> class={self.event_class}"
+            f"{len(self.unexplained_events)} not explained by TLS -> class={self.event_class} "
+            f"(window {self.se_window:.2f} d [{self.se_window_reason}], durations <= "
+            f"{self.se_max_duration * 24:.1f} h"
+            f"{', re-detrended with events masked' if self.se_redetrended else ''})"
         )
         if self.duo is not None:
             duo = self.duo
@@ -274,14 +359,37 @@ class SingleEventMixin:
             return [ax]
         return broken_time_axes(ax, self.flat_lc.time.value)
 
+    def _se_light_curve(self):
+        """The search's detrended light curve (falls back to ``flat_lc``)."""
+        if self.se_time is not None and self.se_flux is not None:
+            return self.se_time, self.se_flux
+        return self.flat_lc.time.value, self.flat_lc.flux.value
+
+    def _plot_se_trend(self, ax):
+        """Overlay the single-event search's own trend on the raw light-curve panel."""
+        if self.se_time is None or self.se_trend is None:
+            return
+        scale = float(np.nanmedian(self.raw_lc.flux.value))
+        masked = " (events masked)" if self.se_redetrended else ""
+        ax.plot(
+            self.se_time,
+            self.se_trend * scale,
+            color="C2",
+            ls="--",
+            lw=1.5,
+            label=f"single-event trend\nwindow={self.se_window:.2f} d{masked}",
+        )
+        ax.legend(fontsize="x-small", loc="best")
+
     def _plot_single_event_panels(self, axes):
         """Fill panels 1, 4, 5, 7 and 8 (indices 0, 3, 4, 6, 7) for the mono/duo layout."""
         assert self.single_event_result is not None
-        time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
+        time, flux = self._se_light_curve()
         events = self.unexplained_events
         panel0 = self._panel0_axes or [axes[0]]
         for ax in panel0:
             mark_events(ax, events)
+            self._plot_se_trend(ax)
         panel3 = self._time_panel_axes(axes[3])
         for ax in panel3:
             ax.plot(time, flux, ".", color="k", ms=1)
@@ -313,7 +421,7 @@ class SingleEventMixin:
         res = self.single_event_result
         if self.event_class != "periodic" or ev is None or res is None:
             return None
-        time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
+        time, flux = self._se_light_curve()
         fig, axes = pl.subplots(2, 2, figsize=(12, 8), tight_layout=True)
         axes = axes.flatten()
         plot_single_event_statistic(res, axes[0], self.unexplained_events)

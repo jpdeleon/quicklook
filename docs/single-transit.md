@@ -10,15 +10,14 @@ This is tracked in [issue #42](https://github.com/jpdeleon/quicklook/issues/42).
 
 ## How it works
 
-The search runs on the flattened light curve, after TLS
-(`quicklook/single_event.py`):
+The search runs after TLS on its own detrended light curve (see
+[Detrending](#detrending)), using `quicklook/single_event.py`:
 
 1. **Box search over a stellar duration grid.** A box is slid across the light
    curve for 12 log-spaced durations. The range runs from grazing transits at
    half the longest gap-free stretch of data (not the total span, which can be
    years for stitched sectors) up to eccentric orbits at ~1000 d, using the
-   ExoFOP stellar density (solar if unknown) and capped at 1.5 d, since longer
-   dips do not survive typical detrending. Long-period transits can be much
+   ExoFOP stellar density (solar if unknown) and capped at 1.5 d. Long-period transits can be much
    shorter or longer than the usual 1-12 h
    ([Talens, Aigrain et al. 2025](https://doi.org/10.3847/2515-5172/ae2305)).
 2. **Red-noise-aware SNR.** Each trial's depth is divided by the larger of the
@@ -51,6 +50,35 @@ The search runs on the flattened light curve, after TLS
    period around the host star
    ([Osborn et al. 2016](https://doi.org/10.1093/mnras/stw137)), with a tail for
    eccentric orbits.
+
+## Detrending
+
+The pipeline's detrending window is tuned for TLS: short enough to remove
+stellar variability, often 3x a catalogue duration or 0.5-1 d. A window shorter
+than ~3x the transit duration eats into the transit
+([Hippke et al. 2019](https://doi.org/10.3847/1538-3881/ab3984)), and even a
+3x window sags into a long dip near a data edge (TOI-2180 b in sector 48). So
+the single-event search detrends the raw light curve itself
+(`quicklook/single_event_detrend.py`). TLS and the default figure keep the
+pipeline's flattened light curve.
+
+1. **Window choice.** The biweight window is raised to at least 3x the longest
+   trial duration for the host star (~2.9 d for a Sun-like star), unless
+   - you set `--window_length` (or the GUI window field) yourself, or
+   - the star rotates fast (a Lomb-Scargle peak with power ≥ 0.1 below 2 d),
+     since a wide window would leave the variability in.
+2. **Duration cap with a warning.** If the window is still shorter than 3x the
+   longest trial duration, the first pass only tries durations up to
+   window / 3 and logs a warning.
+3. **Mask and re-detrend.** Detected events are masked (event plus one
+   half-duration on each side), the trend is interpolated across them, as the
+   [wotan documentation](https://github.com/hippke/wotan) recommends, and the search is
+   repeated with the full duration grid. The mask only grows between passes,
+   so an event first found too short is re-measured at its real duration (up to
+   3 passes).
+
+The single-event trend is drawn as a dashed green line on panel 1 of the
+mono/duo figure, labelled with the window and whether events were masked.
 
 ## Classification
 
@@ -114,8 +142,8 @@ For a `periodic` (or `none`) target the 9-panel figure is unchanged. For a
 
 | Panel | Default | Mono layout | Duo layout |
 |-------|---------|-------------|------------|
-| 1 | Raw light curve + trend | Same, with the event shaded | Same, both events shaded |
-| 4 | Flattened light curve + TLS transits | Flattened light curve with the event shaded | Same, both events shaded |
+| 1 | Raw light curve + trend | Same, with the event shaded and the single-event trend (dashed) | Same, both events shaded |
+| 4 | Flattened light curve + TLS transits | Single-event detrended light curve with the event shaded | Same, both events shaded |
 | 5 | TLS periodogram | Single-event SNR vs time, threshold and detected events | Same |
 | 7 | Odd/even transits | Zoom on the event with the transit model and the best systematics model (with ΔBIC) | Both events overlaid on their own T0, with depth and duration ratios |
 | 8 | Secondary eclipse | Periods not excluded by the data, with `P min` | Allowed aliases ΔT/n and their relative probability |
@@ -146,9 +174,14 @@ When the search is enabled, these fields are added to `*_tls.h5`:
 | `duo_t0s`, `duo_delta_t`, `duo_depth_ratio` | The duotransit pair (empty/NaN otherwise) |
 | `n_aliases`, `p_aliases`, `p_alias_weights` | Allowed periods ΔT/n and their normalised weights |
 | `p_best` | Most likely alias (days) |
+| `single_event_window` | Biweight window used by the single-event detrending (days) |
+| `single_event_window_reason` | `floor` (raised to 3x the longest trial duration), `pipeline` (already wide enough), `user` or `fast rotator` |
+| `single_event_max_duration` | Longest trial duration in the first pass (days) |
+| `single_event_redetrended` | `True` if events were masked and the light curve re-detrended |
 
 The GUI's TLS summary page shows `Class`, `N_ev`, `P_min [d]` and `N_alias`
-columns, which can be sorted and filtered (e.g. type `duo` under Class).
+columns, plus `SE win [d]` (the single-event detrending window), which can be
+sorted and filtered (e.g. type `duo` under Class).
 
 ## Caveats
 
@@ -158,5 +191,9 @@ columns, which can be sorted and filtered (e.g. type `duo` under Class).
   A full period posterior is step 4 of #42.
 - Hard quality-flag masking already removes momentum-dump cadences, so they
   show up as gaps; check `single_event_dist_to_gap` for events close to one.
+- No detrending separates a long transit from variability on similar
+  timescales. A 22 h, 4 ppt transit on a 2 ppt, P = 6 d signal comes out ~25%
+  shallow; on a P = 20 d signal it is recovered. For fast rotators the
+  pipeline window is kept, so long transits there can be missed.
 - Scattered light, flares on the way down and residual detrending artefacts can
   still pass the systematics test. Always look at the event zoom (panel 7).
