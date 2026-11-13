@@ -197,7 +197,7 @@ PIPELINE_STEPS = [
     (r"Lomb-Scargle|GLS|Generalized Lomb", "Lomb-Scargle periodogram"),
     (r"Transit Least Squares|TLS|Searching.*periods", "Transit search (TLS)"),
     (r"Appending TLS results", "Processing TLS results"),
-    (r"Plotting TLS|Plotting flattened|Plotting phase", "Generating plots"),
+    (r"Plotting TLS|Plotting flattened|Plotting phase|Plotting single-event", "Generating plots"),
     (r"Plotting TPF|tesscut|DSS|archival", "Archival image overlay"),
     (r"Plotting odd-even|secondary eclipse|summary panel", "Final panels"),
     (r"Saved:.*\.png|Runtime:", "Done"),
@@ -343,6 +343,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             mask_ephem=kwargs.get("mask_ephem", False),
             use_star_priors=kwargs.get("use_priors", False),
             iterative_search=kwargs.get("iterative_search", False),
+            single_event_search=kwargs.get("single_event_search", False),
             min_sde_iterative=kwargs.get("min_sde_iterative", 5.0),
             max_planets=kwargs.get("max_planets"),
             phase_xlim=kwargs.get("phase_xlim"),
@@ -466,6 +467,7 @@ def _parse_params(form):
         "mask_ephem": _is_truthy(form.get("mask_ephem")),
         "use_priors": _is_truthy(form.get("use_priors")),
         "iterative_search": _is_truthy(form.get("iterative_search")),
+        "single_event_search": _is_truthy(form.get("single_event_search")),
         "min_sde_iterative": safe_float(form.get("min_sde_iterative", 5.0), 5.0),
         "max_planets": safe_int(form.get("max_planets") or None, None),
         "custom_ephem": form.get("custom_ephem"),
@@ -493,6 +495,7 @@ def _job_dedup_signature(params):
         params.get("fluxtype", "pdcsap"),
         params.get("exptime", None),
         bool(params.get("iterative_search", False)),
+        bool(params.get("single_event_search", False)),
     )
 
 

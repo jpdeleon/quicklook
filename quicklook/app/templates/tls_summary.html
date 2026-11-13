@@ -317,6 +317,9 @@
         <th data-key="FAP" data-type="num">FAP <span class="arrow"></span></th>
         <th data-key="odd_even" data-type="num">Odd-even &Delta; <span class="arrow"></span></th>
         <th data-key="n_tr" data-type="num">N_tr <span class="arrow"></span></th>
+        <th data-key="event_class" data-type="str" title="Single-event search: none / mono / periodic">Class <span class="arrow"></span></th>
+        <th data-key="n_events" data-type="num" title="Individually detected single events">N_ev <span class="arrow"></span></th>
+        <th data-key="p_min" data-type="num" title="Period lower limit from the strongest unexplained event">P_min [d] <span class="arrow"></span></th>
         <th data-key="Prot_gls" data-type="num">Prot [d] <span class="arrow"></span></th>
         <th data-key="power_gls" data-type="num">GLS power <span class="arrow"></span></th>
         <th data-key="toi" data-type="num">TOI <span class="arrow"></span></th>
@@ -337,10 +340,13 @@
         <th><input type="text" data-col="10" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="11" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="12" data-type="num" placeholder="> < .."></th>
-        <th><input type="text" data-col="13" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="13" data-type="str" placeholder="text"></th>
         <th><input type="text" data-col="14" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="15" data-type="num" placeholder="> < .."></th>
         <th><input type="text" data-col="16" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="17" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="18" data-type="num" placeholder="> < .."></th>
+        <th><input type="text" data-col="19" data-type="num" placeholder="> < .."></th>
         <th></th>
       </tr>
     </thead>
@@ -383,6 +389,13 @@
         </td>
         <td class="num" data-v="{{ r.n_tr if r.n_tr is not none else '' }}">
           {% if r.n_tr is not none %}{{ r.n_tr }}{% endif %}
+        </td>
+        <td>{% if r.event_class %}<span class="pill">{{ r.event_class }}</span>{% else %}<span class="muted">&mdash;</span>{% endif %}</td>
+        <td class="num" data-v="{{ r.n_events if r.n_events is not none else '' }}">
+          {% if r.n_events is not none %}{{ r.n_events }}{% endif %}
+        </td>
+        <td class="num" data-v="{{ r.p_min if r.p_min is not none and r.p_min == r.p_min else '' }}">
+          {% if r.p_min is not none and r.p_min == r.p_min %}{{ "%.1f"|format(r.p_min) }}{% endif %}
         </td>
         <td class="num" data-v="{{ r.Prot_gls if r.Prot_gls is not none else '' }}">
           {% if r.Prot_gls is not none %}{{ "%.3f"|format(r.Prot_gls) }}{% endif %}

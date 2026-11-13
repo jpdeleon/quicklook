@@ -25,7 +25,8 @@ server and tears it down afterwards, so the script stays reproducible in CI.
 
 The default routes overwrite docs/img/ql-gui.png (landing form) and
 docs/img/ql-gui-gallery.png (gallery), which the README and docs/gui.md
-already reference.
+already reference. SECTION_SHOTS also captures selected form sections expanded
+(e.g. docs/img/ql-gui-period-search.png with the search-option checkboxes).
 """
 
 from __future__ import annotations
@@ -50,6 +51,13 @@ SERVER_BOOT_TIMEOUT = 180
 DEFAULT_SHOTS = {
     "/": "ql-gui.png",
     "/gallery": "ql-gui-gallery.png",
+}
+
+# Collapsed form sections on the landing page, captured expanded and cropped to
+# the section, so option checkboxes are visible in the docs.
+# data-section name -> output filename under docs/img/
+SECTION_SHOTS = {
+    "period": "ql-gui-period-search.png",
 }
 
 
@@ -117,6 +125,16 @@ def capture(base: str, shots: dict[str, str]) -> list[Path]:
             page.wait_for_timeout(1200)  # let fonts/layout settle
             page.screenshot(path=str(dest), full_page=True)
             print(f"captured {route} -> {dest.relative_to(REPO_ROOT)}")
+            saved.append(dest)
+        for section, name in SECTION_SHOTS.items():
+            dest = IMG_DIR / name
+            page.goto(base + "/", wait_until="networkidle", timeout=60000)
+            box = page.locator(f'.collapsible[data-section="{section}"]')
+            if "open" not in (box.get_attribute("class") or ""):
+                box.locator(".collapsible-header").click()
+            page.wait_for_timeout(600)  # let the expand transition finish
+            box.screenshot(path=str(dest))
+            print(f"captured section {section!r} -> {dest.relative_to(REPO_ROOT)}")
             saved.append(dest)
         browser.close()
     return saved

@@ -23,6 +23,9 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 1. Enter a target name (TOI, TIC, or common name)
 2. Adjust pipeline parameters (sector, pipeline, flux type, etc.)
 3. Optionally toggle **Show SIMBAD** to overlay nearby non-stellar SIMBAD objects on the archival image (on by default in the GUI)
+   - Under **Period Search**, tick **Single-transit search** to also look for individual transits; see [Single-transit search](single-transit.md). The TLS summary page then shows each target's `Class`, `N_ev` and `P_min`
+
+   ![Period Search options](img/ql-gui-period-search.png)
 4. Click **Run QuickLook**
 5. Watch live progress with step-by-step updates and ETA
 
