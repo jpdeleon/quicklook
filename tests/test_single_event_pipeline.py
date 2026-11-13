@@ -35,7 +35,8 @@ def _ql(events=((14.0, 0.25, 0.005),), tls=None, enabled=True):
     ql = TessQuickLook.__new__(TessQuickLook)
     ql.verbose = False
     ql.single_event_search = enabled
-    ql.flat_lc = _flat_lc(events)
+    ql.flat_lc = ql.raw_lc = _flat_lc(events)
+    ql.window_length = 0.5
     ql.exofop_data = {}
     ql.tls_results = _TLSResult(
         tls or {"SDE": 4.0, "period": 3.3, "T0": 1.0, "duration": 0.1, "distinct_transit_count": 7}

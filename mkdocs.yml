@@ -48,6 +48,7 @@ nav:
   - Web GUI: gui.md
   - Pipeline Overview: pipeline.md
   - Single-transit Search: single-transit.md
+  - TTV Search: ttv-search.md
   - API Reference: api.md
   - Batch Processing: batch.md
   - FAQ: faq.md

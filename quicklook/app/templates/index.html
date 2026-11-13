@@ -95,6 +95,8 @@
     .sector-hint .sector-warn { color: var(--red); font-weight: 600; }
     .checkbox-group { display: flex; gap: 20px; align-items: center; padding-top: 4px; }
     .checkbox-group label { display: flex; align-items: center; gap: 5px; font-weight: normal; cursor: pointer; }
+    .checkbox-group { flex-wrap: wrap; row-gap: 8px; }
+    .check-item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
     /* --- Buttons: home page uses chunkier buttons in the form's button
            row and the result download row; everywhere else (topbar, etc.)
@@ -491,14 +493,26 @@
           <input type="number" step="0.01" min="0" max="1" name="phase_xlim" id="phase_xlim" placeholder="auto">
         </div>
         <div class="full-width checkbox-group" style="margin-top: 4px;">
-          <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
-          <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
-          <label><input type="checkbox" name="use_priors" id="use_priors" checked> Use star priors (Ms, Rs)</label>
-          <span class="help-tip" tabindex="0" data-tip="Pass R_star and M_star (from ExoFOP, ±1σ) to TLS as priors so the transit search uses the host's real properties instead of Sun-like defaults.">?</span>
-          <label><input type="checkbox" name="iterative_search" id="iterative_search"> Iterative multi-planet search</label>
-          <span class="help-tip" tabindex="0" data-tip="Mask each detected transit and re-run TLS until SDE falls below the minimum (default 5), saving a periodogram + odd-even PNG and a TLS HDF5 for every additional planet.">?</span>
-          <label><input type="checkbox" name="single_event_search" id="single_event_search"> Single-transit search</label>
-          <span class="help-tip" tabindex="0" data-tip="Also look for individual transits (mono-transits) that TLS needs 2-3 transits to find. Each dip must beat step/ramp systematics by BIC. Two matching dips form a duotransit with ranked periods dT/n (stitch sectors to see both). Targets are classified none/mono/duo/periodic; mono/duo results swap panels 5, 7 and 8.">?</span>
+          <span class="check-item">
+            <label><input type="checkbox" name="mask_ephem"> Mask known transits (TOI/custom)</label>
+            <span class="help-tip" tabindex="0" data-tip="Remove cadences inside known transits (from the TOI catalog or the Custom Ephemeris field) before running the periodogram search.">?</span>
+          </span>
+          <span class="check-item">
+            <label><input type="checkbox" name="use_priors" id="use_priors" checked> Use star priors (Ms, Rs)</label>
+            <span class="help-tip" tabindex="0" data-tip="Pass R_star and M_star (from ExoFOP, ±1σ) to TLS as priors so the transit search uses the host's real properties instead of Sun-like defaults.">?</span>
+          </span>
+          <span class="check-item">
+            <label><input type="checkbox" name="iterative_search" id="iterative_search"> Iterative multi-planet search</label>
+            <span class="help-tip" tabindex="0" data-tip="Mask each detected transit and re-run TLS until SDE falls below the minimum (default 5), saving a periodogram + odd-even PNG and a TLS HDF5 for every additional planet.">?</span>
+          </span>
+          <span class="check-item">
+            <label><input type="checkbox" name="single_event_search" id="single_event_search"> Single-transit search</label>
+            <span class="help-tip" tabindex="0" data-tip="Also look for individual transits (mono-transits) that TLS needs 2-3 transits to find. Each dip must beat step/ramp systematics by BIC. Two matching dips form a duotransit with ranked periods dT/n (stitch sectors to see both). The search detrends the raw light curve with its own wider window (at least 3x the longest trial duration, ~2.9 d for a Sun-like star, unless you set the window or the star rotates fast) and re-detrends with detected events masked; TLS keeps the pipeline window. Targets are classified none/mono/duo/periodic; mono/duo results swap panels 5, 7 and 8.">?</span>
+          </span>
+          <span class="check-item">
+            <label><input type="checkbox" name="ttv_search" id="ttv_search"> TTV search</label>
+            <span class="help-tip" tabindex="0" data-tip="Fit every transit of a periodic TLS signal on its own (mid-time free within one duration of the linear prediction) and test the O-C against a linear ephemeris. Needs at least 3 transits. With Single-transit search on, 3+ matching single events can also be chained into a period. Panels 7 and 8 become the transits aligned on their fitted times and the O-C diagram, and the iterative search masks transits at their fitted times.">?</span>
+          </span>
         </div>
         <div class="full-width">
           <div class="label-row">
@@ -805,7 +819,7 @@ const PERSIST_FIELDS = [
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
   'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad','iterative_search','single_event_search'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad','iterative_search','single_event_search','ttv_search'];
 
 function saveFormState() {
   const state = {};
