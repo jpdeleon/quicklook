@@ -300,6 +300,16 @@ def _compare_models(time, flux, t0, dur):
     return m.depth, b["null"] - b["transit"], min(b["step"], b["ramp"]) - b["transit"], m.n_in
 
 
+def longest_segment(time) -> float:
+    """Length (days) of the longest stretch of data without a gap.
+
+    This, not the total span, bounds the shortest period a single event can
+    have, so it sets the shortest trial duration for stitched multi-sector data.
+    """
+    b = np.sort(gap_boundaries(time))
+    return float(np.max(b[1::2] - b[0::2])) if b.size >= 2 else float(np.ptp(time))
+
+
 def gap_boundaries(time) -> np.ndarray:
     """Data edges plus the start and end of every gap."""
     cad = _cadence(time)
@@ -353,7 +363,7 @@ def single_event_search(
         return SingleEventResult((), empty, empty, empty, empty, snr_min)
     cadence = _cadence(time)
     durations = (
-        duration_grid(np.ptp(time), cadence, rho_star)
+        duration_grid(longest_segment(time), cadence, rho_star)
         if durations is None
         else np.asarray(durations, dtype=float)
     )
@@ -398,13 +408,17 @@ def _covered(time, tc, duration, cadence) -> bool:
     return (hi - lo) >= _MIN_COVERAGE * duration / cadence
 
 
-def period_is_allowed(time, t0, duration, period, cadence=None) -> bool:
-    """True if no other transit at ``t0 + k*period`` (k != 0) lands in covered data."""
+def period_is_allowed(time, t0, duration, period, cadence=None, observed=(0,)) -> bool:
+    """True if no transit at ``t0 + k*period`` lands in covered data, except the
+    ``observed`` epochs ``k`` (the event itself, and for a duotransit its partner).
+    """
     cadence = _cadence(time) if cadence is None else cadence
     k_lo = int(np.ceil((time[0] - duration - t0) / period))
     k_hi = int(np.floor((time[-1] + duration - t0) / period))
     return not any(
-        _covered(time, t0 + k * period, duration, cadence) for k in range(k_lo, k_hi + 1) if k
+        _covered(time, t0 + k * period, duration, cadence)
+        for k in range(k_lo, k_hi + 1)
+        if k not in observed
     )
 
 
@@ -423,14 +437,19 @@ def min_period(time, t0: float, duration: float) -> float:
     return float(span + duration)
 
 
-def classify_events(n_events: int, tls_periodic: bool, n_unexplained: int) -> str:
-    """``periodic`` if TLS found a real periodic signal, else ``mono``/``none``.
+def classify_events(
+    n_events: int, tls_periodic: bool, n_unexplained: int, has_duo: bool = False
+) -> str:
+    """``periodic`` if TLS found a real periodic signal, else ``duo``/``mono``/``none``.
 
-    ``n_unexplained`` counts events that do not coincide with a TLS transit.
-    Mono, duo and periodic are mutually exclusive by construction.
+    ``n_unexplained`` counts events that do not coincide with a TLS transit;
+    ``has_duo`` is True when two of them pair into a duotransit. The classes
+    are mutually exclusive by construction.
     """
     if tls_periodic:
         return "periodic"
+    if has_duo:
+        return "duo"
     if n_unexplained > 0 or n_events > 0:
         return "mono"
     return "none"

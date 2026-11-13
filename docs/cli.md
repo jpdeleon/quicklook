@@ -53,7 +53,7 @@ ql run --name TARGET [options]
 | `--pg-method METHOD` | `gls` | Periodogram method: `gls`, `ls`, or `bls` |
 | `--period-limits MIN MAX` | auto | TLS search range in days |
 | `--phase-xlim HALF_WIDTH` | auto | Phase half-width for transit/eclipse panels |
-| `--single-event-search` | off | Also search for single transits and classify the target as `none`/`mono`/`periodic` (see [Single-transit search](single-transit.md)) |
+| `--single-event-search` | off | Also search for single transits and pair two into a duotransit, and classify the target as `none`/`mono`/`duo`/`periodic` (see [Single-transit search](single-transit.md)) |
 
 ### Ephemeris
 

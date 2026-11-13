@@ -17,7 +17,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density, plus a built-in **Notch** and **LOCoR** filter (Rizzuto et al. 2017) that preserve transit shape via a windowed BIC test / rotation-cycle combination instead of dividing it out
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
-- **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, a period lower limit, and a `none`/`mono`/`periodic` classification ([docs](docs/single-transit.md))
+- **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, a period lower limit, duotransit pairing with ranked period aliases, and a `none`/`mono`/`duo`/`periodic` classification ([docs](docs/single-transit.md))
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
@@ -127,9 +127,12 @@ ql run --name TOI-125.01 --no-extend-period-ceiling
 ql run --name TOI-125.01 --iterative --min-sde-iterative 6 --max-planets 3 --save
 
 # Also search for single transits (mono-transits). The target is classified as
-# none/mono/periodic; a mono result swaps panels 5, 7 and 8 for the event SNR,
+# none/mono/duo/periodic; a mono result swaps panels 5, 7 and 8 for the event SNR,
 # an event zoom with systematics models, and the periods allowed by the data.
 ql run --name TOI-2180 --sector 48 --single-event-search --save
+# Stitch sectors to pair two transits into a duotransit; panels 7 and 8 then show
+# both events overlaid and the allowed periods dT/n with their probabilities.
+ql run --name TOI-2180 --sectors 19,48 --exptime 120 --single-event-search --save
 
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save
