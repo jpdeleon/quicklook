@@ -54,6 +54,7 @@ ql run --name TARGET [options]
 | `--period-limits MIN MAX` | auto | TLS search range in days |
 | `--phase-xlim HALF_WIDTH` | auto | Phase half-width for transit/eclipse panels |
 | `--single-event-search` | off | Also search for single transits and pair two into a duotransit, and classify the target as `none`/`mono`/`duo`/`periodic` (see [Single-transit search](single-transit.md)) |
+| `--ttv-search` | off | Fit each transit of a periodic TLS signal (or of 3+ chained single events) separately and test the O−C for transit-timing variations (see [TTV search](ttv-search.md)) |
 
 ### Ephemeris
 
