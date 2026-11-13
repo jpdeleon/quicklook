@@ -103,6 +103,7 @@ def _run_ql_for_sector(
     min_sde_iterative: float = 5.0,
     max_planets: Optional[int] = None,
     extend_period_ceiling: bool = True,
+    single_event_search: bool = False,
 ):
     import matplotlib.pyplot as pl
     from quicklook.tql import TessQuickLook
@@ -130,6 +131,7 @@ def _run_ql_for_sector(
         min_sde_iterative=min_sde_iterative,
         max_planets=max_planets,
         extend_period_ceiling=extend_period_ceiling,
+        single_event_search=single_event_search,
         archival_survey="dss1",
         show_simbad=show_simbad,
         savefig=save,
@@ -451,6 +453,12 @@ def run(
         "--max-planets",
         help="Maximum number of planets to search for (default: until SDE < --min-sde-iterative)",
     ),
+    single_event_search: bool = typer.Option(
+        False,
+        "--single-event-search",
+        help="Also search for individual transits (mono-transits) that TLS cannot find; "
+        "classifies the target as none/mono/periodic",
+    ),
 ):
     """Run a quick-look analysis of a TESS lightcurve.
 
@@ -594,6 +602,7 @@ def run(
                     min_sde_iterative,
                     max_planets,
                     extend_period_ceiling,
+                    single_event_search,
                 ): sector
                 for sector in sectors
             }
@@ -652,6 +661,7 @@ def run(
                     min_sde_iterative,
                     max_planets,
                     extend_period_ceiling,
+                    single_event_search,
                 ): p
                 for p in pipelines
             }
@@ -702,6 +712,7 @@ def run(
         min_sde_iterative=min_sde_iterative,
         max_planets=max_planets,
         extend_period_ceiling=extend_period_ceiling,
+        single_event_search=single_event_search,
     )
     _ = ql.plot_tql()
     if not save:

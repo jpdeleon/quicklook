@@ -30,6 +30,7 @@ import lightkurve as lk
 from quicklook import h5io
 from quicklook.notch_locor import notch_flatten, locor_flatten
 from quicklook.long_period import default_period_ceiling, epoch_check, needs_standard_fallback
+from quicklook.single_event_pipeline import SingleEventMixin
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -153,7 +154,7 @@ def format_sector_ranges(sectors):
     return "+".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
 
 
-class TessQuickLook:
+class TessQuickLook(SingleEventMixin):
     def __init__(
         self,
         target_name: str,
@@ -192,6 +193,7 @@ class TessQuickLook:
         max_planets: int = None,
         cancel_check=None,
         neighbor_check: bool = True,
+        single_event_search: bool = False,
     ):
         # start timer
         self.timer_start = timer()
@@ -217,6 +219,7 @@ class TessQuickLook:
         self.iterative_search = iterative_search
         self.min_sde_iterative = min_sde_iterative
         self.max_planets = max_planets
+        self.single_event_search = single_event_search
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
@@ -313,6 +316,7 @@ class TessQuickLook:
         else:
             self.iterative_tls_results = [self.tls_results] if self.tls_results is not None else []
         self._check_cancel("after iterative TLS search")
+        self.run_single_event_search()
         # if self.fold_lc.primary_key is None:
         #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
@@ -1902,6 +1906,9 @@ class TessQuickLook:
         if n_planets > 1:
             candidate.append(("Num. Planets", f"{n_planets}"))
 
+        if self.event_class == "mono":
+            candidate = self._single_event_candidate_rows(params["srad"])
+
         # --- Stellar properties ---
         per = 2 * np.pi * params["srad"] * u.Rsun.to(u.km)
         t = self.Prot_ls * u.day.to(u.second)
@@ -2476,27 +2483,33 @@ class TessQuickLook:
         )
         ax.set_xlabel("Rotation Phase [days]")
 
-        if self.verbose:
-            logger.info("Plotting TLS periodogram...")
-        ax = axes.flatten()[4]
-        ax = plot_tls(
-            self.tls_results,
-            toi_period=ref_period,
-            period_min=self.Porb_min,
-            period_max=self.Porb_max,
-            ax=ax,
-        )
+        single_layout = self.event_class == "mono"
+        if single_layout:
+            if self.verbose:
+                logger.info("Plotting single-event panels...")
+            self._plot_single_event_panels(axes.flatten())
+        else:
+            if self.verbose:
+                logger.info("Plotting TLS periodogram...")
+            ax = axes.flatten()[4]
+            ax = plot_tls(
+                self.tls_results,
+                toi_period=ref_period,
+                period_min=self.Porb_min,
+                period_max=self.Porb_max,
+                ax=ax,
+            )
 
-        if self.verbose:
-            logger.info("Plotting flattened light curve...")
-        ax = axes.flatten()[3]
-        self.flat_lc.scatter(ax=ax, label="flat")
-        tmask2 = self.flat_lc.create_transit_mask(
-            transit_time=self.tls_results.T0,
-            period=self.tls_results.period,
-            duration=self.tls_results.duration,
-        )
-        self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
+            if self.verbose:
+                logger.info("Plotting flattened light curve...")
+            ax = axes.flatten()[3]
+            self.flat_lc.scatter(ax=ax, label="flat")
+            tmask2 = self.flat_lc.create_transit_mask(
+                transit_time=self.tls_results.T0,
+                period=self.tls_results.period,
+                duration=self.tls_results.duration,
+            )
+            self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
 
         if self.verbose:
             logger.info("Plotting TPF...")
@@ -2600,30 +2613,31 @@ class TessQuickLook:
                     ax=ax,
                 )
 
-        if self.verbose:
-            logger.info("Plotting odd-even transit...")
-        ax = axes.flatten()[6]
-        _ = plot_odd_even_transit(
-            self.fold_lc,
-            self.tls_results,
-            bin_mins=10,
-            markersize=6,
-            ax=ax,
-            phase_xlim=self.phase_xlim,
-        )
+        if not single_layout:
+            if self.verbose:
+                logger.info("Plotting odd-even transit...")
+            ax = axes.flatten()[6]
+            _ = plot_odd_even_transit(
+                self.fold_lc,
+                self.tls_results,
+                bin_mins=10,
+                markersize=6,
+                ax=ax,
+                phase_xlim=self.phase_xlim,
+            )
 
-        if self.verbose:
-            logger.info("Plotting secondary eclipse...")
-        ax = axes.flatten()[7]
-        _ = plot_secondary_eclipse(
-            self.flat_lc,
-            self.tls_results,
-            tmask2,
-            bin_mins=10,
-            markersize=6,
-            ax=ax,
-            phase_xlim=self.phase_xlim,
-        )
+            if self.verbose:
+                logger.info("Plotting secondary eclipse...")
+            ax = axes.flatten()[7]
+            _ = plot_secondary_eclipse(
+                self.flat_lc,
+                self.tls_results,
+                tmask2,
+                bin_mins=10,
+                markersize=6,
+                ax=ax,
+                phase_xlim=self.phase_xlim,
+            )
 
         if self.verbose:
             logger.info("Creating summary panel...")
@@ -2650,6 +2664,7 @@ class TessQuickLook:
         if self.savefig:
             fig.savefig(png_file, dpi=150, bbox_inches="tight")
             logger.info(f"Saved: {png_file}")
+            self._save_single_event_figure(fp)
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:

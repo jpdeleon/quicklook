@@ -17,6 +17,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Automated detrending** -- biweight, cosine, median, GP, and other [wotan](https://github.com/hippke/wotan) methods with dynamic rotation-aware ($P_{\text{rot}}$) window tuning and adaptive spline density, plus a built-in **Notch** and **LOCoR** filter (Rizzuto et al. 2017) that preserve transit shape via a windowed BIC test / rotation-cycle combination instead of dividing it out
 - **Stellar rotation** -- Generalized Lomb-Scargle (GLS) periodogram
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
+- **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, a period lower limit, and a `none`/`mono`/`periodic` classification ([docs](docs/single-transit.md))
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
 - **Fast CLI startup** -- lazy imports keep `ql --help` under 200 ms
@@ -125,6 +126,11 @@ ql run --name TOI-125.01 --no-extend-period-ceiling
 # is reached; saves one periodogram + odd-even PNG and one TLS HDF5 per planet.
 ql run --name TOI-125.01 --iterative --min-sde-iterative 6 --max-planets 3 --save
 
+# Also search for single transits (mono-transits). The target is classified as
+# none/mono/periodic; a mono result swaps panels 5, 7 and 8 for the event SNR,
+# an event zoom with systematics models, and the periods allowed by the data.
+ql run --name TOI-2180 --sector 48 --single-event-search --save
+
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save
 
@@ -211,6 +217,10 @@ Each running job streams its output log live. Finished jobs (done, error, or can
 ![Per-job output log](docs/img/ql-gui-joblog.png)
 
 ![QuickLook Web GUI](docs/img/ql-gui.png)
+
+Search options such as **Single-transit search** live under **Period Search**:
+
+![Period Search options](docs/img/ql-gui-period-search.png)
 
 The **TLS Summary** page tabulates every `*_tls.h5` result in a folder. The
 values it shows are cached in `static/outputs/jobs.db` by path, modification

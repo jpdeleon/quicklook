@@ -26,6 +26,9 @@ Target name
 6. Transit Least Squares search (planet/companion detection)
     |
     v
+   (optional) Single-event search -> none / mono / periodic
+    |
+    v
 7. Download target pixel file (TPF)
     |
     v
@@ -79,6 +82,9 @@ The flattened light curve folded at the TLS best-fit period and zoomed around th
 
 The phase-folded light curve centered at phase 0.5 (halfway between transits). A dip here indicates a secondary eclipse, which is a strong sign of a self-luminous companion (eclipsing binary or high-albedo brown dwarf). The dashed horizontal line shows the primary transit depth for reference.
 
+!!! note
+    With `--single-event-search`, a target classified as `mono` uses a different layout for panels 4, 5, 7, 8 and 9. See [Single-transit search](single-transit.md#figure-layout).
+
 **Panel 9: Summary panel**
 
 A text summary with:
@@ -125,6 +131,7 @@ When `-save` is used, QuickLook produces:
 |------|-------------|
 | `TARGET_sSECTOR_FLUX_CADENCE.png` | The 9-panel diagnostic figure |
 | `TARGET_sSECTOR_FLUX_CADENCE_tls.h5` | HDF5 file with full TLS results |
+| `TARGET_sSECTOR_FLUX_CADENCE_mono.png` | Only with `--single-event-search`, when a periodic target also has a single event TLS does not explain |
 
 Example: `WASP-21_s56_pdcsap_sc.png` and `WASP-21_s56_pdcsap_sc_tls.h5`
 
