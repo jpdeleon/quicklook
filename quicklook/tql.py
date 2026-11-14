@@ -324,6 +324,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         self._check_cancel("after iterative TLS search")
         self.run_single_event_search()
         self.run_ttv_from_chain()
+        self.run_ttv_diagnostics()
         # if self.fold_lc.primary_key is None:
         #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
@@ -417,13 +418,15 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         Parse the custom ephem to get the ephemeris source and parameters.
         """
         if self.custom_ephem:
+            # Copy: typer passes a tuple, and the unit conversions below work in place.
+            self.custom_ephem = [float(x) for x in self.custom_ephem]
             self.ephem_source = "custom"
             err_msg = "Custom ephem must be a tuple: (t0,t0err,P,Perr,t14,t14err)"
             if len(self.custom_ephem) != 6:
                 raise InvalidInputError(err_msg)
             if self.verbose:
-                msg = f"Using ephemeris mask:\nP={self.custom_ephem[0]}d\n"
-                msg += f"t0={self.custom_ephem[2]}BJD\nt14={self.custom_ephem[4]}d"
+                msg = f"Using ephemeris mask:\nt0={self.custom_ephem[0]}\n"
+                msg += f"P={self.custom_ephem[2]}d\nt14={self.custom_ephem[4]}"
                 logger.info(msg)
             # TODO: using tfop in variable name is misleading
             if self.custom_ephem[0] > TESS_TIME_OFFSET:
@@ -2683,6 +2686,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             fig.savefig(png_file, dpi=150, bbox_inches="tight")
             logger.info(f"Saved: {png_file}")
             self._save_single_event_figure(fp)
+            self._save_ttv_figures(fp)
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
