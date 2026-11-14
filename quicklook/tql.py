@@ -178,6 +178,18 @@ def _apply_tglc_hlsp_mask(lc, quality_bitmask):
     return lc[good]
 
 
+def _count_valid_transits(counts, depths) -> int:
+    """Transits with in-transit cadences and a finite depth.
+
+    TLS returns scalars (NaN) instead of arrays for degenerate fits, so both
+    inputs are promoted to 1-D first.
+    """
+    counts = np.atleast_1d(np.asarray(counts, dtype=float))
+    depths = np.atleast_1d(np.asarray(depths, dtype=float))
+    n = min(len(counts), len(depths))
+    return int(np.sum((counts[:n] > 0) & np.isfinite(depths[:n])))
+
+
 _TGLC_FLUX_COLUMNS = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}
 
 
@@ -2276,8 +2288,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         counts = self.tls_results.get("per_transit_count")
         depths = self.tls_results.get("transit_depths")
         if counts is not None and depths is not None:
-            n = min(len(counts), len(depths))
-            n_valid = int(np.sum((np.asarray(counts[:n], dtype=float) > 0) & ~np.isnan(depths[:n])))
+            n_valid = _count_valid_transits(counts, depths)
             self.tls_results["n_valid_transits"] = n_valid
             if n_valid < 2:
                 logger.warning(

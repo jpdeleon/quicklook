@@ -118,3 +118,18 @@ def test_load_tpf_falls_back_to_spoc(monkeypatch):
 
     assert ql._load_tpf() is True
     assert (ql.tpf, ql.sap_mask) == ("spoc-tpf", "pipeline")
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "counts,depths,expected",
+    [
+        (np.nan, np.nan, 0),  # degenerate TLS fit returns scalars (HD 114082)
+        ([10, 0, 8], [0.99, np.nan, 0.98], 2),
+        ([10, 9], [0.99, 0.98, 0.97], 2),
+    ],
+)
+def test_count_valid_transits_handles_scalars_and_arrays(counts, depths, expected):
+    from quicklook.tql import _count_valid_transits
+
+    assert _count_valid_transits(counts, depths) == expected
