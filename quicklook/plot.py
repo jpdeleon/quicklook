@@ -136,6 +136,24 @@ def _get_frac_depth(tls_results):
     return 0.0
 
 
+def _has_tls_transit_fit(tls_results) -> bool:
+    """False when TLS fit no transit: duration/T0 come back NaN (HD 114082)."""
+    try:
+        vals = [
+            float(np.squeeze(_as_values(getattr(tls_results, k))))
+            for k in ("duration", "period", "T0")
+        ]
+    except (AttributeError, TypeError, ValueError):
+        return False
+    return bool(np.all(np.isfinite(vals)) and vals[0] > 0 and vals[1] > 0)
+
+
+def _no_tls_fit_panel(ax):
+    ax.text(0.5, 0.5, "No TLS transit fit", ha="center", va="center", transform=ax.transAxes)
+    ax.set_xlabel("Orbital Phase")
+    return ax
+
+
 def plot_odd_even_transit(
     fold_lc, tls_results, bin_mins=10, markersize=6, ax=None, phase_xlim=None
 ):
@@ -146,6 +164,8 @@ def plot_odd_even_transit(
     t14 = _as_values(tls_results.duration)
     period = _as_values(tls_results.period)
     t0 = _as_values(tls_results.T0)
+    if not _has_tls_transit_fit(tls_results):
+        return _no_tls_fit_panel(ax)
     t14_phase = t14 / period
     # Clip to transit window before binning to avoid creating thousands of
     # empty bins for long-period planets (phase range = period, not just t14).
@@ -163,11 +183,13 @@ def plot_odd_even_transit(
         zorder=1,
     )
 
-    # Determine even and odd transit masks
-    if hasattr(clipped_lc, "even_mask") and "even_mask" in clipped_lc.colnames:
+    # Determine even and odd transit masks. Check colnames, not hasattr:
+    # hasattr evaluates lightkurve's cycle-based odd/even properties, which
+    # raise ValueError (not AttributeError) on an empty light curve.
+    if "even_mask" in clipped_lc.colnames:
         even_mask = _as_values(clipped_lc.even_mask)
         odd_mask = _as_values(clipped_lc.odd_mask)
-    elif hasattr(clipped_lc, "time_original") or "time_original" in clipped_lc.colnames:
+    elif "time_original" in clipped_lc.colnames:
         t_orig = _as_values(clipped_lc.time_original)
         transit_n = np.round((t_orig - t0) / period).astype(int)
         even_mask = transit_n % 2 == 0
@@ -222,7 +244,8 @@ def plot_odd_even_transit(
         and hasattr(tls_results, "model_lightcurve_time")
         and tls_results.model_lightcurve_model is not None
         and tls_results.model_lightcurve_time is not None
-        and len(tls_results.model_lightcurve_model) > 0
+        # A degenerate TLS fit returns scalar NaN models (HD 114082).
+        and np.size(tls_results.model_lightcurve_model) > 1
     ):
         model_time = _as_values(tls_results.model_lightcurve_time)
         model_flux = _as_values(tls_results.model_lightcurve_model)
@@ -260,6 +283,8 @@ def plot_secondary_eclipse(
 ):
     if ax is None:
         _, ax = pl.subplots()
+    if not _has_tls_transit_fit(tls_results):
+        return _no_tls_fit_panel(ax)
     # mask transit and shift phase
     fold_lc2 = flat_lc[~tmask].fold(
         period=tls_results.period,

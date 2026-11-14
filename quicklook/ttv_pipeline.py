@@ -128,7 +128,13 @@ class TTVMixin:
     def _diagnostic_ephemeris(self):
         """(period, t0, duration, source): timed TLS/chain ephemeris, else TOI/custom."""
         stats = self.ttv_stats
-        if stats is not None and stats.ephemeris is not None and stats.n >= TTV_MIN_TRANSITS:
+        if (
+            stats is not None
+            and stats.ephemeris is not None
+            and stats.n >= TTV_MIN_TRANSITS
+            and np.isfinite(stats.ephemeris.period)
+            and np.isfinite(stats.ephemeris.t0)
+        ):
             dur = float(np.median([tt.duration for tt in self.ttv_times]))
             return stats.ephemeris.period, stats.ephemeris.t0, dur, self.ttv_source
         period = getattr(self, "toi_period", None)
