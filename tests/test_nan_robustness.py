@@ -133,3 +133,13 @@ def test_count_valid_transits_handles_scalars_and_arrays(counts, depths, expecte
     from quicklook.tql import _count_valid_transits
 
     assert _count_valid_transits(counts, depths) == expected
+
+
+@pytest.mark.unit
+def test_cycle_count_solutions_skips_singular_fits():
+    # Infinite timing errors give zero weights and a singular normal matrix (WASP-93).
+    from quicklook.ttv import TransitTime, cycle_count_solutions
+
+    times = [TransitTime(n, 1.0 + 2.0 * n, np.inf, 0.1, 0.01, 10.0) for n in (0, 1, 2)]
+
+    assert cycle_count_solutions(times) == []

@@ -345,7 +345,10 @@ def cycle_count_solutions(times, gap_min: float = CYCLE_GAP_MIN) -> list[CycleSo
             shifted[start:] += shift
         if np.any(np.diff(shifted) <= 0):
             continue
-        (t0, period), _, chi2 = _weighted_line(shifted, tcs, errs)
+        try:
+            (t0, period), _, chi2 = _weighted_line(shifted, tcs, errs)
+        except np.linalg.LinAlgError:  # zero/inf weights (WASP-93)
+            continue
         if period > 0:
             solutions.append(CycleSolution(tuple(shifts), float(period), float(t0), chi2))
     if not solutions:
