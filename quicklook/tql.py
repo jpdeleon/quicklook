@@ -2056,11 +2056,10 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         ruwe = getattr(self, "gaia_ruwe", np.nan)
         if np.isfinite(ruwe):
             stellar.append(("RUWE", f"{ruwe:.2f}"))
-        if self.nearby_star_sep is not None:
-            if self.nearby_star_sep < 1 * u.arcmin:
-                val = self.nearby_star_sep.to(u.arcsec)
-            else:
-                val = self.nearby_star_sep
+        # Unset when the neighbor-check panels were skipped (no TPF).
+        nearby_sep = getattr(self, "nearby_star_sep", None)
+        if nearby_sep is not None:
+            val = nearby_sep.to(u.arcsec) if nearby_sep < 1 * u.arcmin else nearby_sep
             stellar.append(("Nearby sep", f"{val:.1f}"))
         if self.simbad_obj_type is not None:
             stellar.append(("SIMBAD type", f"{self.simbad_obj_type}"))
