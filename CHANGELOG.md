@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.12.0](https://github.com/jpdeleon/quicklook/compare/v1.11.0...v1.12.0) (2026-11-14)
+
+
+### Features
+
+* give the single-event search its own wider detrending window ([111f089](https://github.com/jpdeleon/quicklook/commit/111f089c0ed43daebd43c19861d87717c5abd758))
+* single-event search detrends with its own wider window ([#42](https://github.com/jpdeleon/quicklook/issues/42) step 3) ([933ad96](https://github.com/jpdeleon/quicklook/commit/933ad96238cebe7e7ecdfc83f17334390c29b0a1))
+* TTV diagnostic byproduct figures for active stars (*_ttv.png, *_ttv_transits.png) ([b7dff94](https://github.com/jpdeleon/quicklook/commit/b7dff94bba186c6bcda801ced7581e57d884bf16))
+* TTV diagnostic byproduct figures from local-baseline timing on raw flux ([25d5254](https://github.com/jpdeleon/quicklook/commit/25d52541c1a9b7ac933d7bd5ee2bd3eef4e4d008))
+* TTV search with per-transit timing fits and O-C significance ([ace7e32](https://github.com/jpdeleon/quicklook/commit/ace7e320bc161ae5f904409f899eeb3be3aa2dfd))
+* TTV search with per-transit timing fits and O-C significance ([#42](https://github.com/jpdeleon/quicklook/issues/42) step 5) ([5aec6cb](https://github.com/jpdeleon/quicklook/commit/5aec6cb6470b9fc823ff4249030f94c60b357c9e))
+
+
+### Bug Fixes
+
+* --custom-ephem crashed with "'tuple' object does not support item ([25d5254](https://github.com/jpdeleon/quicklook/commit/25d52541c1a9b7ac933d7bd5ee2bd3eef4e4d008))
+
 ## [1.11.0](https://github.com/jpdeleon/quicklook/compare/v1.10.1...v1.11.0) (2026-11-13)
 
 
