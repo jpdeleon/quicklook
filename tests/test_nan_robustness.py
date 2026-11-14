@@ -143,3 +143,30 @@ def test_cycle_count_solutions_skips_singular_fits():
     times = [TransitTime(n, 1.0 + 2.0 * n, np.inf, 0.1, 0.01, 10.0) for n in (0, 1, 2)]
 
     assert cycle_count_solutions(times) == []
+
+
+@pytest.mark.unit
+def test_odd_even_plot_with_no_cadences_near_transit():
+    # Degenerate TLS fit: nothing falls inside the transit window (HD 114082).
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from quicklook.plot import plot_odd_even_transit
+    from quicklook.tql import _TLSResult
+
+    t = np.linspace(0, 27, 500)
+    lc = lk.LightCurve(time=t, flux=np.ones_like(t))
+    fold = lc.fold(period=10.0, epoch_time=5.0)
+    fold = fold[np.abs(fold.time.value) > 2.0]  # empty the transit window
+    tls = _TLSResult(
+        {
+            "duration": 0.1,
+            "period": 10.0,
+            "T0": 5.0,
+            "depth": 0.99,
+            "model_folded_phase": np.linspace(0, 1, 50),
+            "model_folded_model": np.ones(50),
+        }
+    )
+
+    plot_odd_even_transit(fold, tls)

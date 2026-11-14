@@ -163,11 +163,13 @@ def plot_odd_even_transit(
         zorder=1,
     )
 
-    # Determine even and odd transit masks
-    if hasattr(clipped_lc, "even_mask") and "even_mask" in clipped_lc.colnames:
+    # Determine even and odd transit masks. Check colnames, not hasattr:
+    # hasattr evaluates lightkurve's cycle-based odd/even properties, which
+    # raise ValueError (not AttributeError) on an empty light curve.
+    if "even_mask" in clipped_lc.colnames:
         even_mask = _as_values(clipped_lc.even_mask)
         odd_mask = _as_values(clipped_lc.odd_mask)
-    elif hasattr(clipped_lc, "time_original") or "time_original" in clipped_lc.colnames:
+    elif "time_original" in clipped_lc.colnames:
         t_orig = _as_values(clipped_lc.time_original)
         transit_n = np.round((t_orig - t0) / period).astype(int)
         even_mask = transit_n % 2 == 0
