@@ -12,12 +12,15 @@ single events. Two entry points:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Optional
 
+import matplotlib.pyplot as pl
 import numpy as np
 from loguru import logger
 
 from quicklook.plot_ttv import plot_aligned_transits, plot_oc
+from quicklook.plot_ttv_local import plot_transit_gallery, plot_ttv_diagnostics
 from quicklook.ttv import (
     TTV_MIN_TRANSITS,
     CycleSolution,
@@ -30,8 +33,12 @@ from quicklook.ttv import (
     ttv_mask,
     ttv_statistics,
 )
+from quicklook.ttv_local import LocalTTVResult, run_local_ttv
 
 MINUTES_PER_DAY = 1440.0
+TTV_FIGURE_SUFFIX = "_ttv.png"
+TTV_GALLERY_SUFFIX = "_ttv_transits.png"
+MIN_EPHEM_PERIOD = 0.3  # days; TFOP fills missing values with 0.1
 _TTV_ARRAY_FIELDS = {
     "ttv_epochs": "epoch",
     "ttv_tcs": "tc",
@@ -56,6 +63,8 @@ class TTVMixin:
     ttv_delta: float = np.nan
     ttv_cycle_solutions: list = []
     _ttv_lc: Optional[tuple] = None  # (time, flux) the times were fitted on
+    ttv_local: Optional[LocalTTVResult] = None
+    ttv_injections: int = 10
 
     # --- search -------------------------------------------------------------
 
@@ -113,6 +122,107 @@ class TTVMixin:
         if self.verbose:
             self._log_ttv_results()
         return self.ttv_stats
+
+    # --- local-baseline diagnostics (byproduct figures) ---------------------
+
+    def _diagnostic_ephemeris(self):
+        """(period, t0, duration, source): timed TLS/chain ephemeris, else TOI/custom."""
+        stats = self.ttv_stats
+        if stats is not None and stats.ephemeris is not None and stats.n >= TTV_MIN_TRANSITS:
+            dur = float(np.median([tt.duration for tt in self.ttv_times]))
+            return stats.ephemeris.period, stats.ephemeris.t0, dur, self.ttv_source
+        period = getattr(self, "toi_period", None)
+        epoch = getattr(self, "toi_epoch", None)
+        dur = getattr(self, "toi_dur", None)
+        if period is None or epoch is None or float(period[0]) < MIN_EPHEM_PERIOD:
+            return None
+        if getattr(self, "mask_ephem", False):  # those transits were cut from raw_lc
+            return None
+        duration = float(dur[0]) if dur is not None and float(dur[0]) * 24 > 0.5 else None
+        source = "custom" if getattr(self, "ephem_source", None) == "custom" else "toi"
+        return float(period[0]), float(epoch[0]), duration, source
+
+    def run_ttv_diagnostics(self):
+        """Local-baseline timing of every transit on the raw flux (``*_ttv.png``).
+
+        Runs with ``--ttv-search``. Uses the timed TLS/chain ephemeris when the TTV
+        search fitted >= 3 transits, otherwise the TOI (or ``--ephem``) ephemeris,
+        so it still works when TLS locks onto stellar variability.
+        """
+        if not getattr(self, "ttv_search", False):
+            return None
+        ephem = self._diagnostic_ephemeris()
+        if ephem is None:
+            if self.verbose:
+                logger.info("TTV diagnostics: no timed or TOI ephemeris; skipped.")
+            return None
+        period, t0, duration, source = ephem
+        lc = self.raw_lc
+        time = np.asarray(lc.time.value, dtype=float)
+        flux = np.asarray(lc.flux.value, dtype=float)
+        flux = flux / np.nanmedian(flux)
+        self._ttv_raw = (time, flux)
+        self.ttv_local = run_local_ttv(
+            time, flux, period, t0, duration, source=source, n_injections=int(self.ttv_injections)
+        )
+        self._store_ttv_local()
+        if self.verbose and self.ttv_local is not None:
+            r = self.ttv_local
+            visits = ", ".join(
+                f"{v.fit.offset * MINUTES_PER_DAY:+.0f}+-{v.err * MINUTES_PER_DAY:.0f}"
+                for v in r.usable_visits()
+            )
+            logger.info(
+                f"TTV diagnostics ({source} ephemeris, P={period:.5f} d): duration "
+                f"{r.duration * 24:.2f} h, {len(r.usable_singles())}/{len(r.singles)} transits "
+                f"timed, visit-mean O-C [min]: {visits or 'none'}"
+                + (f", p_linear={r.visit_pvalue:.2g}" if np.isfinite(r.visit_pvalue) else "")
+            )
+        return self.ttv_local
+
+    def _store_ttv_local(self):
+        r = self.ttv_local
+        vals = {"ttv_local_source": "" if r is None else r.source}
+        if r is not None:
+            vs, ss = r.usable_visits(), r.singles
+            vals.update(
+                ttv_local_period=r.period,
+                ttv_local_t0=r.t0,
+                ttv_local_duration=r.duration,
+                ttv_local_best_offset=r.best_common_offset,
+                ttv_local_visit_epochs=np.array([np.mean(v.epochs) for v in vs], dtype=float),
+                ttv_local_visit_oc=np.array([v.fit.offset for v in vs], dtype=float),
+                ttv_local_visit_err=np.array([v.err for v in vs], dtype=float),
+                ttv_local_visit_snr=np.array([v.fit.snr for v in vs], dtype=float),
+                ttv_local_visit_chi2=r.visit_chi2,
+                ttv_local_visit_pvalue=r.visit_pvalue,
+                ttv_local_epochs=np.array([s.epoch for s in ss], dtype=float),
+                ttv_local_oc=np.array([s.fit.offset for s in ss], dtype=float),
+                ttv_local_err=np.array([s.err for s in ss], dtype=float),
+                ttv_local_snr=np.array([s.fit.snr for s in ss], dtype=float),
+                ttv_local_usable=np.array([s.fit.usable for s in ss], dtype=bool),
+            )
+        for key, val in vals.items():
+            self.tls_results[key] = val
+
+    def _save_ttv_figures(self, fp) -> list:
+        """Write ``<fp>_ttv.png`` and ``<fp>_ttv_transits.png`` when diagnostics ran."""
+        r = self.ttv_local
+        if r is None:
+            return []
+        title = getattr(self, "target_name", "")
+        out = []
+        for suffix, make in (
+            (TTV_FIGURE_SUFFIX, lambda: plot_ttv_diagnostics(r, title)),
+            (TTV_GALLERY_SUFFIX, lambda: plot_transit_gallery(r, *self._ttv_raw, title)),
+        ):
+            fig = make()
+            path = Path(str(fp) + suffix)
+            fig.savefig(path, dpi=120, bbox_inches="tight")
+            pl.close(fig)
+            logger.info(f"Saved: {path}")
+            out.append(path)
+        return out
 
     # --- outputs ------------------------------------------------------------
 

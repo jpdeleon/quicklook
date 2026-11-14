@@ -78,6 +78,60 @@ the pipeline's 0.48 d biweight window, which is only ~2.4× the 4.7 h duration.
 They are symmetric, so they do not shift the fitted times. A longer
 `--window-length` removes them.
 
+## Diagnostic figures for active stars
+
+On young, spotted stars the global detrending leaves residuals larger than the
+transits, so TLS locks onto variability and the per-transit fits above have
+nothing to time. With `--ttv-search`, QuickLook therefore also times the
+transits on the **raw** (normalised) flux (`quicklook/ttv_local.py`):
+
+- Each transit is fitted with a trapezoid plus its own cubic baseline over
+  ±0.3 d. The baseline is projected out of each window, which equals the joint
+  least-squares fit.
+- The ephemeris is the timed TLS/chain one when at least 3 transits were
+  fitted. Otherwise it is the TOI ephemeris or `--custom-ephem` (skipped with
+  `--mask-ephem`, which cuts those transits out).
+- A grid over (duration, common offset) of all transits stacked checks the
+  ephemeris and sets the duration.
+- Visits are blocks of data separated by more than 5 d (usually sectors).
+  Each visit gets one mean offset, and each transit its own, scanned over
+  ±6 h (capped at P/4).
+- Errors are calibrated by injection: 10 transits per visit at random phases
+  away from the real ones, recovered with the same fit. The error used is the
+  larger of the formal error and the 68th percentile of |recovered − injected|.
+  On spotted stars the formal errors are several times too small.
+- A χ² test of a straight line through the visit means flags TTVs that only
+  show up between sectors.
+
+Two byproduct figures are written next to the main one:
+
+| File | Content |
+|------|---------|
+| `*_ttv.png` | O−C of single transits (dots; × = SNR < 3 or at the scan edge) and visit means (squares); duration × offset map; per-visit offset scans |
+| `*_ttv_transits.png` | Every transit after removing its own baseline, with the fitted trapezoid |
+
+TOI-6109 (a ~3 d, up to 40 ppt rotator) shows why this matters. TLS on
+sectors 18, 58 and 85 peaks at 18.4 d on spot residuals. Timing b and c with
+their published ephemerides instead gives:
+
+```bash
+ql run --name TOI-6109 --sectors 18,58,85 --exptime 120 --ttv-search \
+  --custom-ephem 2458791.0538 0.001 5.690476 0.00001 1.75 0.2 --save
+```
+
+![TTV diagnostics of TOI-6109 b](img/ttv-diagnostics-toi6109b.png)
+
+The visit means of b are +6 ± 8, +170 ± 4 and +18 ± 2 min from the published
+ephemeris. The stacked map shows two ridges, at 0 and +170 min. In S58 b is
+late while c is early (+2, −28 and +54 min for c). The S18 single-transit
+errors are large (132 min calibrated σ) because spot residuals there make false
+dips. This is why the visit means are the quantity to trust.
+
+The extra `*_tls.h5` fields are `ttv_local_source`, `ttv_local_period`,
+`ttv_local_t0`, `ttv_local_duration`, `ttv_local_best_offset`,
+`ttv_local_visit_{epochs,oc,err,snr}`, `ttv_local_visit_chi2`,
+`ttv_local_visit_pvalue` and `ttv_local_{epochs,oc,err,snr,usable}` (days).
+
 ## Figure layout
 
 When at least 3 transits are fitted (and the target is not `mono`/`duo`):
