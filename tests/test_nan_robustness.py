@@ -170,3 +170,170 @@ def test_odd_even_plot_with_no_cadences_near_transit():
     )
 
     plot_odd_even_transit(fold, tls)
+
+
+@pytest.mark.unit
+def test_aperture_if_flux_all_nan_swaps_flux_and_error():
+    # Local ePSF extraction near the cutout edge (Kepler-1892 s14).
+    from quicklook.tql import _aperture_if_flux_all_nan
+
+    lc = _tglc_lc(psf_finite=False)
+    lc.flux_err = np.full(len(lc), np.nan)
+    lc["cal_aper_flux"] = 2.0 + 0.01 * np.sin(np.arange(len(lc)))
+    lc.sector = 14
+
+    out = _aperture_if_flux_all_nan(lc)
+
+    assert np.allclose(out.flux.value, lc["cal_aper_flux"])
+    assert np.isfinite(out.flux_err.value).all() and (out.flux_err.value > 0).all()
+    assert out.sector == 14
+    assert np.isnan(lc.flux.value).all()  # input untouched
+
+
+@pytest.mark.unit
+def test_aperture_if_flux_all_nan_keeps_finite_flux():
+    from quicklook.tql import _aperture_if_flux_all_nan
+
+    lc = _tglc_lc(psf_finite=True)
+
+    assert _aperture_if_flux_all_nan(lc) is lc
+
+
+@pytest.mark.unit
+def test_tls_search_falls_back_when_extended_range_raises(monkeypatch):
+    # Sparse data over the extended range empties TLS's duration cache (Kepler-1928).
+    import quicklook.tql as tql
+
+    calls = []
+
+    class FakeTLS:
+        def __init__(self, *a, **k):
+            pass
+
+        def power(self, **kw):
+            calls.append(dict(kw))
+            if kw.get("n_transits_min") == 1:
+                raise ValueError("zero-size array to reduction operation minimum")
+            return SimpleNamespace(period=1.0, distinct_transit_count=5)
+
+    monkeypatch.setattr(tql, "tls", FakeTLS)
+    ql = _bare_ql()
+    ql.Porb_min, ql.Porb_max = 0.1, 26.0
+    ql.tls_use_threads, ql.use_star_priors = None, False
+    t = np.linspace(0, 26, 400)
+    lc = lk.LightCurve(time=t, flux=np.ones_like(t), flux_err=np.full_like(t, 1e-3))
+
+    result = ql._tls_search(lc)
+
+    assert result.period == 1.0
+    assert len(calls) == 2
+    assert calls[1]["period_max"] == pytest.approx(13.0)
+    assert "n_transits_min" not in calls[1]
+
+
+@pytest.mark.unit
+def test_tls_search_reraises_outside_extended_range(monkeypatch):
+    import quicklook.tql as tql
+
+    class FakeTLS:
+        def __init__(self, *a, **k):
+            pass
+
+        def power(self, **kw):
+            raise ValueError("boom")
+
+    monkeypatch.setattr(tql, "tls", FakeTLS)
+    ql = _bare_ql()
+    ql.Porb_min, ql.Porb_max = 0.1, 5.0
+    ql.tls_use_threads, ql.use_star_priors = None, False
+    t = np.linspace(0, 26, 400)
+    lc = lk.LightCurve(time=t, flux=np.ones_like(t), flux_err=np.full_like(t, 1e-3))
+
+    with pytest.raises(ValueError, match="boom"):
+        ql._tls_search(lc)
+
+
+@pytest.mark.unit
+def test_odd_even_plot_with_scalar_tls_model():
+    # Degenerate TLS fit returns scalar NaN model light curves (HD 114082).
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from quicklook.plot import plot_odd_even_transit
+    from quicklook.tql import _TLSResult
+
+    t = np.linspace(0, 27, 500)
+    fold = lk.LightCurve(time=t, flux=np.ones_like(t)).fold(period=10.0, epoch_time=5.0)
+    tls = _TLSResult(
+        {
+            "duration": 0.1,
+            "period": 10.0,
+            "T0": 5.0,
+            "depth": 0.99,
+            "model_folded_phase": np.linspace(0, 1, 50),
+            "model_folded_model": np.ones(50),
+            "model_lightcurve_time": np.nan,
+            "model_lightcurve_model": np.nan,
+        }
+    )
+
+    plot_odd_even_transit(fold, tls)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "flux",
+    [np.full(50, np.nan), np.ones(50), np.array([1.0, 1.01])],
+    ids=["all-nan", "constant", "too-few"],
+)
+def test_require_usable_flux_rejects_degenerate_extraction(flux):
+    # CCD-edge stars: PSF all NaN, aperture constant (Kepler-1892 s14).
+    from quicklook.tql import _require_usable_flux
+
+    lc = lk.LightCurve(time=np.arange(len(flux), dtype=float), flux=flux)
+
+    with pytest.raises(ValueError, match="no usable photometry"):
+        _require_usable_flux(lc)
+
+
+@pytest.mark.unit
+def test_require_usable_flux_accepts_varying_flux():
+    from quicklook.tql import _require_usable_flux
+
+    t = np.arange(50, dtype=float)
+    _require_usable_flux(lk.LightCurve(time=t, flux=1 + 1e-3 * np.sin(t)))
+
+
+@pytest.mark.unit
+def test_odd_even_plot_when_tls_fit_no_transit():
+    # TLS "No transit were fit": period set, duration and T0 NaN (HD 114082).
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from quicklook.plot import plot_odd_even_transit
+    from quicklook.tql import _TLSResult
+
+    t = np.linspace(0, 27, 500)
+    fold = lk.LightCurve(time=t, flux=np.ones_like(t)).fold(period=10.0, epoch_time=5.0)
+    tls = _TLSResult({"duration": np.nan, "period": 10.0, "T0": np.nan, "depth": np.nan})
+
+    ax = plot_odd_even_transit(fold, tls)
+
+    assert ax.texts and ax.texts[0].get_text() == "No TLS transit fit"
+
+
+@pytest.mark.unit
+def test_secondary_eclipse_plot_when_tls_fit_no_transit():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    from quicklook.plot import plot_secondary_eclipse
+    from quicklook.tql import _TLSResult
+
+    t = np.linspace(0, 27, 500)
+    lc = lk.LightCurve(time=t, flux=np.ones_like(t))
+    tls = _TLSResult({"duration": np.nan, "period": 10.0, "T0": np.nan, "depth": np.nan})
+
+    ax = plot_secondary_eclipse(lc, tls, np.zeros_like(t, dtype=bool))
+
+    assert ax.texts and ax.texts[0].get_text() == "No TLS transit fit"

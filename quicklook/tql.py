@@ -217,6 +217,46 @@ def _select_tglc_flux(lc, flux_type):
     return lc.select_flux("cal_aper_flux"), "aperture"
 
 
+def _aperture_if_flux_all_nan(lc):
+    """Local ePSF light curve: swap all-NaN PSF flux for aperture flux.
+
+    The local extraction derives ``flux_err`` from the selected flux, so the
+    error is recomputed (MAD scatter) for the aperture flux as well. Seen for
+    stars near the cutout edge (Kepler-1892, Kepler-501 s14).
+    """
+    if _has_finite_flux(lc) or "cal_aper_flux" not in lc.colnames:
+        return lc
+    aper = np.asarray(lc["cal_aper_flux"], dtype=float)
+    if not np.isfinite(aper).any():
+        return lc
+    logger.warning("TGLC PSF flux is all NaN for this target; using aperture photometry.")
+    sector = getattr(lc, "sector", None)
+    out = lc.copy()
+    out["flux"] = aper * out.flux.unit
+    mad = 1.4826 * np.nanmedian(np.abs(aper - np.nanmedian(aper)))
+    out["flux_err"] = np.full_like(aper, mad) * out.flux.unit
+    out.meta["FLUX_ORIGIN"] = "cal_aper_flux"
+    out.sector = sector
+    return out
+
+
+def _require_usable_flux(lc):
+    """Raise a clear error when the local ePSF extraction gave no photometry.
+
+    Stars on the CCD edge (Kepler-1892, Kepler-501 s14) come back with all-NaN
+    PSF flux and a constant aperture flux; TLS would otherwise fail later with
+    an opaque ``max() arg is an empty sequence``.
+    """
+    flux = np.asarray(lc.flux.value, dtype=float)
+    finite = flux[np.isfinite(flux)]
+    if finite.size < 3 or np.ptp(finite) == 0:
+        raise ValueError(
+            f"Local TGLC extraction for sector {getattr(lc, 'sector', '?')} produced no "
+            "usable photometry (PSF flux all NaN, aperture flux constant); the target "
+            "is likely on the CCD edge. Try another sector or pipeline."
+        )
+
+
 class TessQuickLook(SingleEventMixin, TTVMixin):
     def __init__(
         self,
@@ -1037,6 +1077,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             verbose=self.verbose,
             cancel_check=getattr(self, "cancel_check", None),
         )
+        lc = _aperture_if_flux_all_nan(lc)
+        _require_usable_flux(lc)
         good = tglc_quality_mask(lc, self.quality_bitmask)
         if not good.all():
             logger.info(
@@ -1351,7 +1393,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         extended = kwargs["period_max"] > span / 2
         if extended:
             kwargs["n_transits_min"] = 1
-        results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        try:
+            results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        except ValueError as e:
+            # TLS's duration cache can come out empty for sparse data over the
+            # extended range (Kepler-1928: 399 cadences over 26 d); the
+            # standard range still works.
+            if not extended:
+                raise
+            logger.warning(
+                f"Extended-range TLS failed ({e}); falling back to the standard period range."
+            )
+            kwargs["period_max"] = span / 2
+            kwargs.pop("n_transits_min")
+            return tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
         if extended and needs_standard_fallback(
             getattr(results, "distinct_transit_count", 2), kwargs["period_max"], span
         ):
@@ -2022,7 +2077,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         # Number of transits sampled by the data. Present on CPU TLS results;
         # the GPU adapter does not expose it, so guard with getattr.
         n_transits = getattr(tls, "distinct_transit_count", None)
-        if n_transits is not None:
+        # NaN when TLS fit no transit (HD 114082).
+        if n_transits is not None and np.isfinite(n_transits):
             candidate.append(("Num. Transits", f"{int(n_transits)}"))
         candidate.append(("Available sectors", self._format_available_sectors(self.all_sectors)))
         n_planets = len(getattr(self, "iterative_tls_results", None) or [])
