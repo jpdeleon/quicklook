@@ -135,7 +135,7 @@ def split_visits(time, gap: float = VISIT_GAP) -> list[np.ndarray]:
 def covered_epochs(time, period: float, t0: float) -> list[int]:
     """Epochs with enough cadences in the baseline window and near mid-transit."""
     t = np.asarray(time, dtype=float)
-    if t.size == 0:
+    if t.size == 0 or not (np.isfinite(period) and np.isfinite(t0) and period > 0):
         return []
     cadence = np.median(np.diff(np.sort(t))) if t.size > 1 else 2 / MINUTES_PER_DAY
     expected = 2 * HALF_WINDOW / cadence
