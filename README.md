@@ -192,7 +192,10 @@ locally via effective-PSF (ePSF) photometry. Locally extracted light curves carr
 `tess_flags` / `tglc_flags` columns as the MAST HLSP, and quicklook drops
 flagged cadences using `--quality-bitmask` plus TGLC's background-outlier flag
 (which catches scattered-light ramps that carry no TESS flag); pass
-`--quality-bitmask none` to keep every cadence.
+`--quality-bitmask none` to keep every cadence. MAST TGLC HLSP files get the
+same treatment: they are downloaded unmasked and quicklook applies the bitmask
+itself, so `--quality-bitmask hardest` works despite lightkurve's int16
+overflow in its TGLC reader (see `LIGHTKURVE_TGLC_BUG_REPORT.txt`).
 
 #### Benchmarking local TGLC against MAST
 

@@ -878,3 +878,23 @@ def test_summary_omits_num_planets_row_by_default():
 #     assert ql.target_name in repr_str
 #     assert str(ql.sector) in repr_str
 #     assert ql.pipeline in repr_str
+
+
+def test_summary_without_tpf_panel_has_no_nearby_sep_row():
+    # Neighbor-check panels skipped (no TPF) never set nearby_star_sep.
+    ql = _bare_summary_ql()
+    del ql.nearby_star_sep
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = ql._summary_sections()
+
+    assert "Nearby sep" not in [k for k, _ in sections[1][1]]
+
+
+@pytest.mark.unit
+def test_summary_omits_num_transits_when_nan():
+    # TLS "No transit were fit" leaves distinct_transit_count NaN (HD 114082).
+    ql = _bare_summary_ql(distinct_transit_count=np.nan)
+    with patch("quicklook.tql.get_params_from_exofop", return_value=_STAR_PARAMS):
+        sections = ql._summary_sections()
+
+    assert "Num. Transits" not in [k for k, _ in sections[0][1]]

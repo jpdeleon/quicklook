@@ -123,6 +123,11 @@ def convert_gaia_id(catalogdata_tic):
         return Table()
 
 
+MAST_QUERY_TIMEOUT = 180  # seconds per attempt
+MAST_QUERY_ATTEMPTS = 4
+MAST_QUERY_BACKOFF = 15  # seconds; doubles each retry
+
+
 def mast_query(request):
     """Perform a MAST query.
 
@@ -146,8 +151,25 @@ def mast_query(request):
     # Encoding the request as a json string
     req_string = json.dumps(request)
     req_string = urlencode(req_string)
-    # Perform the HTTP request
-    resp = requests.post(request_url, data="request=" + req_string, headers=headers, timeout=60)
+    # Perform the HTTP request; large TIC cone queries time out under load
+    for attempt in range(1, MAST_QUERY_ATTEMPTS + 1):
+        try:
+            resp = requests.post(
+                request_url,
+                data="request=" + req_string,
+                headers=headers,
+                timeout=MAST_QUERY_TIMEOUT,
+            )
+            break
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            if attempt == MAST_QUERY_ATTEMPTS:
+                raise
+            wait = MAST_QUERY_BACKOFF * 2 ** (attempt - 1)
+            logger.warning(
+                f"MAST query failed ({type(exc).__name__}); "
+                f"retry {attempt}/{MAST_QUERY_ATTEMPTS - 1} in {wait:.0f} s"
+            )
+            time.sleep(wait)
     # Pull out the headers and response content
     head = resp.headers
     content = resp.content.decode("utf-8")

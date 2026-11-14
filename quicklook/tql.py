@@ -156,6 +156,107 @@ def format_sector_ranges(sectors):
     return "+".join(str(a) if a == b else f"{a}-{b}" for a, b in runs)
 
 
+def _download_bitmask(author: str, quality_bitmask):
+    """Bitmask to hand lightkurve when downloading a product from ``author``.
+
+    lightkurve's TGLC reader overflows on ``'hardest'`` (int16 ``tess_flags``;
+    see LIGHTKURVE_TGLC_BUG_REPORT.txt), so TGLC HLSP files are read unmasked
+    and :func:`_apply_tglc_hlsp_mask` applies the requested bitmask instead.
+    """
+    return "none" if str(author).upper() == "TGLC" else quality_bitmask
+
+
+def _apply_tglc_hlsp_mask(lc, quality_bitmask):
+    """Drop cadences of a MAST TGLC light curve flagged under ``quality_bitmask``."""
+    good = tglc_quality_mask(lc, quality_bitmask)
+    if good.all():
+        return lc
+    logger.info(
+        f"Masked {int((~good).sum())}/{len(lc)} TGLC cadences "
+        f"(quality_bitmask={quality_bitmask!r} + TGLC background flag)."
+    )
+    return lc[good]
+
+
+def _count_valid_transits(counts, depths) -> int:
+    """Transits with in-transit cadences and a finite depth.
+
+    TLS returns scalars (NaN) instead of arrays for degenerate fits, so both
+    inputs are promoted to 1-D first.
+    """
+    counts = np.atleast_1d(np.asarray(counts, dtype=float))
+    depths = np.atleast_1d(np.asarray(depths, dtype=float))
+    n = min(len(counts), len(depths))
+    return int(np.sum((counts[:n] > 0) & np.isfinite(depths[:n])))
+
+
+_TGLC_FLUX_COLUMNS = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}
+
+
+def _has_finite_flux(lc) -> bool:
+    return bool(np.isfinite(np.asarray(lc.flux.value, dtype=float)).any())
+
+
+def _select_tglc_flux(lc, flux_type):
+    """Pick the TGLC HLSP flux column; fall back to aperture if it is all NaN.
+
+    Returns ``(lc, used)`` where ``used`` is "psf", "aperture" or the original
+    ``flux_type`` when the default column was kept. TGLC leaves PSF flux NaN
+    for some stars (e.g. HATS-67 s10), which would otherwise yield an empty
+    light curve.
+    """
+    used = flux_type
+    col = _TGLC_FLUX_COLUMNS.get(flux_type)
+    if col is not None and col in lc.colnames:
+        lc = lc.select_flux(col)
+    if _has_finite_flux(lc) or "cal_aper_flux" not in lc.colnames:
+        return lc, used
+    logger.warning(
+        f"TGLC {flux_type!r} flux is all NaN for this target; using aperture photometry."
+    )
+    return lc.select_flux("cal_aper_flux"), "aperture"
+
+
+def _aperture_if_flux_all_nan(lc):
+    """Local ePSF light curve: swap all-NaN PSF flux for aperture flux.
+
+    The local extraction derives ``flux_err`` from the selected flux, so the
+    error is recomputed (MAD scatter) for the aperture flux as well. Seen for
+    stars near the cutout edge (Kepler-1892, Kepler-501 s14).
+    """
+    if _has_finite_flux(lc) or "cal_aper_flux" not in lc.colnames:
+        return lc
+    aper = np.asarray(lc["cal_aper_flux"], dtype=float)
+    if not np.isfinite(aper).any():
+        return lc
+    logger.warning("TGLC PSF flux is all NaN for this target; using aperture photometry.")
+    sector = getattr(lc, "sector", None)
+    out = lc.copy()
+    out["flux"] = aper * out.flux.unit
+    mad = 1.4826 * np.nanmedian(np.abs(aper - np.nanmedian(aper)))
+    out["flux_err"] = np.full_like(aper, mad) * out.flux.unit
+    out.meta["FLUX_ORIGIN"] = "cal_aper_flux"
+    out.sector = sector
+    return out
+
+
+def _require_usable_flux(lc):
+    """Raise a clear error when the local ePSF extraction gave no photometry.
+
+    Stars on the CCD edge (Kepler-1892, Kepler-501 s14) come back with all-NaN
+    PSF flux and a constant aperture flux; TLS would otherwise fail later with
+    an opaque ``max() arg is an empty sequence``.
+    """
+    flux = np.asarray(lc.flux.value, dtype=float)
+    finite = flux[np.isfinite(flux)]
+    if finite.size < 3 or np.ptp(finite) == 0:
+        raise ValueError(
+            f"Local TGLC extraction for sector {getattr(lc, 'sector', '?')} produced no "
+            "usable photometry (PSF flux all NaN, aperture flux constant); the target "
+            "is likely on the CCD edge. Try another sector or pipeline."
+        )
+
+
 class TessQuickLook(SingleEventMixin, TTVMixin):
     def __init__(
         self,
@@ -729,7 +830,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             if len(filtered_sectors) <= 1:
                 raise NoDataError(f"Only {len(filtered_sectors)} sector is available.")
             lc = self._download_with_retry(
-                lambda: search_result.download_all(quality_bitmask=self.quality_bitmask).stitch()
+                lambda: self._stitch_masked(search_result, kwargs["author"])
             )
             # only the sectors actually stitched (same pipeline and exptime)
             self.sector = filtered_sectors
@@ -751,7 +852,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
                 logger.info(msg)
             idx = sector_orig if sector_orig == -1 else 0
             lc = self._download_with_retry(
-                lambda: search_result[idx].download(quality_bitmask=self.quality_bitmask)
+                lambda: self._download_masked(search_result[idx], kwargs["author"])
             )
 
             if self.pipeline in ["spoc"]:
@@ -770,11 +871,11 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         author = lc.meta["AUTHOR"].lower()
         if author == "spoc":
             lc = lc.select_flux(self.flux_type + "_flux")
-        elif author == "tglc" and self.flux_type in ("aperture", "psf"):
+        elif author == "tglc":
             # MAST TGLC HLSP files carry both calibrated flux columns.
-            tglc_col = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}[self.flux_type]
-            if tglc_col in lc.colnames:
-                lc = lc.select_flux(tglc_col)
+            lc, used = _select_tglc_flux(lc, self.flux_type)
+            if used != self.flux_type:
+                self.flux_type = used
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -809,6 +910,24 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         missions = search_result.table["mission"].tolist()
         all_sectors = [int(x.split()[-1]) for x in missions if len(x.split()) == 3]
         return sorted(set(all_sectors))
+
+    def _download_masked(self, search_row, author):
+        """Download one light curve, applying the quality bitmask safely for TGLC."""
+        lc = search_row.download(quality_bitmask=_download_bitmask(author, self.quality_bitmask))
+        if str(author).upper() == "TGLC":
+            lc = _apply_tglc_hlsp_mask(lc, self.quality_bitmask)
+        return lc
+
+    def _stitch_masked(self, search_result, author):
+        """Download and stitch several light curves, masking TGLC per sector."""
+        lcs = search_result.download_all(
+            quality_bitmask=_download_bitmask(author, self.quality_bitmask)
+        )
+        if str(author).upper() == "TGLC":
+            lcs = lk.LightCurveCollection(
+                [_apply_tglc_hlsp_mask(lc, self.quality_bitmask) for lc in lcs]
+            )
+        return lcs.stitch()
 
     def _download_with_retry(self, download_callable, max_retries=1):
         """Run a lightkurve download; if it fails with a "may be corrupt"
@@ -958,6 +1077,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             verbose=self.verbose,
             cancel_check=getattr(self, "cancel_check", None),
         )
+        lc = _aperture_if_flux_all_nan(lc)
+        _require_usable_flux(lc)
         good = tglc_quality_mask(lc, self.quality_bitmask)
         if not good.all():
             logger.info(
@@ -1038,6 +1159,40 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         if self.verbose:
             logger.info(msg)
         return tpf
+
+    def _load_tpf(self) -> bool:
+        """Set ``self.tpf`` / ``self.sap_mask`` for the neighbor-check panels.
+
+        Returns False when no TPF can be had: for FFI pipelines both TESScut
+        and the SPOC fallback failed (e.g. a TGLC-only sector with no SPOC
+        TPF, or MAST timing out). The TPF panel is a diagnostic, so its
+        absence must not abort the whole quicklook.
+        """
+        if self.pipeline == "gsfc-eleanor-lite":
+            err_msg = "Pipeline to be added soon."
+            logger.info(err_msg)
+            raise NotImplementedError(err_msg)
+        if self.pipeline not in FULL_FRAME_TESS_PIPELINES:
+            self.tpf = self.get_tpf(sector=self._tpf_sector, author=self.pipeline)
+            self.sap_mask = "pipeline"
+            return True
+        if self.verbose:
+            logger.info("Getting TPF with tesscut...")
+        try:
+            self.tpf = self.get_tpf_tesscut()
+            self.sap_mask = "square"
+            return True
+        except Exception as exc:
+            logger.warning(
+                f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
+            )
+        try:
+            self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
+            self.sap_mask = "pipeline"
+            return True
+        except Exception as exc:
+            logger.warning(f"No SPOC TPF either ({exc}); skipping the neighbor-check panels.")
+            return False
 
     def get_tpf_tesscut(self):
         """Download a 15x15 TESS postage stamp.
@@ -1238,7 +1393,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         extended = kwargs["period_max"] > span / 2
         if extended:
             kwargs["n_transits_min"] = 1
-        results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        try:
+            results = tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
+        except ValueError as e:
+            # TLS's duration cache can come out empty for sparse data over the
+            # extended range (Kepler-1928: 399 cadences over 26 d); the
+            # standard range still works.
+            if not extended:
+                raise
+            logger.warning(
+                f"Extended-range TLS failed ({e}); falling back to the standard period range."
+            )
+            kwargs["period_max"] = span / 2
+            kwargs.pop("n_transits_min")
+            return tls(time, flux, flux_err, verbose=self.verbose).power(**kwargs)
         if extended and needs_standard_fallback(
             getattr(results, "distinct_transit_count", 2), kwargs["period_max"], span
         ):
@@ -1909,7 +2077,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         # Number of transits sampled by the data. Present on CPU TLS results;
         # the GPU adapter does not expose it, so guard with getattr.
         n_transits = getattr(tls, "distinct_transit_count", None)
-        if n_transits is not None:
+        # NaN when TLS fit no transit (HD 114082).
+        if n_transits is not None and np.isfinite(n_transits):
             candidate.append(("Num. Transits", f"{int(n_transits)}"))
         candidate.append(("Available sectors", self._format_available_sectors(self.all_sectors)))
         n_planets = len(getattr(self, "iterative_tls_results", None) or [])
@@ -1943,11 +2112,10 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         ruwe = getattr(self, "gaia_ruwe", np.nan)
         if np.isfinite(ruwe):
             stellar.append(("RUWE", f"{ruwe:.2f}"))
-        if self.nearby_star_sep is not None:
-            if self.nearby_star_sep < 1 * u.arcmin:
-                val = self.nearby_star_sep.to(u.arcsec)
-            else:
-                val = self.nearby_star_sep
+        # Unset when the neighbor-check panels were skipped (no TPF).
+        nearby_sep = getattr(self, "nearby_star_sep", None)
+        if nearby_sep is not None:
+            val = nearby_sep.to(u.arcsec) if nearby_sep < 1 * u.arcmin else nearby_sep
             stellar.append(("Nearby sep", f"{val:.1f}"))
         if self.simbad_obj_type is not None:
             stellar.append(("SIMBAD type", f"{self.simbad_obj_type}"))
@@ -2175,8 +2343,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         counts = self.tls_results.get("per_transit_count")
         depths = self.tls_results.get("transit_depths")
         if counts is not None and depths is not None:
-            n = min(len(counts), len(depths))
-            n_valid = int(np.sum((np.asarray(counts[:n], dtype=float) > 0) & ~np.isnan(depths[:n])))
+            n_valid = _count_valid_transits(counts, depths)
             self.tls_results["n_valid_transits"] = n_valid
             if n_valid < 2:
                 logger.warning(
@@ -2531,7 +2698,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         if self.verbose:
             logger.info("Plotting TPF...")
         ax = axes.flatten()[5]
-        if not self.neighbor_check:
+        if not self.neighbor_check or not self._load_tpf():
             ax.text(
                 0.5,
                 0.5,
@@ -2542,32 +2709,6 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             )
             ax.set_axis_off()
         else:
-            if self.pipeline in [
-                # "cdips",  # TODO: missing flux err raises error in errorbar plot
-                "gsfc-eleanor-lite",
-            ]:
-                err_msg = "Pipeline to be added soon."
-                logger.info(err_msg)
-                raise NotImplementedError(err_msg)
-            elif self.pipeline in FULL_FRAME_TESS_PIPELINES:
-                if self.verbose:
-                    logger.info("Getting TPF with tesscut...")
-                try:
-                    self.tpf = self.get_tpf_tesscut()
-                    self.sap_mask = "square"
-                except (NoDataError, Exception) as exc:
-                    logger.warning(
-                        f"TESScut TPF search/download failed ({exc}); falling back to SPOC TPF search..."
-                    )
-                    self.tpf = self.get_tpf(sector=self.sector, author="SPOC")
-                    self.sap_mask = "pipeline"
-            else:
-                self.tpf = self.get_tpf(
-                    sector=self._tpf_sector,
-                    author=self.pipeline,
-                )
-                self.sap_mask = "pipeline"
-
             ny, nx = self.tpf.flux.shape[1:]
             diag = np.sqrt(nx**2 + ny**2)
             fov_rad = (0.4 * diag * TESS_pix_scale).to(u.arcmin).round(2)
