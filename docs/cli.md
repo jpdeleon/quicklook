@@ -8,7 +8,7 @@ QuickLook provides a unified Typer-based CLI (`ql`) with subcommands.
 ql --help
 ```
 
-Shows available subcommands: `run`, `read-tls`, `rank-tls`.
+Shows available subcommands: `run`, `read-tls`, `rank-tls`, `shared-epochs`, `gui`.
 
 ---
 
@@ -160,3 +160,19 @@ directory, sorted by Signal Detection Efficiency (SDE).
 | `--min-sde N` | `5.0` | Minimum SDE threshold |
 | `--min-depth N` | `1.0` | Minimum transit depth (ppt) |
 | `--max-depth N` | `100.0` | Maximum transit depth (ppt) |
+
+## `ql shared-epochs` -- Flag single events shared across targets
+
+```bash
+ql shared-epochs INPUT_DIR [--tol 0.25] [--min-targets 3]
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `INPUT_DIR` | required | Directory of `*_tls.h5` files from one batch (run with `--single-event-search`) |
+| `--tol` | 0.25 | Events within this many days of each other are nearby |
+| `--min-targets` | 3 | Distinct targets with nearby events that make an event shared |
+
+Writes `<INPUT_DIR>_shared_events.csv` and `<INPUT_DIR>_shared_targets.csv`.
+Mono/duo targets whose events are all shared get `event_class_vetted =
+systematic`. See [batch processing](batch.md).

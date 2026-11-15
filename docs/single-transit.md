@@ -197,3 +197,6 @@ sorted and filtered (e.g. type `duo` under Class).
   pipeline window is kept, so long transits there can be missed.
 - Scattered light, flares on the way down and residual detrending artefacts can
   still pass the systematics test. Always look at the event zoom (panel 7).
+- Scattered light dims many stars at the same time, which one target cannot
+  tell apart from a transit. For a batch, run `ql shared-epochs <dir>` (see
+  [batch processing](batch.md)) to flag events that several stars share.

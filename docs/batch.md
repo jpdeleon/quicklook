@@ -68,6 +68,25 @@ ql rank-tls results/ --output-dir ranked
 
 This filters candidates by SDE and other metrics, then copies the plots of the top candidates into `ranked/`.
 
+### Optional: reject shared single events
+
+With `--single-event-search`, scattered light near orbit gaps and momentum
+dumps can produce a "single transit" on many stars at once. Compare event
+times across the batch:
+
+```bash
+ql shared-epochs results/ [--tol 0.25] [--min-targets 3]
+```
+
+An event is *shared* when at least `--min-targets` distinct targets (itself
+included) have an event within `--tol` days of it. The command writes
+`results_shared_events.csv` (one row per event, with `n_targets_nearby` and
+`shared`) and `results_shared_targets.csv`. In the targets table,
+`event_class_vetted` is `systematic` for mono/duo targets whose events are all
+shared. In a 263-star young-host run, it re-labelled 10 sector-14 Kepler-field
+monos and duos as systematic and kept every event that coincides with a
+catalogue transit.
+
 ### Step 3: Visual inspection
 
 Combine ranked plots into a single PDF for quick review:

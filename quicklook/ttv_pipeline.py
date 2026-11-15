@@ -30,6 +30,8 @@ from quicklook.ttv import (
     cycle_count_solutions,
     default_delta,
     fit_transit_times,
+    inflate_errors,
+    red_noise_beta,
     ttv_mask,
     ttv_statistics,
 )
@@ -39,6 +41,9 @@ MINUTES_PER_DAY = 1440.0
 TTV_FIGURE_SUFFIX = "_ttv.png"
 TTV_GALLERY_SUFFIX = "_ttv_transits.png"
 MIN_EPHEM_PERIOD = 0.3  # days; TFOP fills missing values with 0.1
+TTV_PERIOD_MATCH_TOL = 0.01  # timed period vs catalogue period (relative)
+ROTATION_ALIAS_TOL = 0.03  # same tolerance as tql's rotation_alias_risk
+ROTATION_ALIAS_HARMONICS = (1, 2, 3, 1 / 2, 1 / 3)
 _TTV_ARRAY_FIELDS = {
     "ttv_epochs": "epoch",
     "ttv_tcs": "tc",
@@ -61,6 +66,9 @@ class TTVMixin:
     ttv_stats: Optional[TTVStats] = None
     ttv_source: str = ""
     ttv_delta: float = np.nan
+    ttv_beta: float = 1.0
+    ttv_period_match: Optional[bool] = None  # None: no catalogue period to compare
+    ttv_rotation_alias: Optional[bool] = None  # None: no rotation period
     ttv_cycle_solutions: list = []
     _ttv_lc: Optional[tuple] = None  # (time, flux) the times were fitted on
     ttv_local: Optional[LocalTTVResult] = None
@@ -111,7 +119,10 @@ class TTVMixin:
     def _fit_and_store(self, time, flux, period, t0, duration, source):
         period, t0, duration = float(period), float(t0), float(duration)
         self.ttv_delta = default_delta(period, duration)
-        self.ttv_times = fit_transit_times(time, flux, period, t0, duration, self.ttv_delta)
+        times = fit_transit_times(time, flux, period, t0, duration, self.ttv_delta)
+        # White-noise errors understate the O-C scatter of active stars.
+        self.ttv_beta = red_noise_beta(time, flux, period, t0, duration)
+        self.ttv_times = inflate_errors(times, self.ttv_beta)
         self.ttv_stats = ttv_statistics(self.ttv_times)
         self.ttv_source = source
         self._ttv_lc = (np.asarray(time), np.asarray(flux))
@@ -122,6 +133,87 @@ class TTVMixin:
         if self.verbose:
             self._log_ttv_results()
         return self.ttv_stats
+
+    # --- vetting ---------------------------------------------------------------
+
+    def _catalogue_periods(self) -> list:
+        """Known periods (d): the loaded ephemeris plus every ExoFOP planet entry."""
+        periods = []
+        toi = getattr(self, "toi_period", None)
+        if toi is not None:
+            periods.append(toi[0])
+        exofop = getattr(self, "exofop_data", None) or {}
+        for entry in exofop.get("planet_parameters") or []:
+            periods.append(entry.get("per") if isinstance(entry, dict) else None)
+        out = []
+        for p in periods:
+            try:
+                p = float(p)
+            except (TypeError, ValueError):
+                continue
+            if np.isfinite(p) and p >= MIN_EPHEM_PERIOD:
+                out.append(p)
+        return out
+
+    def _rotation_period(self):
+        res = self.tls_results
+        gls = res.get("Prot_gls") if hasattr(res, "get") else None
+        prot = gls[0] if gls is not None else getattr(self, "Prot_ls", None)
+        try:
+            prot = float(prot)
+        except (TypeError, ValueError):
+            return None
+        return prot if np.isfinite(prot) and prot > 0 else None
+
+    def vet_ttv_detection(self) -> bool:
+        """Final TTV verdict: raw detection, on a catalogue period, not rotation.
+
+        Runs after the rotation period is known (from ``append_tls_results``).
+        ``ttv_detected_raw`` keeps the statistical verdict; ``ttv_detected`` is
+        False when the timed period matches no catalogue period (when there is
+        one) or aliases the stellar rotation period.
+        """
+        stats = self.ttv_stats
+        eph = getattr(stats, "ephemeris", None)
+        raw = bool(stats.detected) if stats is not None else False
+        period = eph.period if eph is not None else np.nan
+        self.ttv_period_match = self.ttv_rotation_alias = None
+        if np.isfinite(period):
+            known = self._catalogue_periods()
+            if known:
+                self.ttv_period_match = any(
+                    abs(period - p) <= TTV_PERIOD_MATCH_TOL * p for p in known
+                )
+            prot = self._rotation_period()
+            if prot is not None:
+                self.ttv_rotation_alias = any(
+                    abs(period - n * prot) <= ROTATION_ALIAS_TOL * n * prot
+                    for n in ROTATION_ALIAS_HARMONICS
+                )
+        vetted = raw and self.ttv_period_match is not False and not self.ttv_rotation_alias
+        for key, val in (
+            ("ttv_detected_raw", raw),
+            ("ttv_detected", vetted),
+            ("ttv_period_match", self.ttv_period_match),
+            ("ttv_rotation_alias", self.ttv_rotation_alias),
+        ):
+            self.tls_results[key] = val
+        if raw and not vetted:
+            reasons = []
+            if self.ttv_period_match is False:
+                reasons.append("timed period matches no catalogue period")
+            if self.ttv_rotation_alias:
+                reasons.append("timed period aliases the rotation period")
+            logger.info(f"TTV vetting: detection rejected ({'; '.join(reasons)}).")
+        return vetted
+
+    @property
+    def ttv_detected(self) -> bool:
+        """Vetted verdict when vetting ran, else the statistical one."""
+        res = self.tls_results
+        if hasattr(res, "get") and res.get("ttv_detected_raw") is not None:
+            return bool(res.get("ttv_detected"))
+        return bool(self.ttv_stats is not None and self.ttv_stats.detected)
 
     # --- local-baseline diagnostics (byproduct figures) ---------------------
 
@@ -247,6 +339,7 @@ class TTVMixin:
             "ttv_period": eph.period if eph else np.nan,
             "ttv_t0": eph.t0 if eph else np.nan,
             "ttv_delta": float(self.ttv_delta),
+            "ttv_beta": float(self.ttv_beta),
             "ttv_oc": np.asarray(stats.oc if stats else [], dtype=float),
             "ttv_n_cycle_solutions": len(self.ttv_cycle_solutions),
             "ttv_alt_periods": np.array([s.period for s in alternatives], dtype=float),
@@ -262,7 +355,8 @@ class TTVMixin:
         if stats is not None and stats.ephemeris is not None:
             msg += (
                 f", P={stats.ephemeris.period:.5f} d, O-C amplitude "
-                f"{stats.amplitude * MINUTES_PER_DAY:.1f} min, p={stats.pvalue:.2g} "
+                f"{stats.amplitude * MINUTES_PER_DAY:.1f} min, beta={self.ttv_beta:.2f}, "
+                f"p={stats.pvalue:.2g} "
                 f"(robust {stats.pvalue_robust:.2g}) -> "
                 f"{'TTVs detected' if stats.detected else 'consistent with a linear ephemeris'}"
             )
@@ -309,7 +403,18 @@ class TTVMixin:
         time, flux = self._ttv_lc
         plot_aligned_transits(time, flux, self.ttv_times, ax=axes[6])
         alternatives: list[CycleSolution] = [s for s in self.ttv_cycle_solutions if any(s.shifts)]
-        plot_oc(self.ttv_stats, ax=axes[7], n_alternatives=len(alternatives))
+        verdict = {
+            "detected": "TTVs detected",
+            "rejected (vetting)": "TTVs rejected by vetting",
+        }.get(self._ttv_verdict_label(), "linear ephemeris OK")
+        plot_oc(self.ttv_stats, ax=axes[7], n_alternatives=len(alternatives), verdict=verdict)
+
+    def _ttv_verdict_label(self) -> str:
+        if self.ttv_detected:
+            return "detected"
+        if self.ttv_stats is not None and self.ttv_stats.detected:
+            return "rejected (vetting)"
+        return "not significant"
 
     def _ttv_candidate_rows(self) -> list:
         stats = self.ttv_stats
@@ -320,7 +425,7 @@ class TTVMixin:
             ("Transits timed", f"{stats.n}"),
             ("TTV amplitude", f"{stats.amplitude * MINUTES_PER_DAY:.1f} min"),
             ("TTV p-value", f"{stats.pvalue:.2g} (robust {stats.pvalue_robust:.2g})"),
-            ("TTVs", "detected" if stats.detected else "not significant"),
+            ("TTVs", self._ttv_verdict_label()),
         ]
         if len(self.ttv_cycle_solutions) > 1:
             rows.append(("Cycle solutions", f"{len(self.ttv_cycle_solutions)}"))

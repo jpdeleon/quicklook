@@ -2437,6 +2437,9 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             )
         else:
             self.tls_results["rotation_alias_risk"] = None
+        # The TTV verdict needs the rotation period, which is only known now.
+        if getattr(self, "ttv_search", False):
+            self.vet_ttv_detection()
 
         # Append the Simbad object type
         if self.simbad_obj_type is not None:

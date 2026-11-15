@@ -29,6 +29,17 @@ connects it to the pipeline:
    local scatter exceeds white noise. An epoch is skipped if it has less than
    half the expected cadences in transit or within one duration on either
    side, if its depth SNR is below 3, or if the fit is pinned at ±δ.
+   **Red-noise inflation.** These errors assume white noise. Correlated noise
+   on ingress timescales, which young and spotted stars have plenty of, makes
+   them too small. `red_noise_beta` uses the time-averaging method
+   ([Pont et al. 2006](https://ui.adsabs.harvard.edu/abs/2006MNRAS.373..231P);
+   [Winn et al. 2008](https://ui.adsabs.harvard.edu/abs/2008ApJ...683.1076W)). It bins the
+   out-of-transit residuals (more than one duration from each predicted
+   time) on 5 timescales from the ingress (15% of the duration) to half the
+   duration. At each timescale it takes the scatter of the bin means over the
+   white-noise expectation σ₁/√N·√(M/(M−1)), and β is the median over the
+   timescales. Every timing error is multiplied by β, which is clipped to
+   1–10 and stored as `ttv_beta`.
 3. **O−C.** A weighted linear ephemeris goes through the fitted times. The O−C
    amplitude is half its peak-to-peak. The χ² of the linear model gives a
    p-value. TTVs are flagged when p < 10⁻³ **and** p stays below 10⁻³
@@ -38,14 +49,23 @@ connects it to the pipeline:
    leave-worst-out check brings this to 0 of 120. At 2-min cadence with a
    2.6 min timing error, a 6 min sinusoidal TTV is detected 70% of the time
    and a 12 min one every time.
-4. **Masking at fitted times.** The iterative re-search (`--iterative`)
+4. **Vetting.** Once the rotation period is known (in
+   `append_tls_results`), `vet_ttv_detection` turns the statistical verdict
+   (`ttv_detected_raw`) into `ttv_detected`. It requires that the timed period
+   is within 1% of a catalogue period, when one exists. The catalogue periods
+   are the loaded TFOP/custom ephemeris and every ExoFOP planet entry, ignoring
+   TFOP's 0.1 d placeholders. It also requires that the timed period is not
+   within 3% of 1, 2, 3, 1/2 or 1/3 times the rotation period (`Prot_gls`, else
+   `Prot_ls`). The summary panel and O−C title say "rejected (vetting)" when a
+   raw detection fails these checks.
+5. **Masking at fitted times.** The iterative re-search (`--iterative`)
    removes the primary's transits at their fitted times. Epochs without a fit
    keep the linear-ephemeris mask.
-5. **Cycle-count ambiguity.** Between fitted transits more than 30 d apart
+6. **Cycle-count ambiguity.** Between fitted transits more than 30 d apart
    (e.g. sectors a year apart), the orbit count can be off by one. Every
    ±1-cycle shift per gap (up to 4 gaps) whose linear fit is within Δχ² = 9 of
    the best is reported, with its period.
-6. **Chaining single events.** With both searches on and no periodic TLS
+7. **Chaining single events.** With both searches on and no periodic TLS
    signal, three or more single events that agree in depth and duration (the
    duotransit test) are chained. The longest period that places each event
    within one duration of `t0 + n·P` gives the starting ephemeris. As with
@@ -154,7 +174,11 @@ These fields are added to `*_tls.h5`:
 |-------|-------------|
 | `ttv_search` | `True` |
 | `ttv_source` | `tls`, `chain`, or empty if nothing was timed |
-| `ttv_detected` | TTVs significant by both p-values |
+| `ttv_detected` | TTVs significant by both p-values **and** passing the vetting (period match, no rotation alias) |
+| `ttv_detected_raw` | TTVs significant by both p-values, before vetting |
+| `ttv_beta` | Red-noise factor applied to every `ttv_tc_errs` (≥ 1) |
+| `ttv_period_match` | Timed period within 1% of a catalogue period (`None` if none is known) |
+| `ttv_rotation_alias` | Timed period aliases the rotation period (`None` if unknown) |
 | `ttv_amplitude`, `ttv_rms` | Half the O−C peak-to-peak and the O−C RMS (days) |
 | `ttv_pvalue`, `ttv_pvalue_robust` | χ² p-value of a linear ephemeris, and the same without the worst transit |
 | `n_ttv_transits` | Number of fitted transits |
@@ -166,9 +190,26 @@ These fields are added to `*_tls.h5`:
 The GUI's TLS summary page shows `TTV [min]` (red when detected) and `p_TTV`
 columns, which can be sorted and filtered.
 
+## Validation on young planets
+
+A blind run on the 263 transiting hosts younger than 1 Gyr in the NASA
+Exoplanet Archive (TGLC PSF photometry, `--quality-bitmask hardest`, one
+sector each) timed 22 hosts on their catalogue period or on variability.
+Without β or vetting, 7 were flagged. On the 15 hosts consistent with a
+linear ephemeris, the median O−C χ²/dof was 2.9: the white-noise errors were
+too small by about 1.7×. With β (median 1.19, up to 2.25) the median χ²/dof
+drops to 1.4. WASP-14, WASP-178, TOI-4153 and Kepler-616 are no longer
+flagged. HIP 67522 and TIC 434398831 timed stellar variability (1.42 d and
+1.78 d against planets at 6.96/14.3 d and 3.69/6.21 d), and the period check
+rejects them. HAT-P-70 (χ²/dof 7.6 after β, 8 transits) is still flagged
+although no TTVs are published for it. Treat a single-sector FFI detection as
+a candidate for follow-up, not a result.
+
 ## Caveats
 
-- The p-value is only as good as the timing errors. Spot crossings, flares and
+- The p-value is only as good as the timing errors. β corrects for
+  correlated noise in the out-of-transit light curve, not for noise that
+  occurs only during transits (spot crossings). Spot crossings, flares and
   detrending residuals inside one transit can shift its fitted time. Check the
   aligned-transit panel before trusting a detection.
 - TTVs larger than δ (one duration) are pinned to the window edge and skipped.

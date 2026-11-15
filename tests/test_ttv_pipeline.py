@@ -91,6 +91,19 @@ def test_periodic_signal_with_ttvs_is_detected():
     assert r["ttv_alt_periods"].size == 0
 
 
+def test_ttv_search_inflates_errors_by_beta():
+    def errs(beta):
+        ql = _ql(SINUSOID)
+        with patch("quicklook.ttv_pipeline.red_noise_beta", return_value=beta):
+            ql.run_ttv_search()
+        return ql.tls_results
+
+    white, red = errs(1.0), errs(3.0)
+    assert red["ttv_beta"] == 3.0
+    assert np.allclose(red["ttv_tc_errs"], 3.0 * white["ttv_tc_errs"])
+    assert red["ttv_pvalue"] > white["ttv_pvalue"]
+
+
 def test_periodic_signal_without_ttvs_is_not_flagged():
     ql = _ql()
     ql.run_ttv_search()

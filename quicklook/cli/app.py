@@ -742,6 +742,40 @@ def read_tls(
     typer.echo(f"Saved: {csv_path}")
 
 
+@app.command(name="shared-epochs")
+def shared_epochs(
+    input_dir: str = typer.Argument(..., help="Directory of *_tls.h5 files from one batch"),
+    tol: float = typer.Option(
+        0.25, "--tol", help="Events within this many days of each other are 'nearby'"
+    ),
+    min_targets: int = typer.Option(
+        3, "--min-targets", help="Distinct targets with nearby events that make an event shared"
+    ),
+):
+    """Flag single events shared by several stars (scattered light, momentum dumps).
+
+    Writes <input_dir>_shared_events.csv (one row per event) and
+    <input_dir>_shared_targets.csv (event_class_vetted = 'systematic' when all
+    of a mono/duo target's events are shared).
+    """
+    from quicklook.shared_epochs import shared_epochs_report
+
+    try:
+        events, targets = shared_epochs_report(input_dir, tol=tol, min_targets=min_targets)
+    except FileNotFoundError as e:
+        raise typer.BadParameter(str(e)) from e
+    stem = input_dir.rstrip("/")
+    for suffix, table in (("_shared_events.csv", events), ("_shared_targets.csv", targets)):
+        table.to_csv(stem + suffix, index=False)
+        typer.echo(f"Saved: {stem + suffix}")
+    systematic = targets[targets["event_class_vetted"] == "systematic"]
+    typer.echo(
+        f"{int(events['shared'].sum()) if not events.empty else 0}/{len(events)} events shared; "
+        f"{len(systematic)} mono/duo target(s) re-labelled systematic"
+        + (f": TIC {', '.join(str(t) for t in systematic['ticid'])}" if len(systematic) else "")
+    )
+
+
 @app.command(name="rank-tls")
 def rank_tls(
     input_dir: str = typer.Argument(..., help="Directory containing the original files"),
