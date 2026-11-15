@@ -16,6 +16,12 @@ Add `-j N` to parallelize across N workers:
 ql run --name TOI-125.01 --each-sector -j 4 --save
 ```
 
+Every other `ql run` option (`--custom-ephem`, `--window-length`,
+`--sigma-clip-raw/--sigma-clip-flat`, `--gp-kernel-size`, `--use-priors`,
+`--survey`, ...) applies to each sector exactly as in a single run; the same
+holds for `--each-pipeline`. Only the TLS cores per run differ: without
+`--cores`, the CPUs are split across the `-j` workers.
+
 ## Shell: batch script from a target list
 
 Given a file `tic_ids.txt` with one TIC ID per line:

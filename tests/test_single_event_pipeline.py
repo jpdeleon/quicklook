@@ -167,12 +167,12 @@ def test_cli_passes_single_event_search(flag, expected):
     assert ql.call_args.kwargs["single_event_search"] is expected
 
 
-def test_cli_each_sector_helper_accepts_single_event_search():
-    import inspect
-
+def test_cli_each_sector_helper_forwards_single_event_search():
     from quicklook.cli.app import _run_ql_for_sector
 
-    assert "single_event_search" in inspect.signature(_run_ql_for_sector).parameters
+    with patch("quicklook.tql.TessQuickLook") as ql:
+        _run_ql_for_sector("TOI-1234", 5, "spoc", {"single_event_search": True, "savefig": True})
+    assert ql.call_args.kwargs["single_event_search"] is True
 
 
 def test_gui_single_event_search_wired():

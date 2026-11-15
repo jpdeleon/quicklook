@@ -232,12 +232,12 @@ def test_cli_passes_ttv_search(flag, expected):
     assert ql.call_args.kwargs["ttv_search"] is expected
 
 
-def test_cli_each_sector_helper_accepts_ttv_search():
-    import inspect
-
+def test_cli_each_sector_helper_forwards_ttv_search():
     from quicklook.cli.app import _run_ql_for_sector
 
-    assert "ttv_search" in inspect.signature(_run_ql_for_sector).parameters
+    with patch("quicklook.tql.TessQuickLook") as ql:
+        _run_ql_for_sector("TOI-1234", 5, "spoc", {"ttv_search": True, "savefig": True})
+    assert ql.call_args.kwargs["ttv_search"] is True
 
 
 def test_gui_ttv_search_wired():
