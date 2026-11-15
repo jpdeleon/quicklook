@@ -5,7 +5,9 @@ Example
     uv run scripts/benchmark_tglc.py "TIC 259377017" --sector 3 --size 99
 
 Writes ``<outdir>/<target>_s<sector>_benchmark.json`` and a comparison plot,
-and exits non-zero if the calibrated light curves fail the agreement criteria.
+and exits with status 3 if the calibrated light curves fail the agreement
+criteria. A crash exits 1 (uncaught exception) and bad arguments exit 2, so a
+batch runner can tell "ran, but disagrees with MAST" apart from "broke".
 """
 
 from __future__ import annotations
@@ -23,6 +25,10 @@ from quicklook.benchmark_tglc import (
     plot_comparison,
     run_benchmark,
 )
+
+# Exit status when every target ran but at least one failed the agreement
+# criteria. Distinct from 1 (uncaught exception) and 2 (argparse error).
+EXIT_DISAGREE = 3
 
 # Default targets with MAST TGLC coverage (target, sector):
 #   TOI-270 (TIC 259377017): Tmag 10.6, uncrowded -- the easy case.
@@ -110,7 +116,7 @@ def main(argv=None) -> int:
             print(f"  - {reason}")
         all_passed &= result.passed
 
-    return 0 if all_passed else 1
+    return 0 if all_passed else EXIT_DISAGREE
 
 
 if __name__ == "__main__":
