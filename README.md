@@ -289,6 +289,7 @@ All subcommands are available under either `quicklook` or the shorter `ql` alias
 | `quicklook run` | Run the full QuickLook pipeline on a target |
 | `quicklook read-tls` | Extract TLS results from a directory of `.h5` files into a CSV |
 | `quicklook rank-tls` | Filter and rank candidates by SDE from the CSV output |
+| `quicklook shared-epochs` | Flag single events that several stars in a batch share (scattered light, momentum dumps) |
 | `quicklook gui` | Launch the web GUI (requires `[gui]` extra); also available as `ql-gui` |
 
 ## Batch processing
@@ -306,6 +307,10 @@ cat run_batch.sh | parallel -j 4
 
 # Extract and rank results
 ql read-tls results/
+# With --single-event-search: events at the same time on >=3 stars (within
+# --tol 0.25 d) are systematics. Writes results_shared_{events,targets}.csv;
+# mono/duo targets whose events are all shared get event_class_vetted=systematic.
+ql shared-epochs results/
 ql rank-tls results/ --output-dir ranked
 
 # Combine ranked plots into a PDF
