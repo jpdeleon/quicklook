@@ -251,3 +251,56 @@ def test_consecutive_long_period_transits_are_not_ambiguous():
     sols = cycle_count_solutions(_times(epochs, T0 + p * epochs, err=0.002))
     assert len(sols) == 1
     assert sols[0].period == pytest.approx(p)
+
+
+# --- degenerate timing errors (young-host run: HIP 67522, Kepler-616, KELT-9) ---------
+
+
+def _refine_with_tc_err(monkeypatch, tc_err, bad_epochs=None):
+    """Make ``_refine`` report ``tc_err`` (for ``bad_epochs`` only, if given)."""
+    import quicklook.ttv as ttv
+
+    real = ttv._refine
+
+    def fake(t, f, tc_pred, *args):
+        x, err = real(t, f, tc_pred, *args)
+        epoch = round((tc_pred - T0) / PERIOD)
+        if bad_epochs is None or epoch in bad_epochs:
+            err = err.copy()
+            err[0] = tc_err
+        return x, err
+
+    monkeypatch.setattr(ttv, "_refine", fake)
+
+
+@pytest.mark.parametrize("tc_err", [0.0, -1e-3, np.nan, np.inf, 0.5], ids=str)
+def test_fit_transit_time_rejects_unconstrained_mid_time(monkeypatch, tc_err):
+    # A singular covariance gives 0 (after clipping) or a huge error; 0.5 d > delta.
+    _refine_with_tc_err(monkeypatch, tc_err)
+    t, f = _light_curve()
+
+    assert fit_transit_time(t, f, T0, DUR, delta=0.1, epoch=0) is None
+
+
+def test_fit_transit_time_keeps_error_at_the_window_edge(monkeypatch):
+    _refine_with_tc_err(monkeypatch, 0.1)
+    t, f = _light_curve()
+
+    tt = fit_transit_time(t, f, T0, DUR, delta=0.1, epoch=0)
+
+    assert tt is not None and tt.tc_err == 0.1
+
+
+def test_zero_error_epoch_no_longer_makes_the_ephemeris_nan(monkeypatch):
+    # One zero-error transit took infinite weight and set P = NaN for the target.
+    _refine_with_tc_err(monkeypatch, 0.0, bad_epochs={3, 7})
+    t, f = _light_curve()
+
+    times = fit_transit_times(t, f, PERIOD, T0, DUR)
+    stats = ttv_statistics(times)
+
+    assert {tt.epoch for tt in times}.isdisjoint({3, 7})
+    assert len(times) == 13
+    assert np.isfinite(stats.ephemeris.period)
+    assert stats.ephemeris.period == pytest.approx(PERIOD, abs=1e-3)
+    assert not stats.detected
