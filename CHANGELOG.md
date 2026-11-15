@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.13.0](https://github.com/jpdeleon/quicklook/compare/v1.12.0...v1.13.0) (2026-11-15)
+
+
+### Features
+
+* broken time axes for multi-sector data in every layout ([360c509](https://github.com/jpdeleon/quicklook/commit/360c509f197915d4860f474741769dc1917668db))
+* broken time axes for multi-sector data in every layout ([6d6c367](https://github.com/jpdeleon/quicklook/commit/6d6c3672c06b8c63b5976dd85922dffc991b44e5))
+* ql shared-epochs flags single events shared across a batch ([3e57d37](https://github.com/jpdeleon/quicklook/commit/3e57d37b5f4e4ff12b9a8fda2e4f7e77865c1bec))
+* red-noise timing errors and TTV vetting ([8a73c53](https://github.com/jpdeleon/quicklook/commit/8a73c531c2a372e0f840050b3b12c72ab4a8b0fe))
+* red-noise TTV errors, TTV vetting, and cross-target shared-epoch check ([78acb67](https://github.com/jpdeleon/quicklook/commit/78acb6781c552f309b21732ca80d8b3faa45f1a2))
+
+
+### Bug Fixes
+
+* drop transits with degenerate timing errors ([304d319](https://github.com/jpdeleon/quicklook/commit/304d31983eaab26595b4bfc2137dc31960412bee))
+* drop transits with degenerate timing errors ([7d171b5](https://github.com/jpdeleon/quicklook/commit/7d171b577771bd04239be32fe16123adbdee0c58))
+* forward all options in --each-sector runs; rebuild TGLC caches lacking target coords ([62304e3](https://github.com/jpdeleon/quicklook/commit/62304e338ade2f5f1706ff166d20231a73b24576))
+* forward every ql run option to --each-sector and --each-pipeline runs ([4b17c4a](https://github.com/jpdeleon/quicklook/commit/4b17c4a1a51faa7e8997c57df712e68db90e8f27))
+* let --custom-ephem drive the TTV timing instead of TLS ([ba4752e](https://github.com/jpdeleon/quicklook/commit/ba4752e9119d184f4a5b435a001315b7ca0faea8))
+* let --custom-ephem drive the TTV timing instead of TLS ([b282ef3](https://github.com/jpdeleon/quicklook/commit/b282ef361f684b1903473604bdb117377f02cee6))
+* make GLS-based detrending tuning actually run ([992e5ff](https://github.com/jpdeleon/quicklook/commit/992e5ff0d161fa47946d03f5136f865602a1d72b))
+* make GLS-based detrending tuning actually run ([b87547e](https://github.com/jpdeleon/quicklook/commit/b87547e8f568d7bb88be957994d14112e87b4143))
+* rebuild TGLC source caches that lack target coordinates ([ab36077](https://github.com/jpdeleon/quicklook/commit/ab36077faa17839dd88fb063f798be75a891c286))
+* refuse to detrend zero-centred or negative flux instead of hanging ([2985dd3](https://github.com/jpdeleon/quicklook/commit/2985dd3da62caa81ef296b79bd54a9ac56123eb0))
+* refuse to detrend zero-centred or negative flux instead of hanging ([c9e6c39](https://github.com/jpdeleon/quicklook/commit/c9e6c39a9ce7c326a8bfa10a1ff4570b13356237))
+* sort stitched multi-sector light curves by time ([d82e626](https://github.com/jpdeleon/quicklook/commit/d82e626cedaebf47506871cdab68b2f521d6ba36))
+* sort stitched multi-sector light curves by time ([08e2c39](https://github.com/jpdeleon/quicklook/commit/08e2c39f083e97586b43d2081d5bd9a7f1116555))
+
 ## [1.12.0](https://github.com/jpdeleon/quicklook/compare/v1.11.0...v1.12.0) (2026-11-14)
 
 
