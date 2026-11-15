@@ -38,6 +38,17 @@ This is included automatically if you install `quicklook-package >= 1.5`.
 
 The MAST archive sometimes experiences outages. These are transient -- wait a few minutes and try again. In CI, network tests automatically mark as `xfail` when MAST is down.
 
+### `Raw flux looks zero-centred or negative` / `... raw flux values are non-positive`
+
+Some pipeline products (for example certain TASOC FFI light curves) store flux
+centred on zero rather than normalised to one. Detrending needs positive flux:
+wotan drops non-positive cadences, and a window with no positive values used to
+hang the biweight filter indefinitely. quicklook now refuses such light curves
+before detrending when the median flux is <= 0 or more than 1% of cadences are
+<= 0. Pick another pipeline (`--pipeline spoc`, `qlp`, `tglc`, ...). With
+`--each-pipeline` the affected pipeline is reported as failed and the rest run
+normally.
+
 ### `I/O operation on closed file` in the web GUI
 
 This was caused by running multiple pipeline jobs concurrently. As of v1.5, the GUI serializes all jobs through a single worker queue. If you see this error, make sure you are running the latest version.
