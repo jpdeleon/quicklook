@@ -109,7 +109,11 @@ def test_get_tglc_lc_strips_hdulist_from_legacy_cache(tglc_inputs, tmp_path, mon
     # Simulate a legacy cache: a Source_cut-like object that still carries a
     # raw hdulist attribute (a real one would be multi-GB for a 200s cadence
     # sector; a sentinel is enough to prove it gets dropped).
-    legacy_source = SimpleNamespace(hdulist=["stand-in-for-a-huge-raw-hdulist"])
+    # (Target coordinates present so this exercises the hdulist path, not the
+    # stale-cache rebuild covered by the tests below.)
+    legacy_source = SimpleNamespace(
+        hdulist=["stand-in-for-a-huge-raw-hdulist"], target_ra=1.0, target_dec=2.0
+    )
     with open(source_pkl, "wb") as fh:
         pickle.dump(legacy_source, fh)
 
@@ -240,3 +244,75 @@ def test_tglc_quality_mask_without_flag_columns_keeps_everything():
 
     lc = lk.LightCurve(time=np.arange(3.0), flux=np.ones(3))
     assert tglc_quality_mask(lc, "hard").tolist() == [True, True, True]
+
+
+# --- stale cache without target coordinates (TIC 89071445 regression) --------
+
+
+def _write_cache(cache_dir, inputs, source, epsf_shape=None):
+    import pickle
+
+    slug = inputs["target_name"].replace(" ", "")
+    tag = f"s{inputs['sector']}_size{inputs['size']}"
+    os.makedirs(os.path.join(cache_dir, "source"), exist_ok=True)
+    os.makedirs(os.path.join(cache_dir, "epsf"), exist_ok=True)
+    with open(os.path.join(cache_dir, "source", f"source_{slug}_{tag}.pkl"), "wb") as fh:
+        pickle.dump(source, fh)
+    if epsf_shape is not None:
+        np.save(os.path.join(cache_dir, "epsf", f"epsf_{slug}_{tag}.npy"), np.zeros(epsf_shape))
+
+
+def _cached_source(with_coords, sector):
+    from types import SimpleNamespace
+
+    src = SimpleNamespace(
+        hdulist=None, sector=sector, time=np.arange(4.0), quality=np.zeros(4, dtype=int)
+    )
+    if with_coords:
+        src.target_ra, src.target_dec = 1.0, 2.0
+    return src
+
+
+@pytest.fixture
+def stub_pipeline(monkeypatch):
+    """Stub the network/fit steps; record whether Source_cut and the ePSF fit ran."""
+    calls = {"source_cut": 0, "epsf_fit": 0}
+
+    def fake_source_cut(*args, **kwargs):
+        calls["source_cut"] += 1
+        return _cached_source(with_coords=True, sector=kwargs.get("sector", 1))
+
+    def fake_fit(*args, **kwargs):
+        calls["epsf_fit"] += 1
+        raise RuntimeError("stub-epsf-fit")
+
+    # over_size=2 -> expected ePSF shape (len(time)=4, 2**2 + 3 bg dof) = (4, 7)
+    monkeypatch.setattr("quicklook.tglc.Source_cut", fake_source_cut)
+    monkeypatch.setattr("quicklook.tglc.get_psf", lambda source: (None, None, 2, None, None))
+    monkeypatch.setattr("quicklook.tglc._fit_epsf_series", fake_fit)
+    return calls
+
+
+def test_get_tglc_lc_rebuilds_cache_without_target_coords(tglc_inputs, tmp_path, stub_pipeline):
+    """A pre-target_ra cache must be rebuilt, not resolved by the cutout-centre
+    guess, and its ePSF (fit on the stale cutout) must be refit."""
+    _write_cache(str(tmp_path), tglc_inputs, _cached_source(False, 1), epsf_shape=(4, 7))
+    with pytest.raises(RuntimeError, match="stub-epsf-fit"):
+        get_tglc_lc(**tglc_inputs, cache_dir=str(tmp_path))
+    assert stub_pipeline == {"source_cut": 1, "epsf_fit": 1}
+
+
+def test_get_tglc_lc_reuses_cache_with_target_coords(tglc_inputs, tmp_path, stub_pipeline):
+    """A current cache is used as-is: no rebuild, and a matching ePSF is reused
+    (the run then proceeds past the ePSF step, so stop it at the next call)."""
+    _write_cache(str(tmp_path), tglc_inputs, _cached_source(True, 1), epsf_shape=(4, 7))
+    import quicklook.tglc as tglc_mod
+
+    def stop(*args, **kwargs):
+        raise RuntimeError("stub-after-epsf")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(tglc_mod, "find_target_index", stop)
+        with pytest.raises(RuntimeError, match="stub-after-epsf"):
+            get_tglc_lc(**tglc_inputs, cache_dir=str(tmp_path))
+    assert stub_pipeline == {"source_cut": 0, "epsf_fit": 0}

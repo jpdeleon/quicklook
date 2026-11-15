@@ -2145,6 +2145,14 @@ def tglc_quality_mask(lc, quality_bitmask="default"):
     return good & (np.asarray(lc["tglc_flags"]).astype(int) == 0)
 
 
+def _has_target_coords(source):
+    """True if ``source`` records where the requested target is on the sky."""
+    return (
+        getattr(source, "target_ra", None) is not None
+        and getattr(source, "target_dec", None) is not None
+    )
+
+
 def find_target_index(source):
     """Return the row of ``source.gaia`` that is the requested target.
 
@@ -2280,6 +2288,7 @@ def get_tglc_lc(
 
     # 1. Build (or load) the Source_cut object (downloads FFI cutout + Gaia).
     source = None
+    stale_cache = False
     if use_cache and exists(source_pkl) and os.path.getsize(source_pkl) > 0:
         try:
             with open(source_pkl, "rb") as fh:
@@ -2291,6 +2300,19 @@ def get_tglc_lc(
             source.hdulist = None
             if verbose:
                 logger.info(f"Loaded cached TGLC source from {source_pkl}")
+            if not _has_target_coords(source):
+                # Written before Source_cut stored the target position. The
+                # cutout-centre fallback in find_target_index() picks the wrong
+                # star whenever TESScut centres the cutout ~1 px off the target
+                # and a neighbour sits closer to the centre (TIC 89071445 s38:
+                # a Tmag 14.4 star 0.78 px from the Tmag 11.2 target). Rebuild,
+                # and refit the ePSF too since it was fit on the stale cutout.
+                logger.warning(
+                    f"Cached source {source_pkl} predates target coordinates; "
+                    "rebuilding so the requested target is extracted."
+                )
+                source = None
+                stale_cache = True
         except (
             pickle.UnpicklingError,
             EOFError,
@@ -2326,7 +2348,7 @@ def get_tglc_lc(
     epsf_npy = os.path.join(epsf_dir, f"epsf_{slug}_s{source.sector}_size{size}.npy")
     expected_shape = (len(source.time), over_size**2 + bg_dof)
     e_psf = None
-    if use_cache and exists(epsf_npy) and os.path.getsize(epsf_npy) > 0:
+    if use_cache and not stale_cache and exists(epsf_npy) and os.path.getsize(epsf_npy) > 0:
         try:
             cached = np.load(epsf_npy)
             if cached.shape == expected_shape:
