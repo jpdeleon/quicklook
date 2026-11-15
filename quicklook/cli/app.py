@@ -78,74 +78,19 @@ def _parse_sectors(value: str):
     return sorted(sectors)
 
 
-def _run_ql_for_sector(
-    name: str,
-    sector: int,
-    pipeline: str,
-    fluxtype: str,
-    quality_bitmask: str,
-    flatten_method: str,
-    gp_kernel: str,
-    pg_method: str,
-    edge_cutoff: float,
-    outdir: str,
-    exptime: Optional[int],
-    save: bool,
-    overwrite: bool,
-    verbose: bool,
-    mask_ephem: bool,
-    suffix: Optional[str],
-    period_limits: Optional[Tuple[float, float]],
-    tls_use_threads: int,
-    phase_xlim: Optional[float],
-    show_simbad: bool = False,
-    iterative_search: bool = False,
-    min_sde_iterative: float = 5.0,
-    max_planets: Optional[int] = None,
-    extend_period_ceiling: bool = True,
-    single_event_search: bool = False,
-    ttv_search: bool = False,
-):
+def _run_ql_for_sector(name: str, sector, pipeline: str, ql_kwargs: dict):
+    """Run one TessQuickLook for ``--each-sector`` / ``--each-pipeline``.
+
+    ``ql_kwargs`` is the same dict ``ql run`` uses for a single run, so every
+    option (``--custom-ephem``, ``--window-length``, ``--sigma-clip-*``, ...)
+    reaches each fanned-out run; only the target, sector and pipeline vary.
+    """
     import matplotlib.pyplot as pl
     from quicklook.tql import TessQuickLook
 
-    ql = TessQuickLook(
-        target_name=name,
-        sector=sector,
-        pipeline=pipeline,
-        exptime=exptime,
-        flux_type=fluxtype,
-        pg_method=pg_method,
-        custom_ephem=None,
-        mask_ephem=mask_ephem,
-        quality_bitmask=quality_bitmask,
-        flatten_method=flatten_method,
-        gp_kernel=gp_kernel,
-        gp_kernel_size=5,
-        window_length=None,
-        sigma_clip_raw=(10, 5),
-        sigma_clip_flat=None,
-        Porb_limits=period_limits,
-        edge_cutoff=edge_cutoff,
-        phase_xlim=phase_xlim,
-        iterative_search=iterative_search,
-        min_sde_iterative=min_sde_iterative,
-        max_planets=max_planets,
-        extend_period_ceiling=extend_period_ceiling,
-        single_event_search=single_event_search,
-        ttv_search=ttv_search,
-        archival_survey="dss1",
-        show_simbad=show_simbad,
-        savefig=save,
-        savetls=save,
-        outdir=outdir,
-        verbose=verbose,
-        overwrite=overwrite,
-        suffix=suffix,
-        tls_use_threads=tls_use_threads,
-    )
+    ql = TessQuickLook(target_name=name, sector=sector, pipeline=pipeline, **ql_kwargs)
     ql.plot_tql()
-    if not save:
+    if not ql_kwargs.get("savefig", False):
         pl.show()
     pl.close()
 
@@ -573,6 +518,43 @@ def run(
             err=True,
         )
 
+    # Everything except target/sector/pipeline. Built once and shared by the
+    # single run and the --each-sector / --each-pipeline fan-out, so an option
+    # cannot be honoured in one path and silently dropped in another.
+    ql_kwargs = dict(
+        exptime=exptime,
+        flux_type=fluxtype,
+        pg_method=pg_method,
+        custom_ephem=custom_ephem,
+        mask_ephem=mask_ephem,
+        quality_bitmask=quality_bitmask,
+        flatten_method=flatten_method,
+        gp_kernel=gp_kernel,
+        gp_kernel_size=gp_kernel_size,
+        window_length=window_length,
+        sigma_clip_raw=sigma_clip_raw,
+        sigma_clip_flat=sigma_clip_flat,
+        Porb_limits=period_limits,
+        use_star_priors=use_priors,
+        phase_xlim=phase_xlim,
+        edge_cutoff=edge_cutoff,
+        archival_survey=survey,
+        show_simbad=show_simbad,
+        savefig=save,
+        savetls=save,
+        outdir=outdir,
+        verbose=verbose,
+        overwrite=overwrite,
+        suffix=suffix,
+        tls_use_threads=tls_use_threads,
+        iterative_search=iterative,
+        min_sde_iterative=min_sde_iterative,
+        max_planets=max_planets,
+        extend_period_ceiling=extend_period_ceiling,
+        single_event_search=single_event_search,
+        ttv_search=ttv_search,
+    )
+
     if each_sector:
         sectors = get_available_sectors(target_name, pipeline=pipeline_lower)
         if not sectors:
@@ -586,33 +568,7 @@ def run(
         with ProcessPoolExecutor(max_workers=jobs) as executor:
             futures = {
                 executor.submit(
-                    _run_ql_for_sector,
-                    target_name,
-                    sector,
-                    pipeline_lower,
-                    fluxtype,
-                    quality_bitmask,
-                    flatten_method,
-                    gp_kernel,
-                    pg_method,
-                    edge_cutoff,
-                    outdir,
-                    exptime,
-                    save,
-                    overwrite,
-                    verbose,
-                    mask_ephem,
-                    suffix,
-                    period_limits,
-                    tls_use_threads,
-                    phase_xlim,
-                    show_simbad,
-                    iterative,
-                    min_sde_iterative,
-                    max_planets,
-                    extend_period_ceiling,
-                    single_event_search,
-                    ttv_search,
+                    _run_ql_for_sector, target_name, sector, pipeline_lower, ql_kwargs
                 ): sector
                 for sector in sectors
             }
@@ -645,35 +601,7 @@ def run(
         failed = 0
         with ProcessPoolExecutor(max_workers=jobs) as executor:
             futures = {
-                executor.submit(
-                    _run_ql_for_sector,
-                    target_name,
-                    -1,
-                    p,
-                    fluxtype,
-                    quality_bitmask,
-                    flatten_method,
-                    gp_kernel,
-                    pg_method,
-                    edge_cutoff,
-                    outdir,
-                    exptime,
-                    save,
-                    overwrite,
-                    verbose,
-                    mask_ephem,
-                    suffix,
-                    period_limits,
-                    tls_use_threads,
-                    phase_xlim,
-                    show_simbad,
-                    iterative,
-                    min_sde_iterative,
-                    max_planets,
-                    extend_period_ceiling,
-                    single_event_search,
-                    ttv_search,
-                ): p
+                executor.submit(_run_ql_for_sector, target_name, -1, p, ql_kwargs): p
                 for p in pipelines
             }
             for i, future in enumerate(as_completed(futures), 1):
@@ -691,40 +619,7 @@ def run(
         raise typer.Exit()
 
     ql = TessQuickLook(
-        target_name=target_name,
-        sector=sector_arg,
-        pipeline=pipeline_lower,
-        exptime=exptime,
-        flux_type=fluxtype,
-        pg_method=pg_method,
-        custom_ephem=custom_ephem,
-        mask_ephem=mask_ephem,
-        quality_bitmask=quality_bitmask,
-        flatten_method=flatten_method,
-        gp_kernel=gp_kernel,
-        gp_kernel_size=gp_kernel_size,
-        window_length=window_length,
-        sigma_clip_raw=sigma_clip_raw,
-        sigma_clip_flat=sigma_clip_flat,
-        Porb_limits=period_limits,
-        use_star_priors=use_priors,
-        phase_xlim=phase_xlim,
-        edge_cutoff=edge_cutoff,
-        archival_survey=survey,
-        show_simbad=show_simbad,
-        savefig=save,
-        savetls=save,
-        outdir=outdir,
-        verbose=verbose,
-        overwrite=overwrite,
-        suffix=suffix,
-        tls_use_threads=tls_use_threads,
-        iterative_search=iterative,
-        min_sde_iterative=min_sde_iterative,
-        max_planets=max_planets,
-        extend_period_ceiling=extend_period_ceiling,
-        single_event_search=single_event_search,
-        ttv_search=ttv_search,
+        target_name=target_name, sector=sector_arg, pipeline=pipeline_lower, **ql_kwargs
     )
     _ = ql.plot_tql()
     if not save:
