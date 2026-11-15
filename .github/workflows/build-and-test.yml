@@ -54,6 +54,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev,gui]"
 
+      - name: Compile TLS numba kernels once
+        # TLS >= 2.3 compiles its numba kernels on first use and caches them on
+        # disk (cache=True). Under -n auto several xdist workers otherwise
+        # compile and write that cache at the same time, and a worker loading a
+        # half-written entry segfaults inside the first TLS search
+        # (intermittent; seen on ubuntu/3.10). Populate the cache serially
+        # first so workers only load it. Older TLS has no warmup module.
+        run: |
+          python -c "
+          try:
+              from transitleastsquares.warmup import warmup
+          except ImportError:
+              print('TLS has no warmup module; skipping')
+          else:
+              warmup()
+          "
+
       - name: Run tests
         # --timeout converts a hung test (e.g. an unmocked network call) into a
         # failure with a traceback pinpointing the stall, instead of wedging the
