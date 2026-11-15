@@ -74,6 +74,12 @@ use_style("science")
 # Flatten methods handled by quicklook.notch_locor instead of wotan.
 NOTCH_LOCOR_METHODS = ("notch", "locor")
 
+# Minimum number of rotation cycles LOCoR's auto (GLS) period must fit in the
+# light-curve baseline; caps the GLS search at baseline / LOCOR_MIN_CYCLES.
+LOCOR_MIN_CYCLES = 3
+# A GLS peak within this fraction of that cap is treated as trend-dominated.
+LOCOR_CAP_EDGE_FRAC = 0.95
+
 __all__ = ["TessQuickLook"]
 
 
@@ -195,6 +201,18 @@ _TGLC_FLUX_COLUMNS = {"aperture": "cal_aper_flux", "psf": "cal_psf_flux"}
 
 def _has_finite_flux(lc) -> bool:
     return bool(np.isfinite(np.asarray(lc.flux.value, dtype=float)).any())
+
+
+def _gls_period(gls_obj) -> float:
+    """Best period (days) of a ``Gls`` object; raise if it is not usable.
+
+    ``Gls`` exposes its peak through ``best["P"]`` -- it has no ``.P``
+    attribute, so callers that used ``gls_obj.P`` always fell back.
+    """
+    period = float(gls_obj.best["P"])
+    if not np.isfinite(period) or period <= 0:
+        raise ValueError(f"GLS returned no usable period ({period})")
+    return period
 
 
 def _sort_by_time(lc):
@@ -399,10 +417,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             # update tmask
             self.tmask = self.get_transit_mask()
         self._check_cancel("before flattening light curve")
+        # flatten_raw_lc() tunes LOCoR's period, the rotation-aware window and
+        # spline max_splines via init_gls(), which searches Porb_min..Porb_max.
+        # Set them from the raw baseline first; Porb_max is refined below from
+        # the flattened baseline (edge_cutoff may trim it) for the TLS search.
+        self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
+        raw_time = self.raw_lc.time.value
+        self.Porb_max = (
+            default_period_ceiling(np.nanmax(raw_time) - np.nanmin(raw_time), extend_period_ceiling)
+            if Porb_limits is None
+            else Porb_limits[1]
+        )
         # self.flat_lc, self.trend_lc = self.raw_lc.flatten(return_trend=True)
         self.flat_lc, self.trend_lc = self.flatten_raw_lc()
         self._check_cancel("after flattening light curve")
-        self.Porb_min = 0.1 if Porb_limits is None else Porb_limits[0]
         flat_time = self.flat_lc.time.value
         self._flat_time_min = flat_time.min()
         self._flat_time_max = flat_time.max()
@@ -1709,7 +1737,11 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             logger.info(f"Using ExoFOP stellar priors for TLS: {pretty}")
         return kwargs
 
-    def init_gls(self):
+    def init_gls(self, period_max: float | None = None):
+        """GLS periodogram of the transit-masked raw light curve.
+
+        ``period_max`` caps the search (default ``Porb_max``).
+        """
         masked_lc = self.raw_lc[~self.tmask]
         if self.pipeline == "pathos":
             data = np.array(
@@ -1729,7 +1761,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         if self.verbose:
             msg = "Estimating rotation period using Generalized Lomb-Scargle (GLS) periodogram..."
             logger.info(msg)
-        return Gls(data, Pbeg=self.Porb_min, Pend=self.Porb_max, verbose=self.verbose)
+        pend = self.Porb_max if period_max is None else min(self.Porb_max, period_max)
+        return Gls(data, Pbeg=self.Porb_min, Pend=pend, verbose=self.verbose)
 
     def flatten_raw_lc(self):
         """
@@ -1752,8 +1785,18 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             # their window/period. Fall back to a sensible default instead.
             if self.flatten_method == "locor":
                 try:
-                    gls_obj = self.init_gls()
-                    self.window_length = float(gls_obj.P)
+                    # LOCoR combines neighbouring rotation cycles, so it needs
+                    # several of them: long-term trends otherwise win the GLS
+                    # (49-52 d for V1298 Tau / TOI-1227 over 2 sectors).
+                    t = self.raw_lc.time.value
+                    baseline = float(np.nanmax(t) - np.nanmin(t))
+                    p_cap = baseline / LOCOR_MIN_CYCLES
+                    period = _gls_period(self.init_gls(period_max=p_cap))
+                    if period >= LOCOR_CAP_EDGE_FRAC * p_cap:
+                        # Power still rising at the search edge: a trend, not
+                        # a rotation period (TOI-1227 over 2 sectors).
+                        raise ValueError(f"GLS peak {period:.2f} d is at the search cap")
+                    self.window_length = period
                 except Exception as exc:
                     self.window_length = 1.0
                     if self.verbose:
@@ -1827,7 +1870,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         ):
             try:
                 gls_obj = self.init_gls()
-                prot = float(gls_obj.P)
+                prot = _gls_period(gls_obj)
                 if prot <= 2.0:
                     self.window_length = 0.5
                 else:
@@ -1875,7 +1918,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             if self.flatten_method in ("rspline", "pspline", "spline"):
                 try:
                     gls_obj = self.init_gls()
-                    prot = float(gls_obj.P)
+                    prot = _gls_period(gls_obj)
                     if prot <= 2.0:
                         max_splines = 200
                     elif prot <= 10.0:
