@@ -140,8 +140,9 @@ ql run --name TOI-2180 --sectors 19,48 --exptime 120 --single-event-search --sav
 # transits); panels 7 and 8 become the aligned transits and the O-C diagram.
 ql run --name TOI-216 --sectors 1,2,3,4,5,6 --exptime 120 --ttv-search --save
 
-# Active star: time the transits of a known ephemeris on the raw flux
-# (also writes *_ttv.png and *_ttv_transits.png)
+# Active star: time the transits of a known ephemeris. --custom-ephem takes
+# priority over TLS, which on spotted stars locks onto the rotation period
+# (also writes *_ttv.png and *_ttv_transits.png from the raw flux)
 ql run --name TOI-6109 --sectors 18,58,85 --exptime 120 --ttv-search \
   --custom-ephem 2458798.0657 0.001 8.538878 0.00001 3.25 0.3 --save
 

@@ -44,6 +44,11 @@ MIN_EPHEM_PERIOD = 0.3  # days; TFOP fills missing values with 0.1
 TTV_PERIOD_MATCH_TOL = 0.01  # timed period vs catalogue period (relative)
 ROTATION_ALIAS_TOL = 0.03  # same tolerance as tql's rotation_alias_risk
 ROTATION_ALIAS_HARMONICS = (1, 2, 3, 1 / 2, 1 / 3)
+_TTV_SOURCE_LABELS = {
+    "tls": "TLS",
+    "chain": "chained single events",
+    "custom": "custom ephemeris",
+}
 _TTV_ARRAY_FIELDS = {
     "ttv_epochs": "epoch",
     "ttv_tcs": "tc",
@@ -77,13 +82,26 @@ class TTVMixin:
     # --- search -------------------------------------------------------------
 
     def run_ttv_search(self):
-        """Fit every transit of a periodic TLS signal; no-op otherwise.
+        """Fit every transit of the user's ephemeris, else of a periodic TLS signal.
 
-        Needs ``--ttv-search`` and a TLS detection that passes the same
-        periodic test as the single-event search (SDE >= 7, >= 3 transits).
+        Needs ``--ttv-search``. A ``--custom-ephem`` (not masked out with
+        ``--mask-ephem``) is timed whatever TLS found: on young, spotted stars TLS
+        locks onto the rotation period and would time starspots instead. Without
+        one, the TLS detection must pass the same periodic test as the
+        single-event search (SDE >= 7, >= 3 transits).
         """
         if not getattr(self, "ttv_search", False):
             return None
+        custom = self._custom_ephemeris()
+        if custom is not None:
+            period, t0, duration = custom
+            if self.verbose:
+                logger.info(
+                    f"TTV search: timing the custom ephemeris (P={period:.5f} d) "
+                    f"instead of the TLS signal (P={float(self.tls_results['period']):.5f} d)."
+                )
+            time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
+            return self._fit_and_store(time, flux, period, t0, duration, "custom")
         if not self._tls_is_periodic():
             if self.verbose:
                 logger.info("TTV search: TLS signal is not periodic; nothing to time.")
@@ -92,6 +110,26 @@ class TTVMixin:
         res = self.tls_results
         time, flux = self.flat_lc.time.value, self.flat_lc.flux.value
         return self._fit_and_store(time, flux, res["period"], res["T0"], res["duration"], "tls")
+
+    def _custom_ephemeris(self):
+        """(period, t0, duration) in days from ``--custom-ephem``, else None.
+
+        None when the ephemeris came from the catalogue, when ``--mask-ephem``
+        removed those transits, or when the period or duration is unusable.
+        """
+        if getattr(self, "ephem_source", None) != "custom" or getattr(self, "mask_ephem", False):
+            return None
+        period = getattr(self, "toi_period", None)
+        epoch = getattr(self, "toi_epoch", None)
+        dur = getattr(self, "toi_dur", None)
+        if period is None or epoch is None or dur is None:
+            return None
+        period, t0, duration = float(period[0]), float(epoch[0]), float(dur[0])
+        if not (np.isfinite(period) and period >= MIN_EPHEM_PERIOD and np.isfinite(t0)):
+            return None
+        if not (np.isfinite(duration) and duration > 0):
+            return None
+        return period, t0, duration
 
     def run_ttv_from_chain(self):
         """Chain three or more single events into a TTV-tolerant ephemeris.
@@ -420,7 +458,7 @@ class TTVMixin:
         stats = self.ttv_stats
         eph = stats.ephemeris
         rows = [
-            ("TTV source", "TLS" if self.ttv_source == "tls" else "chained single events"),
+            ("TTV source", _TTV_SOURCE_LABELS.get(self.ttv_source, self.ttv_source)),
             ("Mean period", f"{eph.period:.5f}" + r"$\pm$" + f"{eph.period_err:.5f} d"),
             ("Transits timed", f"{stats.n}"),
             ("TTV amplitude", f"{stats.amplitude * MINUTES_PER_DAY:.1f} min"),

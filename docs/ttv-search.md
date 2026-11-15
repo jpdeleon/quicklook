@@ -15,7 +15,11 @@ This is step 5 of [issue #42](https://github.com/jpdeleon/quicklook/issues/42).
 The search lives in `quicklook/ttv.py`, and `quicklook/ttv_pipeline.py`
 connects it to the pipeline:
 
-1. **Starting ephemeris.** By default this is the TLS period, T0 and duration.
+1. **Starting ephemeris.** A `--custom-ephem` comes first: its transits are
+   timed whatever TLS found, because on young, spotted stars TLS locks onto
+   the rotation period and the fits would time starspots. (`--mask-ephem` cuts
+   those transits out, so it disables this; a catalogue TFOP ephemeris does
+   not take over from TLS.) Otherwise it is the TLS period, T0 and duration.
    The TLS signal must count as periodic, as in the single-transit search
    (SDE ≥ 7 and at least 3 transits). Otherwise, if
    `--single-event-search` is also on, three or more single events are
@@ -111,8 +115,8 @@ transits on the **raw** (normalised) flux (`quicklook/ttv_local.py`):
 - Each transit is fitted with a trapezoid plus its own cubic baseline over
   ±0.3 d. The baseline is projected out of each window, which equals the joint
   least-squares fit.
-- The ephemeris is the timed TLS/chain one when at least 3 transits were
-  fitted. Otherwise it is the TOI ephemeris or `--custom-ephem` (skipped with
+- The ephemeris is the timed one (custom, TLS or chain) when at least 3
+  transits were fitted. Otherwise it is the TOI ephemeris or `--custom-ephem` (skipped with
   `--mask-ephem`, which cuts those transits out).
 - A grid over (duration, common offset) of all transits stacked checks the
   ephemeris and sets the duration.
