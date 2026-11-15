@@ -354,9 +354,11 @@ class SingleEventMixin:
     # --- figure ---------------------------------------------------------------
 
     def _time_panel_axes(self, ax) -> list:
-        """``[ax]``, or one axes per sector for mono/duo layouts with sector gaps."""
-        if self.event_class not in ("mono", "duo"):
-            return [ax]
+        """One axes per separate sector (gaps > ``SECTOR_GAP_DAYS``), else ``[ax]``.
+
+        Applies to every layout (periodic, TTV, mono, duo) so multi-sector
+        light curves never squeeze each sector into a sliver beside a long gap.
+        """
         return broken_time_axes(ax, self.flat_lc.time.value)
 
     def _se_light_curve(self):

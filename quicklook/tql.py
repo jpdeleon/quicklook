@@ -2528,6 +2528,34 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
                 logger.info(f"Saved: {cand_h5}")
             pl.close(fig2)
 
+    def _linear_transit_mask(self) -> np.ndarray:
+        """In-transit mask of ``flat_lc`` from the TLS linear ephemeris."""
+        return self.flat_lc.create_transit_mask(
+            transit_time=self.tls_results.T0,
+            period=self.tls_results.period,
+            duration=self.tls_results.duration,
+        )
+
+    def _plot_flat_panel(self, ax) -> list:
+        """Flattened light curve with in-transit points highlighted (periodic/TTV layout).
+
+        Broken into one sub-axes per separate sector; returns the axes used.
+        """
+        if self.has_ttv_layout:
+            # Transits at their individually fitted times, not the linear ephemeris.
+            in_transit = self.ttv_transit_mask(self.flat_lc)
+            transit_label = "transit (fitted times)"
+        else:
+            in_transit = self._linear_transit_mask()
+            transit_label = "transit"
+        panel = self._time_panel_axes(ax)
+        for sub in panel:
+            self.flat_lc.scatter(ax=sub, label="flat")
+            self.flat_lc[in_transit].scatter(ax=sub, color="r", label=transit_label)
+        finish_broken_axes(panel)
+        self._broken_panels = {**self._broken_panels, 3: panel}
+        return panel
+
     def plot_tql(self, return_fig_and_paths=False, **kwargs: dict) -> pl.Figure:
         """
         Plot a TQL report.
@@ -2549,7 +2577,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
 
         if self.verbose:
             logger.info("Plotting raw light curve...")
-        # Mono/duo layouts break the time axis between separate sectors.
+        # Break the time axis between separate sectors (every layout).
+        self._broken_panels = {}
         self._panel0_axes = self._time_panel_axes(axes.flatten()[0])
         label = f"baseline trend\nmethod={self.flatten_method}"
         if self.window_length_opt is None:
@@ -2684,19 +2713,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
 
             if self.verbose:
                 logger.info("Plotting flattened light curve...")
-            ax = axes.flatten()[3]
-            self.flat_lc.scatter(ax=ax, label="flat")
-            tmask2 = self.flat_lc.create_transit_mask(
-                transit_time=self.tls_results.T0,
-                period=self.tls_results.period,
-                duration=self.tls_results.duration,
-            )
-            if self.has_ttv_layout:
-                # Transits at their individually fitted times, not the linear ephemeris.
-                ttv_lc_mask = self.ttv_transit_mask(self.flat_lc)
-                self.flat_lc[ttv_lc_mask].scatter(ax=ax, color="r", label="transit (fitted times)")
-            else:
-                self.flat_lc[tmask2].scatter(ax=ax, color="r", label="transit")
+            self._plot_flat_panel(axes.flatten()[3])
+            tmask2 = self._linear_transit_mask()
 
         if self.verbose:
             logger.info("Plotting TPF...")
