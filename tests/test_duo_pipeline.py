@@ -136,3 +136,36 @@ def test_single_sector_mono_time_panels_are_not_broken():
     ql._plot_single_event_panels(axes.flatten())
     assert all(len(v) == 1 for v in ql._broken_panels.values())
     pl.close(fig)
+
+
+def test_periodic_flat_panel_is_broken_between_sectors():
+    # Not a mono/duo/TTV search: a plain periodic TLS layout still breaks.
+    ql = _ql(_two_sector_lc())
+    ql.ttv_stats = None
+    fig, axes = pl.subplots(3, 3)
+    flat = axes.flatten()
+    subs = ql._plot_flat_panel(flat[3])
+    assert len(subs) == 2
+    assert subs[0].get_xlim()[1] < 100 < subs[1].get_xlim()[0]
+    assert flat[3] not in fig.axes
+    assert ql._broken_panels[3] is subs
+    pl.close(fig)
+
+
+def test_periodic_raw_panel_is_broken_between_sectors():
+    ql = _ql(_two_sector_lc())
+    ql.event_class = "periodic"
+    fig, axes = pl.subplots(3, 3)
+    assert len(ql._time_panel_axes(axes.flatten()[0])) == 2
+    pl.close(fig)
+
+
+def test_single_sector_periodic_flat_panel_is_not_broken():
+    t = np.arange(0.0, 27.0, CADENCE)
+    lc = LightCurve(time=t, flux=np.ones_like(t), flux_err=np.full_like(t, 5e-4))
+    ql = _ql(lc)
+    ql.ttv_stats = None
+    fig, axes = pl.subplots(3, 3)
+    flat = axes.flatten()
+    assert ql._plot_flat_panel(flat[3]) == [flat[3]]
+    pl.close(fig)
