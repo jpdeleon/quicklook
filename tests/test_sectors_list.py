@@ -148,7 +148,8 @@ def test_get_lc_only_downloads_requested_sectors():
 
     class _LC:
         meta = {"AUTHOR": "QLP"}
-        time = type("T", (), {"jd": np.arange(0, 1, 200 / 86400)})()
+        _t = np.arange(0, 1, 200 / 86400)
+        time = type("T", (), {"jd": _t, "value": _t})()  # sorted, like a real stitch
 
         def select_flux(self, *_):
             return self

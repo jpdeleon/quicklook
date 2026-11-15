@@ -197,6 +197,23 @@ def _has_finite_flux(lc) -> bool:
     return bool(np.isfinite(np.asarray(lc.flux.value, dtype=float)).any())
 
 
+def _sort_by_time(lc):
+    """Return ``lc`` in time order.
+
+    ``LightCurveCollection.stitch`` concatenates in search-result order, and
+    MAST does not always return sectors in ascending order (TOI-1227:
+    sector 100 before 99). The stitched light curve then jumps back in time,
+    which breaks code that assumes sorted times (``np.searchsorted`` in the
+    TTV and single-event fits, lightkurve's default periodogram grid).
+    """
+    time = np.asarray(lc.time.value, dtype=float)
+    order = np.argsort(time, kind="stable")
+    if np.all(order == np.arange(order.size)):
+        return lc
+    logger.info("Stitched light curve was out of time order; sorting by time.")
+    return lc[order]
+
+
 def _select_tglc_flux(lc, flux_type):
     """Pick the TGLC HLSP flux column; fall back to aperture if it is all NaN.
 
@@ -927,7 +944,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             lcs = lk.LightCurveCollection(
                 [_apply_tglc_hlsp_mask(lc, self.quality_bitmask) for lc in lcs]
             )
-        return lcs.stitch()
+        return _sort_by_time(lcs.stitch())
 
     def _download_with_retry(self, download_callable, max_retries=1):
         """Run a lightkurve download; if it fails with a "may be corrupt"
