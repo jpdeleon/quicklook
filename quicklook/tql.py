@@ -80,6 +80,12 @@ LOCOR_MIN_CYCLES = 3
 # A GLS peak within this fraction of that cap is treated as trend-dominated.
 LOCOR_CAP_EDGE_FRAC = 0.95
 
+# Largest fraction of finite cadences allowed to be <= 0 before detrending.
+# wotan treats non-positive flux as masked; a window that is entirely
+# non-positive makes its biweight loop run forever (NaN centre under numba
+# fastmath). A few negative outliers are harmless, a zero-centred curve is not.
+MAX_NONPOSITIVE_FLUX_FRAC = 0.01
+
 __all__ = ["TessQuickLook"]
 
 
@@ -213,6 +219,31 @@ def _gls_period(gls_obj) -> float:
     if not np.isfinite(period) or period <= 0:
         raise ValueError(f"GLS returned no usable period ({period})")
     return period
+
+
+def _check_positive_flux(flux) -> None:
+    """Raise ValueError unless ``flux`` is positive enough to detrend.
+
+    Detrending divides by a positive trend, and wotan silently drops
+    non-positive cadences; a zero-centred or negative light curve (e.g. some
+    TASOC products) can hang its biweight estimator indefinitely.
+    """
+    f = np.asarray(flux, dtype=float)
+    f = f[np.isfinite(f)]
+    if f.size == 0:
+        raise ValueError("Raw light curve has no finite flux values to detrend.")
+    median = float(np.median(f))
+    if median <= 0:
+        raise ValueError(
+            f"Raw flux looks zero-centred or negative (median={median:.3g}); "
+            "detrending needs positive, normalised flux."
+        )
+    frac = float(np.mean(f <= 0))
+    if frac > MAX_NONPOSITIVE_FLUX_FRAC:
+        raise ValueError(
+            f"{frac:.1%} of raw flux values are non-positive "
+            f"(limit {MAX_NONPOSITIVE_FLUX_FRAC:.0%}); detrending needs positive flux."
+        )
 
 
 def _sort_by_time(lc):
@@ -1777,6 +1808,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             The trend light curve.
 
         """
+        _check_positive_flux(self.raw_lc.flux.value)
         if self.verbose:
             logger.info(f"Using {self.flatten_method} method to flatten raw lc.")
         if float(self.window_length) == 0.0 and self.flatten_method in NOTCH_LOCOR_METHODS:
