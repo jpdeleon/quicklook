@@ -180,6 +180,19 @@ def _refine(t, f, tc_pred, tc0, duration0, coef0, delta, sigma):
     return sol.x, err
 
 
+def _usable_tc_err(tc_err: float, delta: float) -> bool:
+    """A timing error that actually constrains the mid-time.
+
+    A (near-)singular fit covariance, e.g. long cadence with no point in
+    ingress or egress, gives a variance of 0 after clipping or a huge one.
+    A zero error takes infinite weight in the O-C fit and turns the linear
+    ephemeris into NaN for the whole target (HIP 67522, Kepler-616, KELT-9
+    in the young-host run); an error wider than the search window carries
+    no timing information.
+    """
+    return bool(np.isfinite(tc_err) and 0 < tc_err <= delta)
+
+
 def fit_transit_time(
     time, flux, tc_pred: float, duration: float, delta: float, epoch: int = 0
 ) -> TransitTime | None:
@@ -209,7 +222,7 @@ def fit_transit_time(
     tc_err, depth_err = float(err[0]), float(err[2])
     snr = depth / depth_err if depth_err > 0 else 0.0
     pinned = abs(tc - tc_pred) > _EDGE_FRACTION * delta
-    if snr < TTV_SNR_MIN or pinned or not np.isfinite(tc_err):
+    if snr < TTV_SNR_MIN or pinned or not _usable_tc_err(tc_err, delta):
         return None
     if not _covered(t, tc, dur, cadence):
         return None

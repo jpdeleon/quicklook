@@ -28,7 +28,10 @@ connects it to the pipeline:
    timing error comes from the Jacobian, scaled up by the reduced χ² when the
    local scatter exceeds white noise. An epoch is skipped if it has less than
    half the expected cadences in transit or within one duration on either
-   side, if its depth SNR is below 3, or if the fit is pinned at ±δ.
+   side, if its depth SNR is below 3, if the fit is pinned at ±δ, or if its
+   timing error is not positive or exceeds δ. A singular fit covariance
+   (for example long cadence with no point in ingress or egress) gives such
+   errors, and a zero error would take infinite weight in the O−C fit.
    **Red-noise inflation.** These errors assume white noise. Correlated noise
    on ingress timescales, which young and spotted stars have plenty of, makes
    them too small. `red_noise_beta` uses the time-averaging method
