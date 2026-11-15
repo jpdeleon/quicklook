@@ -8,7 +8,9 @@ each transit is fitted on its own:
 1. ``fit_transit_times``: around each predicted time ``t0 + n*P`` fit a
    trapezoid with free mid-time (within +-``delta``), depth and duration on a
    local linear baseline. Epochs without enough data on the transit and on
-   both sides of it are skipped.
+   both sides of it are skipped. ``red_noise_beta`` then measures how much
+   correlated noise inflates the scatter on ingress timescales, and
+   ``inflate_errors`` scales the white-noise timing errors by it.
 2. ``ttv_statistics``: weighted linear ephemeris through the fitted times,
    O-C, and the chi-square p-value of the linear model. A small p-value means
    the times are not consistent with a constant period.
@@ -48,6 +50,14 @@ _GRID_STEPS_PER_DURATION = 30
 CYCLE_GAP_MIN = 30.0  # days between fitted transits that make the cycle count uncertain
 CYCLE_DCHI2_MAX = 9.0  # alternative cycle counts within this chi2 of the best are kept
 CYCLE_MAX_GAPS = 4  # 3**4 = 81 combinations at most
+# Red-noise ("time-averaging") inflation of the timing errors (Pont et al. 2006;
+# Winn et al. 2008): bin the out-of-transit residuals on the ingress-to-half-
+# duration timescales that set a mid-time and compare the scatter of the bin
+# means with the white-noise expectation.
+BETA_N_TIMESCALES = 5
+BETA_MIN_BINS = 10  # per timescale; fewer and that timescale is skipped
+BETA_MASK_DURATIONS = 1.0  # out of transit = beyond this many durations from each mid-time
+BETA_MAX = 10.0
 CHAIN_MIN_EVENTS = 3
 CHAIN_TOL_DURATIONS = 1.0  # each event within this many durations of t0 + n*P
 CHAIN_P_MIN = 0.5  # days
@@ -204,6 +214,58 @@ def fit_transit_time(
     if not _covered(t, tc, dur, cadence):
         return None
     return TransitTime(int(epoch), float(tc), tc_err, float(dur), float(depth), float(snr))
+
+
+def _binned_beta(t, f, sigma1, width) -> float:
+    """sigma of ``width``-day bin means over its white-noise expectation, or NaN."""
+    edges = np.floor((t - t[0]) / width)
+    _, inverse, counts = np.unique(edges, return_inverse=True, return_counts=True)
+    means = np.bincount(inverse, weights=f) / counts
+    n_med = float(np.median(counts))
+    full = counts >= 0.5 * n_med  # drop bins truncated by gaps
+    m = int(full.sum())
+    if m < BETA_MIN_BINS or n_med < 2:
+        return np.nan
+    expected = sigma1 / np.sqrt(n_med) * np.sqrt(m / (m - 1))
+    return float(np.std(means[full]) / expected)
+
+
+def red_noise_beta(time, flux, period: float, t0: float, duration: float) -> float:
+    """Time-averaging factor (>= 1) by which white-noise timing errors are too small.
+
+    Uses the out-of-transit residuals of the flattened light curve. Returns 1
+    when there are too few cadences to measure it.
+    """
+    t, f = np.asarray(time, dtype=float), np.asarray(flux, dtype=float)
+    ok = np.isfinite(t) & np.isfinite(f)
+    t, f = t[ok], f[ok]
+    if t.size < 10 or not (period > 0 and duration > 0):
+        return 1.0
+    order = np.argsort(t)
+    t, f = t[order], f[order]
+    phase = (t - t0 + 0.5 * period) % period - 0.5 * period
+    out = np.abs(phase) > BETA_MASK_DURATIONS * duration
+    t, f = t[out], f[out] - np.median(f[out])
+    if t.size < 10:
+        return 1.0
+    sigma1 = float(1.4826 * np.median(np.abs(f)))
+    if sigma1 <= 0:
+        return 1.0
+    cadence = _cadence(t)
+    widths = np.linspace(INGRESS_FRACTION * duration, 0.5 * duration, BETA_N_TIMESCALES)
+    betas = [_binned_beta(t, f, sigma1, w) for w in widths if w >= 2 * cadence]
+    betas = [b for b in betas if np.isfinite(b)]
+    if not betas:
+        return 1.0
+    return float(np.clip(np.median(betas), 1.0, BETA_MAX))
+
+
+def inflate_errors(times, beta: float) -> tuple[TransitTime, ...]:
+    """Copies of ``times`` with ``tc_err`` multiplied by ``beta``."""
+    return tuple(
+        TransitTime(tt.epoch, tt.tc, tt.tc_err * beta, tt.duration, tt.depth, tt.snr)
+        for tt in times
+    )
 
 
 def default_delta(period: float, duration: float) -> float:

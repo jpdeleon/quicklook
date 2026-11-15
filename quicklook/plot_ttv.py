@@ -53,8 +53,12 @@ def plot_aligned_transits(time, flux, times, ax=None):
     return ax
 
 
-def plot_oc(stats, ax=None, n_alternatives: int = 0):
-    """O-C diagram (minutes) against the best linear ephemeris."""
+def plot_oc(stats, ax=None, n_alternatives: int = 0, verdict: str | None = None):
+    """O-C diagram (minutes) against the best linear ephemeris.
+
+    ``verdict`` overrides the title label (e.g. the vetted verdict); by default
+    it follows ``stats.detected``.
+    """
     ax = pl.gca() if ax is None else ax
     if stats is None or stats.ephemeris is None:
         ax.text(
@@ -67,10 +71,11 @@ def plot_oc(stats, ax=None, n_alternatives: int = 0):
         )
         return ax
     oc, err = stats.oc * MINUTES_PER_DAY, stats.oc_err * MINUTES_PER_DAY
-    color = "C3" if stats.detected else "k"
+    if verdict is None:
+        verdict = "TTVs detected" if stats.detected else "linear ephemeris OK"
+    color = "C3" if verdict == "TTVs detected" else "k"
     ax.errorbar(stats.epochs, oc, yerr=err, fmt="o", color=color, ms=4, capsize=2)
     ax.axhline(0, color="0.5", ls="--", lw=1)
-    verdict = "TTVs detected" if stats.detected else "linear ephemeris OK"
     title = (
         f"O$-$C: amp={stats.amplitude * MINUTES_PER_DAY:.1f} min, p={stats.pvalue:.1e} ({verdict})"
     )
