@@ -205,8 +205,9 @@ overflow in its TGLC reader (see `LIGHTKURVE_TGLC_BUG_REPORT.txt`).
 (`quicklook.tglc.get_tglc_lc`) reproduces the TGLC HLSP light curve hosted at
 MAST (downloaded with `lightkurve`). It matches the two light curves cadence by
 cadence, compares `cal_aper_flux`, `cal_psf_flux`, `aperture_flux` and
-`psf_flux`, and exits non-zero if the calibrated fluxes disagree (Pearson
-r < 0.9 or robust residual > 0.5x the MAST point-to-point scatter):
+`psf_flux`, and exits with status 3 if the calibrated fluxes disagree (Pearson
+r < 0.9 or robust residual > 0.5x the MAST point-to-point scatter). A crash
+exits 1, so batch runs can separate disagreements from failures:
 
 ```bash
 uv run scripts/benchmark_tglc.py                         # defaults: TOI-270 s3, TOI-519 s7-8, TOI-674 s9-10
