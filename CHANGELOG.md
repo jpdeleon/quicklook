@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.1](https://github.com/jpdeleon/quicklook/compare/v1.13.0...v1.13.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* exit 3 when the TGLC benchmark disagrees with MAST, keep 1 for crashes ([2f17435](https://github.com/jpdeleon/quicklook/commit/2f17435a9e1440a7539544b1467e83136a78a1fd))
+* exit 3 when the TGLC benchmark disagrees with MAST, keep 1 for crashes ([eed08ef](https://github.com/jpdeleon/quicklook/commit/eed08ef0131d107d9d48ed31fcb25a79abe24cb6))
+
 ## [1.13.0](https://github.com/jpdeleon/quicklook/compare/v1.12.0...v1.13.0) (2026-11-15)
 
 
