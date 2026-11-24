@@ -25,7 +25,7 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 3. Optionally toggle **Show SIMBAD** to overlay nearby non-stellar SIMBAD objects on the archival image (on by default in the GUI)
    - Under **Period Search**, tick **Single-transit search** to also look for individual transits; see [Single-transit search](single-transit.md). The TLS summary page then shows each target's `Class`, `N_ev`, `P_min` and `N_alias` (duotransit aliases)
    - Tick **TTV search** to fit every transit separately and test the O−C for transit-timing variations; see [TTV search](ttv-search.md). The TLS summary page then shows `TTV [min]` and `p_TTV`
-   - Tick **Precession search** (with Sector = all, or a sector list) to fit the transit shape per sector and test for a drift in the impact parameter; see [Precession search](precession-search.md). The TLS summary page then shows `db/dt [/yr]` (red for a precession candidate; hover for significance and flags)
+   - Tick **Precession search** (with Sector = all, or a sector list) to fit the transit shape per sector and test for a drift in the impact parameter; see [Precession search](precession-search.md). The mode selector next to it chooses **Planet**, **EB** (inner-binary inclination of an eclipsing binary; give the binary period and primary-eclipse T0 as a custom ephemeris) or **Auto** (EB when SIMBAD lists an eclipsing binary). The TLS summary page then shows `db/dt [/yr]` (red for a precession candidate; hover for significance and flags)
 
    ![Period Search options](img/ql-gui-period-search.png)
 4. Click **Run QuickLook**

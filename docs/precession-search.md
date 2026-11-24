@@ -18,6 +18,12 @@ multi-sector light curve (`--sector all` or `--sectors ...`; quicklook already
 requires a single `--exptime` there, so cadences are not mixed) and either a
 periodic TLS signal (SDE >= 7, >= 3 transits) or a `--custom-ephem`.
 
+`--precession-mode` picks the branch: `planet` (fit `b` per sector, below),
+`eb` (fit the inner-binary inclination of an eclipsing binary; see
+[Eclipsing binaries](#eclipsing-binaries)) or `auto` (the default: `eb` when
+SIMBAD lists the target as an eclipsing binary, else `planet`). The GUI has
+the same choice next to the **Precession search** checkbox.
+
 ## Method
 
 1. **Sector windows.** Sector time ranges and the SPOC `CROWDSAP`/`FLFRCSAP`
@@ -76,6 +82,117 @@ A **precession candidate** needs all of:
   `precession_a_rs`, `precession_a_rs_prior`, and per-sector arrays
   `precession_{sectors,t_mid,b,b_err,rp_rs,rp_rs_err,depth,depth_err,t14,t14_err,dt0,cadence,crowdsap,flfrcsap,corr_b_rp}`.
 
+## Eclipsing binaries
+
+In a hierarchical triple the third star makes the inner binary's orbit
+precess, so its inclination `i` can drift by degrees per year and the eclipses
+deepen or fade (V907 Sco, Zasche et al. 2023). `--precession-mode eb` fits `i`
+in each sector.
+
+```bash
+ql run --name <EB> --sector all --exptime 120 --precession-search --precession-mode eb \
+  --custom-ephem <T0> <T0err> <P> <Perr> <T14 [h]> <T14err> --save
+```
+
+Give the **binary** period with `T0` at the deeper (primary) eclipse. For
+near-equal eclipses TLS usually finds `P/2`, which folds both eclipses
+together, so pass `--custom-ephem` in that case.
+
+**Model.** Two spherical, limb-darkened stars on a circular orbit. Each
+eclipse is a `batman` occultation of one star by an opaque disc (exact for
+any radius ratio, including an occulter larger than the star), diluted by the
+other star's light (`L = J k²`) and an optional fixed third light. Ellipsoidal
+variation and reflection are left out; the flattened light curve has mostly
+removed them for detached systems. (`ellc` has no wheels and needs a Fortran
+build; PHOEBE takes seconds per model, too slow for a joint least-squares fit.)
+
+- **Shared:** `(R1+R2)/a`, `k = R2/R1`, the surface-brightness ratio `J`, and
+  the secondary-eclipse offset from phase 0.5 (about `(2P/π) e cos ω`).
+- **Per sector:** `i`, a mid-time offset and a baseline. The radii are shared,
+  so any change in eclipse depth or duration has to come from `i`.
+- Windows of 1.5 T14 around both eclipses are kept per sector. A sector
+  without secondary-eclipse coverage still counts; `J` is then less constrained.
+
+**Trend test.** The same static/linear/quadratic BIC comparison as the planet
+branch, on `i(t)` with the joint covariance. Also reported:
+`b = cos(i)/(R1/a)` and `db/dt = -(sin i/(R1/a)) di/dt`, so the GUI `db/dt`
+column covers both branches (the hover gives `di/dt`).
+
+**Model-free depth check.** In each sector the primary depth is measured from
+the data alone: the out-of-eclipse median minus the mean within 0.1 T14 of
+mid-eclipse. As `i` moves toward 90° the eclipse deepens, so this depth must
+trend with the same sign as `di/dt`.
+
+A **precession candidate** needs `|di/dt| >= 3σ`, `ΔBIC >= 2` and none of the
+blocking flags:
+
+| Flag | Blocks | Meaning |
+|------|:------:|---------|
+| `short_baseline` | yes | sectors span < 1 yr |
+| `i_at_boundary` | yes | some sector's `i` is within 0.1° of 90°, where the covariance errors mean nothing |
+| `depth_sign_mismatch` | yes | measured depth trend opposite to `di/dt` at >= 2σ |
+| `dilution_mimics_depth` | yes | `contamination_varies` and the relative `CROWDSAP` spread is at least half the relative depth change |
+| `contamination_varies` | no | `CROWDSAP` range across sectors > 0.01 |
+| `mixed_cadence`, `t0_offset`, `nonlinear` | no | as in the planet branch |
+| `no_secondary` | no | no sector covers a secondary eclipse: `J` is set only through the dilution |
+| `eccentric` | no | the secondary eclipse is > 3σ off phase 0.5 |
+
+**Precession period.** The inner orbit normal precesses on a cone of
+half-angle at most the mutual inclination `J` about the total angular
+momentum, so `|di/dt| <= (2π/P_ν) sin J / sin i`. A measured `di/dt` alone
+therefore gives an upper limit, `P_ν <= 2π / (sin i |di/dt|)`, reported as
+`max_nodal_period_yr` when the trend is detected. With the outer orbit and
+masses, `nodal_precession_period` gives `P_ν` from the quadrupole formula
+(Söderhjelm 1975; Zasche et al. 2023 eqs. 2-3). For V907 Sco
+(P1 = 3.7762 d, P2 = 142.01 d, e2 = 0.467, 2.56 + 2.74 M☉, m3 = 1.06 M☉,
+J = 26.2°) it gives 63.7 yr against the published 63.5 (+3.3/-2.6) yr.
+
+**Validation: V907 Sco (real data).** V907 Sco has only FFI light curves,
+at a different cadence in each sector (S13: 30 min, S39: 10 min, S66: 200 s),
+so `ql run --sector all` (one `--exptime`) cannot stitch them;
+`scripts/validate_precession_v907sco.py` downloads the TESS-SPOC light curves,
+flattens each sector with both eclipses masked and calls
+`search_eb_precession` with the Zasche et al. ephemeris.
+
+| Sector (year) | this branch: `i` | depth | Zasche et al. 2023: `i1` |
+|---|---|---|---|
+| 13 (2019) | 74.50 ± 0.05° | 1.6 ppt | 73.37 ± 0.25° ("very subtle dip") |
+| 39 (2021) | 78.03 ± 0.04° | 55 ppt | 76.57 / 76.61 ± 0.02° |
+| 66 (2023) | 81.64 ± 0.06° | 148 ppt | (after the paper; FRAM 2022: 78.55°) |
+
+`di/dt = 1.80 ± 0.02 °/yr` (candidate), `P_ν <= 204 yr` (published 63.5 yr).
+Between S13 and S39 the rate is 1.84 °/yr against 1.68 ± 0.13 °/yr from the
+published inclinations. The absolute `i` is about 1.2° higher than published:
+in partial eclipses `k` is poorly constrained (fitted 1.85; the paper's radii
+give 1.06) and moves all sectors together, while the rate is stable (1.86
+°/yr with the paper's 5.9% third light). The formal errors come from the
+Jacobian and do not include this model systematic; treat them as lower limits.
+The fitted secondary offset (−19.9 min, flagged `eccentric`) has the sign and
+size that the published `e cos ω` predicts (−15 min).
+
+![V907 Sco EB precession figure](img/precession-v907sco.png)
+
+**Outputs.** The log line gives `di/dt` and the period limit.
+`*_precession.png` shows `i` (with the trend fits), T14 and the measured
+primary depth (open squares: model depth). `*_tls.h5` has `precession_mode =
+"eb"`, `precession_{di_dt,db_dt,ddepth_dt}` (+`_err`),
+`precession_significance`, `precession_delta_bic`, `precession_baseline_yr`,
+`precession_max_nodal_period_yr`, the binary
+`precession_eb_{r_sum,k,sb_ratio,dt_sec}` (+`_err`) and
+`precession_eb_third_light`, and per-sector arrays
+`precession_{sectors,t_mid,inc,inc_err,b,b_err,depth,depth_err,depth_data,depth_data_err,t14,t14_err,dt0,cadence,crowdsap,flfrcsap,has_secondary}`.
+
+```python
+from quicklook.precession_eb import (
+    search_eb_precession, nodal_precession_period, max_inclination_rate,
+)
+
+result = search_eb_precession(time, flux, flux_err, spans, period, t0, duration,
+                              third_light=0.0)
+result.di_dt, result.di_dt_err, result.is_candidate, result.max_nodal_period_yr
+p_nu = nodal_precession_period(p_inner, p_outer, m1a, m1b, m_third, mutual_inc_deg, e_outer)
+```
+
 ## Python API
 
 ```python
@@ -108,11 +225,12 @@ rate ≤ 5% over 20 noise realisations (`tests/test_precession.py`).
 
 ## Not yet implemented
 
-- Eclipsing-binary branch (`ellc`/PHOEBE with per-sector `i1`, triple-star
-  precession period).
+- EB branch: eccentric-orbit eclipse shapes (only the secondary offset is
+  fitted), ellipsoidal/reflection terms, a fitted third light, and a CLI option
+  for the triple's outer orbit (use `nodal_precession_period` from Python).
 - MCMC posteriors, LDTk limb-darkening priors, SAP vs PDCSAP comparison,
   half-sector splits.
-- Regression runs against TOI-1518 b and V907 Sco, and an automated TOI-1355 b
+- A regression run against TOI-1518 b, and an automated TOI-1355 b
   regression test (needs network).
 
 ## References
@@ -120,5 +238,6 @@ rate ≤ 5% over 20 noise realisations (`tests/test_precession.py`).
 - Watanabe et al. (2026), TOI-1355 b, arXiv:2608.17387
 - Zasche et al. (2023), V907 Sco, arXiv:2302.04613
 - Watanabe, Narita & Hori (2024), TOI-1518 b, PASJ, doi:10.1093/pasj/psae019
+- Söderhjelm (1975), A&A 42, 229 (quadrupole nodal precession)
 - Szabó et al. (2012), KOI-13, doi:10.1111/j.1745-3933.2012.01219.x
 - Winn (2010), transit duration, arXiv:1001.2010

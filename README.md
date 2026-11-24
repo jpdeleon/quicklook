@@ -19,7 +19,7 @@ Although `quicklook` is optimized to find transiting exoplanets, it can also det
 - **Transit detection & vetting** -- Transit Least Squares (TLS) periodogram with advanced vetting flags (depth variance ratio, duration consistency, secondary eclipse SDE, and iterative multi-planet search)
 - **Single-transit search** -- optional search for individual transits that TLS cannot find, with a red-noise-aware box search, a BIC test against step/ramp systematics, its own wider detrending window that is re-fitted with detected events masked, a period lower limit, duotransit pairing with ranked period aliases, and a `none`/`mono`/`duo`/`periodic` classification ([docs](docs/single-transit.md))
 - **TTV search** -- optional per-transit timing fits (free mid-time, depth and duration), an O−C diagram with a robust χ² test against a linear ephemeris, masking at the fitted times in the iterative search, red-noise (β) inflation of the timing errors, vetting against catalogue periods and the stellar rotation period, cycle-count alternatives across sector gaps, chaining of three or more single events, and diagnostic figures (`*_ttv.png`, `*_ttv_transits.png`) from local-baseline timing on the raw flux with injection-calibrated errors, which still work on spotted young stars where TLS fails ([docs](docs/ttv-search.md))
-- **Precession search** -- optional per-sector transit-shape fits (joint `batman` fit with shared a/Rs and limb darkening, free b, Rp/Rs, mid-time and baseline per sector), static/linear/quadratic b(t) models compared by BIC, a candidate test (|db/dt| >= 3σ, ΔBIC >= 2, T14 trend opposite to b), flags for dilution changes (CROWDSAP), mixed cadence, per-sector T0 shifts, the b–Rp/Rs grazing degeneracy (blocking when Rp/Rs also trends) and short baselines, derived di/dt and years until the transit disappears, and a `*_precession.png` figure ([docs](docs/precession-search.md))
+- **Precession search** -- optional per-sector transit-shape fits (joint `batman` fit with shared a/Rs and limb darkening, free b, Rp/Rs, mid-time and baseline per sector), static/linear/quadratic b(t) models compared by BIC, a candidate test (|db/dt| >= 3σ, ΔBIC >= 2, T14 trend opposite to b), flags for dilution changes (CROWDSAP), mixed cadence, per-sector T0 shifts, the b–Rp/Rs grazing degeneracy (blocking when Rp/Rs also trends) and short baselines, derived di/dt and years until the transit disappears, and a `*_precession.png` figure. An eclipsing-binary branch (`--precession-mode eb`, or auto from SIMBAD) fits the inner-binary inclination per sector with a two-star eclipse model, checks it against the measured depth trend, and gives an upper limit on the triple's nodal precession period ([docs](docs/precession-search.md))
 - **Broken time axes** -- in every layout (periodic, TTV, mono, duo), light-curve panels of multi-sector data are split at gaps longer than 10 d into one equal-width sub-axes per sector, so each sector stays readable
 - **Neighbor check** -- Gaia source overlay on cached archival sky images, with optional nearby SIMBAD object labels
 - **Batch processing** -- `--each-sector` mode, GNU parallel support, and candidate ranking tools
@@ -152,7 +152,11 @@ ql run --name TOI-6109 --sectors 18,58,85 --exptime 120 --ttv-search \
 # ExoFOP R*, M* (when available) constrain a/Rs, which matters at moderate b.
 pip install 'quicklook-package[precession]'
 ql run --name TOI-1355 --sector all --exptime 120 --precession-search --save
-# See docs/precession-search.md for the TOI-1355 example and validation.
+# Eclipsing binary in a triple: fit the inner inclination per sector
+# (give the binary period with T0 at the primary eclipse).
+ql run --name <EB> --sector all --exptime 120 --precession-search --precession-mode eb \
+  --custom-ephem <T0> <T0err> <P> <Perr> <T14 [h]> <T14err> --save
+# See docs/precession-search.md for the TOI-1355 and V907 Sco examples and validation.
 
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save
