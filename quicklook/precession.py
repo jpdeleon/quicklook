@@ -113,6 +113,7 @@ class SectorTransitFit:
     dt0: float  # mid-time offset from the ephemeris, days
     dt0_err: float
     corr_b_rp: float
+    baseline: float = 1.0  # multiplicative out-of-transit flux level
 
 
 @dataclass(frozen=True)
@@ -458,6 +459,7 @@ def _joint_transit_fit(sectors, period, t0, duration, limb_darkening, a_rs_prior
                 dt0=float(dt0),
                 dt0_err=float(err[i_dt0]),
                 corr_b_rp=corr,
+                baseline=float(res.x[i_b + 1]),
             )
         )
     return tuple(fits), float(res.x[0]), float(err[0]), cov[3::4, 3::4]

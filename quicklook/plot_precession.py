@@ -173,7 +173,7 @@ def plot_sector_folds(
         data = sectors[fit.sector]
         t0_eff = t0 + fit.dt0
         ph = ((data.time - t0_eff + 0.5 * period) % period - 0.5 * period) * 24.0
-        norm = data.flux / np.nanmedian(data.flux[np.abs(ph) > 0.5 * duration * 24.0])
+        norm = data.flux / fit.baseline
         ax.plot(ph, norm, ".", ms=2, color="0.75", rasterized=True)
         n_bins = max(int(np.sqrt(ph.size)), FOLD_BIN_POINTS)
         bx, by = _binned(ph, norm, n_bins)
