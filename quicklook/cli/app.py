@@ -36,6 +36,7 @@ _FLATTEN_CHOICES = {
 }
 _GP_KERNEL_CHOICES = {"periodic_auto", "periodic", "squared_exp"}
 _PG_CHOICES = {"gls", "ls", "bls"}
+_PRECESSION_MODE_CHOICES = {"auto", "planet", "eb"}
 
 
 def _validate_choice(value: str, choices: set[str], name: str) -> str:
@@ -420,6 +421,13 @@ def run(
         "drift in the impact parameter (nodal precession); needs >=2 stitched sectors "
         "(--sector all) spanning >=1 yr",
     ),
+    precession_mode: str = typer.Option(
+        "auto",
+        "--precession-mode",
+        help="Precession branch: 'planet' fits b per sector, 'eb' fits the inner-binary "
+        "inclination of an eclipsing binary (give the binary period and primary-eclipse T0, "
+        "e.g. via --custom-ephem), 'auto' uses 'eb' when SIMBAD lists an eclipsing binary",
+    ),
 ):
     """Run a quick-look analysis of a TESS lightcurve.
 
@@ -454,6 +462,7 @@ def run(
     _validate_choice(flatten_method, _FLATTEN_CHOICES, "flatten_method")
     _validate_choice(gp_kernel, _GP_KERNEL_CHOICES, "gp_kernel")
     _validate_choice(pg_method, _PG_CHOICES, "pg_method")
+    precession_mode = _validate_choice(precession_mode, _PRECESSION_MODE_CHOICES, "precession_mode")
 
     if survey not in dss_description:
         valid = ", ".join(dss_description.keys())
@@ -561,6 +570,7 @@ def run(
         single_event_search=single_event_search,
         ttv_search=ttv_search,
         precession_search=precession_search,
+        precession_mode=precession_mode,
     )
 
     if each_sector:

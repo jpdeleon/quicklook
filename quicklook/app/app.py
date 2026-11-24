@@ -346,6 +346,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
             single_event_search=kwargs.get("single_event_search", False),
             ttv_search=kwargs.get("ttv_search", False),
             precession_search=kwargs.get("precession_search", False),
+            precession_mode=kwargs.get("precession_mode", "auto"),
             min_sde_iterative=kwargs.get("min_sde_iterative", 5.0),
             max_planets=kwargs.get("max_planets"),
             phase_xlim=kwargs.get("phase_xlim"),
@@ -424,6 +425,15 @@ def _get_recent_results(limit=12):
     ]
 
 
+PRECESSION_MODES = ("auto", "planet", "eb")
+
+
+def _precession_mode(val):
+    """Normalise the GUI precession-mode field; unknown values fall back to auto."""
+    mode = str(val or "auto").strip().lower()
+    return mode if mode in PRECESSION_MODES else "auto"
+
+
 def _is_truthy(val):
     """Check if a form / JSON field is truthy (handles checkboxes *and* booleans)."""
     if val is None:
@@ -472,6 +482,7 @@ def _parse_params(form):
         "single_event_search": _is_truthy(form.get("single_event_search")),
         "ttv_search": _is_truthy(form.get("ttv_search")),
         "precession_search": _is_truthy(form.get("precession_search")),
+        "precession_mode": _precession_mode(form.get("precession_mode")),
         "min_sde_iterative": safe_float(form.get("min_sde_iterative", 5.0), 5.0),
         "max_planets": safe_int(form.get("max_planets") or None, None),
         "custom_ephem": form.get("custom_ephem"),
@@ -502,6 +513,7 @@ def _job_dedup_signature(params):
         bool(params.get("single_event_search", False)),
         bool(params.get("ttv_search", False)),
         bool(params.get("precession_search", False)),
+        params.get("precession_mode", "auto") if params.get("precession_search") else "auto",
     )
 
 

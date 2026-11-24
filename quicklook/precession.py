@@ -22,8 +22,9 @@ Geometry (circular orbit): ``b = (a/Rs) cos i``, so
 ``db/dt = -(a/Rs) sin(i) di/dt`` and ``di/dt = -(db/dt) / ((a/Rs) sin i)``.
 Only ``|b|`` is measurable, so a trend through ``b = 0`` looks like a V.
 
-Planet branch only. The eclipsing-binary branch (``ellc``/PHOEBE, triple-star
-precession period) is not implemented yet.
+This module is the planet branch. The eclipsing-binary branch (per-sector
+inner-orbit inclination, triple-star precession period) is in
+``quicklook.precession_eb`` and reuses the data, trend and flag helpers here.
 """
 
 from __future__ import annotations
@@ -272,20 +273,34 @@ def transit_duration(period, a_rs, rp_rs, b):
         return period / np.pi * np.arcsin(np.clip(chord / (a_rs * sin_i), 0, 1))
 
 
+def import_batman():
+    """Import ``batman`` or explain how to install the optional extra."""
+    try:
+        import batman
+    except ModuleNotFoundError as exc:
+        if exc.name != "batman":
+            raise
+        raise ImportError(
+            "Precession fitting requires batman-package. "
+            "Install it with pip install 'quicklook-package[precession]'."
+        ) from exc
+    return batman
+
+
+def transit_model(batman, time, cadence: float, period: float, t0: float, ld) -> tuple:
+    """``(params, model)`` for a circular quadratic-LD batman model, supersampled if slow."""
+    params = batman.TransitParams()
+    params.t0, params.per, params.rp, params.a = t0, period, 0.1, 10.0
+    params.inc, params.ecc, params.w = 89.0, 0.0, 90.0
+    params.limb_dark, params.u = "quadratic", list(ld)
+    kwargs = (
+        {"supersample_factor": SUPERSAMPLE, "exp_time": cadence} if cadence > LONG_CADENCE else {}
+    )
+    return params, batman.TransitModel(params, time, **kwargs)
+
+
 def _make_models(sectors, period: float, t0: float, ld, batman) -> list:
-    models = []
-    for s in sectors:
-        params = batman.TransitParams()
-        params.t0, params.per, params.rp, params.a = t0, period, 0.1, 10.0
-        params.inc, params.ecc, params.w = 89.0, 0.0, 90.0
-        params.limb_dark, params.u = "quadratic", list(ld)
-        kwargs = (
-            {"supersample_factor": SUPERSAMPLE, "exp_time": s.cadence}
-            if s.cadence > LONG_CADENCE
-            else {}
-        )
-        models.append((params, batman.TransitModel(params, s.time, **kwargs)))
-    return models
+    return [transit_model(batman, s.time, s.cadence, period, t0, ld) for s in sectors]
 
 
 def _light_curve(params, model, t0, a_rs, dt0, rp, b) -> np.ndarray:
@@ -365,14 +380,16 @@ def _best_fit(sectors, models, period, t0, duration, a_rs_prior=None):
     return best
 
 
-def _covariance(res) -> np.ndarray:
+def covariance(res) -> np.ndarray:
+    """Parameter covariance of a ``least_squares`` result, inflated by reduced χ² > 1."""
     jac = res.jac
     dof = max(jac.shape[0] - jac.shape[1], 1)
     redchi2 = 2 * res.cost / dof
     return np.linalg.pinv(jac.T @ jac) * max(redchi2, 1.0)
 
 
-def _spread(draws: np.ndarray) -> float:
+def spread(draws: np.ndarray) -> float:
+    """Half the central 68% interval of ``draws``."""
     lo, hi = np.nanpercentile(draws, [15.865, 84.135])
     return float(0.5 * (hi - lo))
 
@@ -400,19 +417,10 @@ def fit_sector_transits(
 
 
 def _joint_transit_fit(sectors, period, t0, duration, limb_darkening, a_rs_prior, seed):
-    try:
-        import batman
-    except ModuleNotFoundError as exc:
-        if exc.name != "batman":
-            raise
-        raise ImportError(
-            "Precession fitting requires batman-package. "
-            "Install it with pip install 'quicklook-package[precession]'."
-        ) from exc
-
+    batman = import_batman()
     models = _make_models(sectors, period, t0, limb_darkening, batman)
     res = _best_fit(sectors, models, period, t0, duration, a_rs_prior)
-    cov = _covariance(res)
+    cov = covariance(res)
     err = np.sqrt(np.clip(np.diag(cov), 0, None))
     rng = np.random.default_rng(seed)
     draws = rng.multivariate_normal(res.x, cov, N_DRAWS, check_valid="ignore")
@@ -440,10 +448,10 @@ def _joint_transit_fit(sectors, period, t0, duration, limb_darkening, a_rs_prior
                 rp_rs=float(rp),
                 rp_rs_err=float(err[i_rp]),
                 depth=float(rp**2),
-                depth_err=_spread(draws[:, i_rp] ** 2),
+                depth_err=spread(draws[:, i_rp] ** 2),
                 model_depth=model_depth,
                 t14=float(transit_duration(period, a_rs, rp, b)),
-                t14_err=_spread(
+                t14_err=spread(
                     transit_duration(period, a_draws, draws[:, i_rp], np.abs(draws[:, i_b]))
                 ),
                 dt0=float(dt0),
@@ -541,6 +549,15 @@ def systematics_flags(fits: Sequence[SectorTransitFit]) -> tuple:
         flags.append("grazing_degeneracy")
     if any(f.b < B_BOUNDARY for f in fits):
         flags.append("b_at_boundary")
+    return tuple(flags) + data_flags(fits)
+
+
+def data_flags(fits: Sequence[Any]) -> tuple:
+    """Dilution, cadence and mid-time flags shared by the planet and EB branches.
+
+    ``fits`` need ``crowdsap``, ``cadence``, ``dt0`` and ``dt0_err``.
+    """
+    flags = []
     crowd = np.array([f.crowdsap for f in fits], dtype=float)
     crowd = crowd[np.isfinite(crowd)]
     if crowd.size >= 2 and np.ptp(crowd) > CROWDSAP_SPREAD_MAX:
