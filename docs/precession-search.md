@@ -74,7 +74,7 @@ A **precession candidate** needs all of:
 | `grazing_degeneracy` | no | `|corr(b, Rp/Rs)| > 0.95` in some sector (expected near b ~ 1) |
 | `contamination_varies` | no | `CROWDSAP` range across sectors > 0.01: dilution changes can mimic a depth change |
 | `mixed_cadence` | no | sector cadences differ by > 10% |
-| `t0_offset` | no | a sector's mid-time is > 3σ off the ephemeris (TTVs can distort shape) |
+| `t0_offset` | no | a sector's mid-time is > 3σ off the ephemeris (TTVs can distort shape); with 3+ sectors the offsets are taken from a linear refit of the per-sector mid-times, so a slightly wrong period or T0 (common for a TLS ephemeris over years) does not trip it |
 | `depth_change` | no | `Rp/Rs` trend at >= 3σ (dilution, or transit-depth variations) |
 | `nonlinear` | no | the quadratic model beats the linear one by ΔBIC >= 2 |
 

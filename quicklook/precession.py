@@ -45,6 +45,7 @@ GRAZING_CORR_MAX = 0.95  # |corr(b, Rp/Rs)| above this: b is not constrained on 
 CROWDSAP_SPREAD_MAX = 0.01  # crowding ratio range across sectors worth flagging
 CADENCE_MISMATCH_TOL = 0.1  # relative cadence difference counted as "mixed"
 T0_OFFSET_SIGMA = 3.0  # per-sector mid-time shift flagged as TTV-like
+MIN_EPHEM_REFIT_SECTORS = 3  # refit a linear ephemeris to dt0 before flagging t0_offset
 LONG_CADENCE = 10.0 / 1440  # days; supersample the model above this cadence
 SUPERSAMPLE = 7
 HALF_WINDOW_DURATIONS = 1.5  # keep |phase| < this * T14 around each transit
@@ -565,9 +566,31 @@ def data_flags(fits: Sequence[Any]) -> tuple:
     cadences = np.array([f.cadence for f in fits], dtype=float)
     if np.ptp(cadences) > CADENCE_MISMATCH_TOL * np.min(cadences):
         flags.append("mixed_cadence")
-    if any(abs(f.dt0) > T0_OFFSET_SIGMA * f.dt0_err for f in fits if f.dt0_err > 0):
+    if _has_t0_offset(fits):
         flags.append("t0_offset")
     return tuple(flags)
+
+
+def _has_t0_offset(fits: Sequence[Any]) -> bool:
+    """True if a sector's mid-time is > T0_OFFSET_SIGMA off the ephemeris.
+
+    With three or more timed sectors the offsets are measured from a weighted
+    linear fit of ``dt0`` against ``t_mid``: a slightly wrong period or T0
+    (typical of a TLS ephemeris over a multi-year baseline) shifts every
+    sector along a straight line, which is not a timing variation. With fewer
+    sectors a line would absorb any offset, so the raw offsets are used.
+    """
+    timed = [f for f in fits if f.dt0_err > 0 and np.isfinite(f.dt0) and np.isfinite(f.t_mid)]
+    if not timed:
+        return False
+    dt0 = np.array([f.dt0 for f in timed])
+    err = np.array([f.dt0_err for f in timed])
+    if len(timed) >= MIN_EPHEM_REFIT_SECTORS:
+        t = np.array([f.t_mid for f in timed])
+        design = np.vstack([np.ones_like(t), t - t.mean()]).T
+        coeffs, *_ = np.linalg.lstsq(design / err[:, None], dt0 / err, rcond=None)
+        dt0 = dt0 - design @ coeffs
+    return bool(np.any(np.abs(dt0) > T0_OFFSET_SIGMA * err))
 
 
 def assess_precession(
