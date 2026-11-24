@@ -63,6 +63,8 @@ dev = [
     #"flake8>=6.0"       # legacy linting
 ]
 
+precession = ["batman-package>=2.5"]
+
 gui = ["flask", "flask-sock", "pytest-flask"]
 
 gpu = ["gputls", "cupy-cuda12x[ctk]"]

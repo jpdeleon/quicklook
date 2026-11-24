@@ -31,7 +31,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
-import batman
 import numpy as np
 from scipy.optimize import least_squares
 
@@ -266,7 +265,7 @@ def transit_duration(period, a_rs, rp_rs, b):
         return period / np.pi * np.arcsin(np.clip(chord / (a_rs * sin_i), 0, 1))
 
 
-def _make_models(sectors, period: float, t0: float, ld) -> list:
+def _make_models(sectors, period: float, t0: float, ld, batman) -> list:
     models = []
     for s in sectors:
         params = batman.TransitParams()
@@ -386,7 +385,17 @@ def fit_sector_transits(
     shape change is not forced into any one parameter. ``a_rs_prior`` is an
     optional Gaussian ``(mean, sigma)`` (see ``a_rs_from_star``).
     """
-    models = _make_models(sectors, period, t0, limb_darkening)
+    try:
+        import batman
+    except ModuleNotFoundError as exc:
+        if exc.name != "batman":
+            raise
+        raise ImportError(
+            "Precession fitting requires batman-package. "
+            "Install it with pip install 'quicklook-package[precession]'."
+        ) from exc
+
+    models = _make_models(sectors, period, t0, limb_darkening, batman)
     res = _best_fit(sectors, models, period, t0, duration, a_rs_prior)
     cov = _covariance(res)
     err = np.sqrt(np.clip(np.diag(cov), 0, None))

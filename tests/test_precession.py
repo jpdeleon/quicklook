@@ -3,9 +3,9 @@
 Offline: synthetic batman light curves in four sectors spread over a few years.
 """
 
-import batman
 import numpy as np
 import pytest
+
 
 from quicklook.precession import (
     DAYS_PER_YEAR,
@@ -22,6 +22,8 @@ from quicklook.precession import (
     transit_duration,
     years_until_no_transit,
 )
+
+batman = pytest.importorskip("batman")
 
 PERIOD, T0, RP, A_RS = 3.0, 1.0, 0.1, 10.0
 CADENCE = 10 / 1440

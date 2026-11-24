@@ -6,7 +6,10 @@ so two or more TESS sectors far enough apart can show a secular drift in
 transit shape. `--precession-search` fits the transit shape in each sector and
 tests whether `b` changes with time.
 
+Install the optional transit-fitting dependency before running the search.
+
 ```bash
+pip install 'quicklook-package[precession]'
 ql run --name TOI-1355 --sector all --exptime 120 --precession-search --save
 ```
 

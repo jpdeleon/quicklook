@@ -4419,10 +4419,14 @@ notebooks = [
     { name = "jupyter" },
     { name = "nbconvert" },
 ]
+precession = [
+    { name = "batman-package" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "astroplan", specifier = ">=0.10" },
+    { name = "batman-package", marker = "extra == 'precession'", specifier = ">=2.5" },
     { name = "cupy-cuda12x", extras = ["ctk"], marker = "extra == 'gpu'" },
     { name = "flask" },
     { name = "flask", marker = "extra == 'gui'" },
@@ -4452,7 +4456,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
     { name = "wotan", specifier = ">=1.10" },
 ]
-provides-extras = ["dev", "gui", "gpu", "notebooks"]
+provides-extras = ["dev", "precession", "gui", "gpu", "notebooks"]
 
 [[package]]
 name = "referencing"
