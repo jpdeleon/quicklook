@@ -29,6 +29,10 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
    - Tick **Precession search** (with Sector = `all` or a list, and an Exposure Time) to fit the transit shape per sector and test for a drift in the impact parameter; see [Precession search](precession-search.md). The mode selector next to it chooses **Planet**, **EB** (inner-binary inclination of an eclipsing binary; give the binary period and primary-eclipse T0 as a custom ephemeris) or **Auto** (EB when SIMBAD lists an eclipsing binary). The `*_precession.png` figure appears under the main result (as do `*_mono.png`, `*_ttv.png` and `*_ttv_transits.png` from the other searches), and the TLS summary page shows `db/dt [/yr]` (red for a precession candidate; hover for significance and flags). The form refuses Precession search on a single sector or with **Run each available sector/pipeline**, where it could only skip.
 
    ![Period Search options](img/ql-gui-period-search.png)
+
+   A TTV run (TOI-216, Sector `1-6`, Exposure Time `120`) shows the quicklook figure with `*_ttv.png` and `*_ttv_transits.png` under it:
+
+   ![TOI-216 TTV run in the GUI](img/ql-gui-ttv-result.png)
 4. Click **Run QuickLook**
 5. Watch live progress with step-by-step updates and ETA
 
