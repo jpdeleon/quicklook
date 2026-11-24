@@ -6,12 +6,21 @@ so two or more TESS sectors far enough apart can show a secular drift in
 transit shape. `--precession-search` fits the transit shape in each sector and
 tests whether `b` changes with time.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) Example notebook: [`notebook/precession_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) runs the TOI-1355 b and V907 Sco examples below.
+
 Install the optional transit-fitting dependency before running the search.
 
 ```bash
 pip install 'quicklook-package[precession]'
 ql run --name TOI-1355 --sector all --exptime 120 --precession-search --save
 ```
+
+In the GUI: Sector `all` (or a list such as `57,58,77-84`), Exposure Time
+`120`, tick **Precession search** under Period Search, and Run. The
+`*_precession.png` figure is shown under the quicklook figure. With Period
+Min/Max 2.1/2.25 this reproduces the TOI-1355 b run below:
+
+![TOI-1355 precession run in the GUI](img/ql-gui-precession-result.png)
 
 The search runs after the TLS (and optional TTV) search. It needs a
 multi-sector light curve (`--sector all` or `--sectors ...`; quicklook already
