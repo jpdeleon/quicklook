@@ -9,7 +9,7 @@ adapted to replace an existing panel of a ``pl.subplots`` grid in place:
   inner spines hidden and diagonal break marks. Without such a gap it returns
   ``[ax]`` unchanged, so callers can loop either way.
 * ``finish_broken_axes(axes)`` tidies labels after plotting: one y label, one
-  legend, and a single x label centred under the whole slot.
+  legend (above the slot, full width), and a single x label centred under the whole slot.
 """
 
 from __future__ import annotations
@@ -98,15 +98,27 @@ def broken_time_axes(ax, time, gap_threshold_days: float = SECTOR_GAP_DAYS) -> l
     return axes
 
 
-def _shrink_legend(ax):
-    """Redraw a legend smaller and placed by matplotlib: a sub-axes is narrow,
-    so a full-size legend at a fixed corner spills out or hides data."""
-    legend = ax.get_legend()
+def _slot_legend(axes, host):
+    """Move the first sub-axes' legend onto ``host``, above the whole slot.
+
+    A single sub-axes is only one sector wide, so a legend inside it spills
+    over its neighbour or off the figure. Above the slot it has the full width.
+    """
+    legend = axes[0].get_legend()
     if legend is None:
         return
-    handles, labels = ax.get_legend_handles_labels()
+    handles, labels = axes[0].get_legend_handles_labels()
+    legend.remove()
     if handles:
-        ax.legend(handles, labels, loc="best", fontsize=LEGEND_FONTSIZE, framealpha=0.8)
+        host.legend(
+            handles,
+            labels,
+            loc="lower center",
+            bbox_to_anchor=(0.5, 1.0),
+            ncol=len(labels),
+            fontsize=LEGEND_FONTSIZE,
+            frameon=False,
+        )
 
 
 def finish_broken_axes(axes):
@@ -124,7 +136,6 @@ def finish_broken_axes(axes):
             legend = sub.get_legend()
             if legend is not None:
                 legend.remove()
-    _shrink_legend(axes[0])
     host = axes[0].figure.add_subplot(axes[0].get_subplotspec().get_topmost_subplotspec())
     host.set_frame_on(False)
     host.tick_params(
@@ -133,4 +144,5 @@ def finish_broken_axes(axes):
     host.patch.set_alpha(0)
     host.set_zorder(-1)
     host.set_xlabel(xlabel, labelpad=_HOST_LABELPAD)
+    _slot_legend(axes, host)
     return host
