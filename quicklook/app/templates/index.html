@@ -513,6 +513,10 @@
             <label><input type="checkbox" name="ttv_search" id="ttv_search"> TTV search</label>
             <span class="help-tip" tabindex="0" data-tip="Fit every transit of a periodic TLS signal on its own (mid-time free within one duration of the linear prediction) and test the O-C against a linear ephemeris. Needs at least 3 transits. With Single-transit search on, 3+ matching single events can also be chained into a period. Panels 7 and 8 become the transits aligned on their fitted times and the O-C diagram, and the iterative search masks transits at their fitted times.">?</span>
           </span>
+          <span class="check-item">
+            <label><input type="checkbox" name="precession_search" id="precession_search"> Precession search</label>
+            <span class="help-tip" tabindex="0" data-tip="Fit the transit shape (impact parameter b, Rp/Rs, T14) in each stitched sector and test for a secular drift in b, as nodal precession produces. Needs a multi-sector run (Sector = all, or a sector list) spanning at least a year and a periodic TLS signal or custom ephemeris. Writes a *_precession.png figure and flags dilution changes, grazing degeneracy and short baselines.">?</span>
+          </span>
         </div>
         <div class="full-width">
           <div class="label-row">
@@ -819,7 +823,7 @@ const PERSIST_FIELDS = [
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
   'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
 ];
-const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad','iterative_search','single_event_search','ttv_search'];
+const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad','iterative_search','single_event_search','ttv_search','precession_search'];
 
 function saveFormState() {
   const state = {};

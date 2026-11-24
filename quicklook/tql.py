@@ -33,6 +33,8 @@ from quicklook.long_period import default_period_ceiling, epoch_check, needs_sta
 from quicklook.broken_axis import finish_broken_axes
 from quicklook.single_event_pipeline import SingleEventMixin
 from quicklook.ttv_pipeline import TTVMixin
+from quicklook.precession import sector_span_from_lc
+from quicklook.precession_pipeline import PrecessionMixin
 from quicklook.utils import (
     get_exofop_json,
     get_params_from_exofop,
@@ -323,7 +325,7 @@ def _require_usable_flux(lc):
         )
 
 
-class TessQuickLook(SingleEventMixin, TTVMixin):
+class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
     def __init__(
         self,
         target_name: str,
@@ -364,6 +366,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         neighbor_check: bool = True,
         single_event_search: bool = False,
         ttv_search: bool = False,
+        precession_search: bool = False,
     ):
         # start timer
         self.timer_start = timer()
@@ -391,6 +394,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         self.max_planets = max_planets
         self.single_event_search = single_event_search
         self.ttv_search = ttv_search
+        self.precession_search = precession_search
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
@@ -502,6 +506,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
         self.run_single_event_search()
         self.run_ttv_from_chain()
         self.run_ttv_diagnostics()
+        self.run_precession_search()
         # if self.fold_lc.primary_key is None:
         #     self.fold_lc.primary_key = ('time',)
         self.savefig = savefig
@@ -1003,7 +1008,21 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             lcs = lk.LightCurveCollection(
                 [_apply_tglc_hlsp_mask(lc, self.quality_bitmask) for lc in lcs]
             )
+        self._record_sector_spans(lcs)
         return _sort_by_time(lcs.stitch())
+
+    def _record_sector_spans(self, lcs):
+        """Keep per-sector time ranges and dilution keywords for the precession search.
+
+        Bookkeeping only: a collection without usable metadata leaves the spans
+        empty (the precession search then skips) instead of failing the download.
+        """
+        try:
+            spans = [sector_span_from_lc(lc) for lc in lcs]
+        except (TypeError, AttributeError, ValueError) as exc:
+            logger.debug(f"Could not record sector spans ({exc}).")
+            spans = []
+        self._sector_spans = tuple(sorted((s for s in spans if s), key=lambda s: s.tmin))
 
     def _download_with_retry(self, download_callable, max_retries=1):
         """Run a lightkurve download; if it fails with a "may be corrupt"
@@ -1716,7 +1735,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             duration=getattr(results, "duration", 0.1) * margin,
         )
 
-    def _stellar_prior_kwargs(self):
+    def _stellar_prior_kwargs(self, purpose: str = "TLS"):
         """Pull R_star, M_star (and ±1σ bounds) from ExoFOP for the TLS prior.
 
         Returns a dict of TLS ``.power()`` kwargs. Any value that is missing
@@ -1765,7 +1784,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             # Round to 2 significant figures for readability (display only; the
             # full-precision kwargs are still returned to TLS).
             pretty = {k: float(f"{v:.2g}") for k, v in kwargs.items()}
-            logger.info(f"Using ExoFOP stellar priors for TLS: {pretty}")
+            logger.info(f"Using ExoFOP stellar priors for {purpose}: {pretty}")
         return kwargs
 
     def init_gls(self, period_max: float | None = None):
@@ -2941,6 +2960,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin):
             logger.info(f"Saved: {png_file}")
             self._save_single_event_figure(fp)
             self._save_ttv_figures(fp)
+            self._save_precession_figure(fp)
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:

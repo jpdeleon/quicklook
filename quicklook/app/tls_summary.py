@@ -208,6 +208,11 @@ def extract_fields(data: dict[str, Any], stem: str) -> dict[str, Any]:
         "ttv_detected": coerce_scalar(data.get("ttv_detected")),
         "ttv_amp_min": _days_to_minutes(coerce_scalar(data.get("ttv_amplitude"))),
         "ttv_pvalue": coerce_scalar(data.get("ttv_pvalue")),
+        # Precession search (absent unless --precession-search was used).
+        "prec_db_dt": coerce_scalar(data.get("precession_db_dt")),
+        "prec_sigma": coerce_scalar(data.get("precession_significance")),
+        "prec_candidate": coerce_scalar(data.get("precession_candidate")),
+        "prec_flags": coerce_scalar(data.get("precession_flags")),
     }
     return {key: _json_safe(val) for key, val in fields.items()}
 
