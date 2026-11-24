@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any, Optional, Sequence
 
 import numpy as np
+from scipy.linalg import solve_triangular
 from scipy.optimize import least_squares
 
 DAYS_PER_YEAR = 365.25
@@ -392,6 +393,13 @@ def fit_sector_transits(
     shape change is not forced into any one parameter. ``a_rs_prior`` is an
     optional Gaussian ``(mean, sigma)`` (see ``a_rs_from_star``).
     """
+    fits, a_rs, a_rs_err, _ = _joint_transit_fit(
+        sectors, period, t0, duration, limb_darkening, a_rs_prior, seed
+    )
+    return fits, a_rs, a_rs_err
+
+
+def _joint_transit_fit(sectors, period, t0, duration, limb_darkening, a_rs_prior, seed):
     try:
         import batman
     except ModuleNotFoundError as exc:
@@ -443,17 +451,23 @@ def fit_sector_transits(
                 corr_b_rp=corr,
             )
         )
-    return tuple(fits), float(res.x[0]), float(err[0])
+    return tuple(fits), float(res.x[0]), float(err[0]), cov[3::4, 3::4]
 
 
 # --- trend models -------------------------------------------------------------
 
 
 def fit_trend(t_yr, y, yerr, degree: int) -> TrendFit:
-    """Weighted polynomial fit; errors scaled up when reduced chi^2 > 1."""
+    """Fit with 1D standard errors or a 2D covariance, scaling errors up if χ²/dof > 1."""
     t_yr, y, yerr = (np.asarray(x, dtype=float) for x in (t_yr, y, yerr))
-    design = np.vander(t_yr, degree + 1, increasing=True) / yerr[:, None]
-    yw = y / yerr
+    design = np.vander(t_yr, degree + 1, increasing=True)
+    if yerr.ndim == 2:
+        chol = np.linalg.cholesky(yerr)
+        design = solve_triangular(chol, design, lower=True)
+        yw = solve_triangular(chol, y, lower=True)
+    else:
+        design = design / yerr[:, None]
+        yw = y / yerr
     coeffs, *_ = np.linalg.lstsq(design, yw, rcond=None)
     cov = np.linalg.pinv(design.T @ design)
     chi2 = float(np.sum((yw - design @ coeffs) ** 2))
@@ -544,6 +558,7 @@ def assess_precession(
     a_rs: float = np.nan,
     a_rs_err: float = np.nan,
     min_baseline_yr: float = MIN_BASELINE_YR,
+    b_covariance: Optional[np.ndarray] = None,
 ) -> PrecessionResult:
     """Trend fits, flags and the candidate decision for per-sector fits.
 
@@ -552,7 +567,8 @@ def assess_precession(
     degeneracy together with an ``Rp/Rs`` trend, ``b`` pinned at 0, or a ``T14`` trend with the same sign as ``db/dt`` (``T14``
     must shrink as ``b`` grows).
     """
-    fits = tuple(sorted(fits, key=lambda f: f.t_mid))
+    order = np.argsort([f.t_mid for f in fits])
+    fits = tuple(fits[i] for i in order)
     if len(fits) < MIN_SECTORS:
         return PrecessionResult(
             sector_fits=fits, models=None, reason=f"needs >= {MIN_SECTORS} sectors with transits"
@@ -562,7 +578,11 @@ def assess_precession(
     b_err = np.array([f.b_err for f in fits])
     if not np.all(np.isfinite(b_err) & (b_err > 0)):
         return PrecessionResult(sector_fits=fits, models=None, reason="unusable b uncertainties")
-    models = fit_precession_model(t_mid, b, b_err)
+    uncertainty = b_err if b_covariance is None else b_covariance[np.ix_(order, order)]
+    try:
+        models = fit_precession_model(t_mid, b, uncertainty)
+    except np.linalg.LinAlgError:
+        return PrecessionResult(sector_fits=fits, models=None, reason="unusable b covariance")
     db_dt, db_dt_err = models.linear.coeffs[1], models.linear.errors[1]
     significance = abs(db_dt) / db_dt_err if db_dt_err > 0 else np.nan
     dt14_dt, dt14_dt_err = _slope(fits, "t14", models.t_ref)
@@ -641,7 +661,7 @@ def search_precession(
             models=None,
             reason=f"{len(sectors)} sector(s) cover a transit; needs >= {MIN_SECTORS}",
         )
-    fits, a_rs, a_rs_err = fit_sector_transits(
+    fits, a_rs, a_rs_err, b_covariance = _joint_transit_fit(
         sectors,
         period,
         t0,
@@ -650,4 +670,6 @@ def search_precession(
         a_rs_prior=a_rs_prior,
         seed=seed,
     )
-    return assess_precession(fits, a_rs, a_rs_err, min_baseline_yr=min_baseline_yr)
+    return assess_precession(
+        fits, a_rs, a_rs_err, min_baseline_yr=min_baseline_yr, b_covariance=b_covariance
+    )

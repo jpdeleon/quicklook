@@ -36,7 +36,7 @@ periodic TLS signal (SDE >= 7, >= 3 transits) or a `--custom-ephem`.
    `b` slide together and biases `db/dt`. At high `b`, where recent detections
    sit (TOI-1355 b, TOI-1518 b), the light curve constrains `b` on its own.
 4. **Trend models.** Static, linear and (with >= 4 sectors) quadratic `b(t)`,
-   weighted least squares, compared by BIC.
+   generalized least squares using the joint fit’s full covariance between sector impact parameters, compared by BIC.
 
 Geometry (circular orbit): `b = (a/Rs) cos i`, so
 `di/dt = -(db/dt) / ((a/Rs) sin i)`. Only `|b|` is measurable, so a trend that
@@ -92,7 +92,7 @@ result.db_dt, result.db_dt_err, result.is_candidate, result.flags
 
 **TOI-1355 b (real data).** `ql run --name TOI-1355 --sector all --exptime 120
 --period-limits 2.1 2.25 --precession-search` fits the five 2-min sectors
-(57, 58, 77, 78, 84; 2.0 yr) and gives `db/dt = 0.0149 ± 0.0012 /yr`
+(57, 58, 77, 78, 84; 2.0 yr) and, in the original diagonal-error validation, gave `db/dt = 0.0149 ± 0.0012 /yr`
 (12σ, ΔBIC = 146, candidate), within 1σ of the published
 `0.01633 +0.00081/-0.00076 /yr` (Watanabe et al. 2026, who also used the
 2019-2020 FFI sectors). `b` rises from 0.902 to 0.930, `T14` falls from 2.18 h

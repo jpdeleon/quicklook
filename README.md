@@ -150,9 +150,9 @@ ql run --name TOI-6109 --sectors 18,58,85 --exptime 120 --ttv-search \
 # Fit the transit shape per sector and test for a secular drift in the impact
 # parameter b (nodal precession); needs >=2 stitched sectors spanning >=1 yr.
 # ExoFOP R*, M* (when available) constrain a/Rs, which matters at moderate b.
+pip install 'quicklook-package[precession]'
 ql run --name TOI-1355 --sector all --exptime 120 --precession-search --save
-# -> db/dt = 0.0149 +/- 0.0012 /yr from sectors 57-84 (published: 0.0163 /yr);
-#    see docs/precession-search.md and docs/img/precession-toi1355.png
+# See docs/precession-search.md for the TOI-1355 example and validation.
 
 # Run on every available sector
 ql run --name TOI-125.01 --each-sector --save

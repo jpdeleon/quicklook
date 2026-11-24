@@ -341,3 +341,19 @@ def test_search_skips_sectors_with_no_measurable_noise():
     result = search_precession(time, np.ones_like(flux), None, spans, PERIOD, T0, _duration())
     assert not result.is_candidate
     assert not result.sector_fits
+
+
+def test_shared_offset_uncertainty_cancels_in_two_sector_drift():
+    # A common offset cancels in the one-year difference. Only the independent
+    # 0.01 errors add in quadrature, even with a much larger shared error.
+    fits = _trend_fits(0.05, years=(0, 1))
+    covariance = np.full((2, 2), 0.1**2) + np.eye(2) * 0.01**2
+    result = assess_precession(fits, b_covariance=covariance)
+    assert result.db_dt_err == pytest.approx(np.sqrt(2) * 0.01)
+    assert result.is_candidate
+
+
+def test_joint_fit_retains_sensitivity_to_moderate_b_drift():
+    data = _stitched(0.012, b_ref=0.55)
+    result = search_precession(*data, PERIOD, T0, _duration(0.55))
+    assert result.significance >= 3
