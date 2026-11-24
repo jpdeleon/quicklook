@@ -20,7 +20,7 @@ import matplotlib.pyplot as pl
 import numpy as np
 from loguru import logger
 
-from quicklook.plot_precession import plot_eb_precession, plot_precession
+from quicklook.plot_precession import plot_eb_precession, plot_precession, plot_sector_folds
 from quicklook.precession import (
     MIN_SECTORS,
     PrecessionResult,
@@ -34,6 +34,7 @@ _EB_OTYPE = re.compile(r"eclbin|eclipsing binary|^eb\*", re.IGNORECASE)
 AnyPrecessionResult = Union[PrecessionResult, EBPrecessionResult]
 
 PRECESSION_FIGURE_SUFFIX = "_precession.png"
+PRECESSION_FOLDS_SUFFIX = "_precession_folds.png"
 _SECTOR_ARRAY_FIELDS = {
     "precession_sectors": "sector",
     "precession_t_mid": "t_mid",
@@ -127,6 +128,7 @@ class PrecessionMixin:
     precession_result: Optional[AnyPrecessionResult] = None
     precession_a_rs_prior: Optional[tuple] = None
     _sector_spans: tuple = ()
+    _precession_ephem: Optional[tuple] = None
 
     def run_precession_search(self) -> Optional[AnyPrecessionResult]:
         """Fit each sector's transit (or eclipse) shape and test for a secular drift.
@@ -152,6 +154,7 @@ class PrecessionMixin:
                 logger.info("Precession search: no periodic signal or custom ephemeris to fit.")
             return self._finish_precession(result_type((), None, reason="no periodic signal"))
         period, t0, duration = ephem
+        self._precession_ephem = ephem
         lc = self.flat_lc
         flux_err = None if lc.flux_err is None else np.asarray(lc.flux_err.value, dtype=float)
         data = (
@@ -263,6 +266,29 @@ class PrecessionMixin:
         plot = plot_eb_precession if isinstance(r, EBPrecessionResult) else plot_precession
         fig = plot(r, getattr(self, "target_name", ""))
         path = Path(str(fp) + PRECESSION_FIGURE_SUFFIX)
+        fig.savefig(path, dpi=120, bbox_inches="tight")
+        pl.close(fig)
+        logger.info(f"Saved: {path}")
+        return [path, *self._save_sector_folds_figure(fp)]
+
+    def _save_sector_folds_figure(self, fp) -> list:
+        """Write ``<fp>_precession_folds.png`` (per-sector folds) for a planet-branch candidate."""
+        r = self.precession_result
+        ephem = self._precession_ephem
+        if not isinstance(r, PrecessionResult) or not r.is_candidate or ephem is None:
+            return []
+        lc = self.flat_lc
+        flux_err = None if lc.flux_err is None else np.asarray(lc.flux_err.value, dtype=float)
+        fig = plot_sector_folds(
+            r,
+            np.asarray(lc.time.value, dtype=float),
+            np.asarray(lc.flux.value, dtype=float),
+            flux_err,
+            tuple(self._sector_spans),
+            *ephem,
+            title=getattr(self, "target_name", ""),
+        )
+        path = Path(str(fp) + PRECESSION_FOLDS_SUFFIX)
         fig.savefig(path, dpi=120, bbox_inches="tight")
         pl.close(fig)
         logger.info(f"Saved: {path}")

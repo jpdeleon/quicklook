@@ -379,3 +379,14 @@ def test_joint_fit_retains_sensitivity_to_moderate_b_drift():
     data = _stitched(0.012, b_ref=0.55)
     result = search_precession(*data, PERIOD, T0, _duration(0.55))
     assert result.significance >= 3
+
+
+def test_plot_sector_folds_has_one_panel_per_sector_plus_overlay():
+    from quicklook.plot_precession import plot_sector_folds
+
+    time, flux, err, spans = _stitched(0.04)
+    result = search_precession(time, flux, err, spans, PERIOD, T0, _duration())
+    fig = plot_sector_folds(result, time, flux, err, spans, PERIOD, T0, _duration(), "t")
+    visible = [ax for ax in fig.axes if ax.get_visible()]
+    assert len(visible) == len(result.sector_fits) + 1
+    assert "b = " in visible[0].get_title()

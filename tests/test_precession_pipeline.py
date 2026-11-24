@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from quicklook import h5io
 from quicklook.cli.app import app
 from quicklook.precession import SectorSpan, sector_span_from_lc
-from quicklook.precession_pipeline import PRECESSION_FIGURE_SUFFIX
+from quicklook.precession_pipeline import PRECESSION_FIGURE_SUFFIX, PRECESSION_FOLDS_SUFFIX
 from quicklook.tql import TessQuickLook, _TLSResult
 from test_precession import NOISE, PERIOD, T0, _duration, _stitched
 
@@ -104,6 +104,25 @@ def test_saves_precession_figure(tmp_path):
     paths = ql._save_precession_figure(tmp_path / "target")
     assert paths and paths[0].name == "target" + PRECESSION_FIGURE_SUFFIX
     assert paths[0].stat().st_size > 0
+
+
+def test_candidate_saves_per_sector_folds_figure(tmp_path):
+    ql = _ql()
+    assert ql.run_precession_search().is_candidate
+    paths = ql._save_precession_figure(tmp_path / "target")
+    assert [p.name for p in paths] == [
+        "target" + PRECESSION_FIGURE_SUFFIX,
+        "target" + PRECESSION_FOLDS_SUFFIX,
+    ]
+    assert all(p.stat().st_size > 0 for p in paths)
+
+
+def test_non_candidate_skips_folds_figure(tmp_path):
+    ql = _ql(db_dt=0.0)
+    result = ql.run_precession_search()
+    assert not result.is_candidate
+    names = [p.name for p in ql._save_precession_figure(tmp_path / "target")]
+    assert names == ["target" + PRECESSION_FIGURE_SUFFIX]
 
 
 def test_no_figure_without_fits(tmp_path):

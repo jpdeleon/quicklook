@@ -83,6 +83,10 @@ A **precession candidate** needs all of:
 - Log line with `db/dt`, significance, ΔBIC, the verdict and flags.
 - `*_precession.png`: `b`, `T14` and `(Rp/Rs)^2` per sector against time, with
   the static/linear/quadratic fits on the `b` panel.
+- `*_precession_folds.png` (planet branch, candidates only): the phase-folded
+  transit of each sector with its best-fit model and fitted `b` and `T14`, plus
+  a panel overlaying every sector's model, to see the change in impact
+  parameter directly.
 - `*_tls.h5` keys (with `--save`): `precession_candidate`, `precession_db_dt`
   (+`_err`), `precession_significance`, `precession_delta_bic`,
   `precession_baseline_yr`, `precession_di_dt` (deg/yr),
