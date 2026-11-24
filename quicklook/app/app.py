@@ -11,6 +11,7 @@ import time
 import traceback
 import warnings
 from collections import OrderedDict
+from glob import escape as glob_escape
 from pathlib import Path
 from threading import Event, Thread
 import matplotlib.pyplot as pl
@@ -22,6 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import InvalidInputError, QuickLookError
 from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
+from quicklook.sector_spec import is_multi_sector, parse_sector_spec
 from quicklook.utils import get_available_pipelines, get_available_sectors
 
 warnings.filterwarnings("ignore", category=UserWarning, module="lightkurve")
@@ -282,15 +284,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         sigma_clip_flat = parse_sigma(kwargs.get("sigma_clip_flat"))
 
         # Parse custom ephemeris
-        custom_ephem = kwargs.get("custom_ephem")
-        if custom_ephem and custom_ephem.strip():
-            parts = custom_ephem.strip().split()
-            if len(parts) == 6:
-                custom_ephem = [float(x) for x in parts]
-            else:
-                custom_ephem = None
-        else:
-            custom_ephem = None
+        custom_ephem = _parse_custom_ephem(kwargs.get("custom_ephem"))
 
         # Determine outdir and suffix
         outdir = kwargs.get("outdir")
@@ -324,7 +318,7 @@ def run_quicklook_background(name, cancel_event, **kwargs):
 
         tql = _get_tql_class()(
             target_name=target_name,
-            sector=int(kwargs.get("sector", -1)),
+            sector=parse_sector_spec(kwargs.get("sector", -1)),
             pipeline=kwargs.get("pipeline", "spoc"),
             flux_type=kwargs.get("fluxtype", "pdcsap"),
             # Coerce "" (the form's "auto" option) to None so the pipeline
@@ -367,7 +361,11 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         )
         if cancel_event.is_set():
             raise InterruptedError("Job cancelled")
-        tql.plot_tql(return_fig_and_paths=True)
+        result = tql.plot_tql(return_fig_and_paths=True)
+        if isinstance(result, tuple) and len(result) == 3:
+            # The worker knows exactly what it wrote; /results-json prefers this
+            # over guessing from the job name (TOI0216 vs TOI-216, "_spoc_2").
+            jobs[name]["output_png"], jobs[name]["output_h5"] = result[1], result[2]
         if cancel_event.is_set():
             jobs[name]["status"] = "cancelled"
         else:
@@ -445,8 +443,76 @@ def _is_truthy(val):
     return bool(val)
 
 
+class ParamError(ValueError):
+    """A submitted form field is invalid; reported to the client as a 400."""
+
+
+def _parse_sector_field(value):
+    """``-1``, a sector number, ``"all"`` or a list of sectors from the Sector field."""
+    try:
+        return parse_sector_spec(value)
+    except ValueError as exc:
+        raise ParamError(
+            f"Sector: {exc}. Use -1 (latest), a number, 'all', or a list such as 57,58,77-84."
+        ) from exc
+
+
+CUSTOM_EPHEM_FIELDS = ("Tc", "Tc_err", "P", "P_err", "Tdur", "Tdur_err")
+
+
+def _parse_custom_ephem(value):
+    """Six floats ``Tc Tcerr P Perr Tdur Tdurerr`` (spaces or commas), or None if empty.
+
+    Used to drop a malformed ephemeris silently (wrong count) or fail inside
+    the worker (commas); now the submission is refused with the reason.
+    """
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        parts = list(value)
+    else:
+        parts = str(value).replace(",", " ").split()
+    if not parts:
+        return None
+    try:
+        numbers = [float(x) for x in parts]
+    except (TypeError, ValueError):
+        numbers = []
+    if len(numbers) != len(CUSTOM_EPHEM_FIELDS) or not all(map(math.isfinite, numbers)):
+        raise ParamError(
+            f"Custom Ephemeris needs six numbers: Tc Tcerr P Perr Tdur Tdurerr (got {value!r})."
+        )
+    if numbers[2] <= 0 or numbers[4] <= 0:
+        raise ParamError("Custom Ephemeris: the period P and duration Tdur must be positive.")
+    return numbers
+
+
+def _validate_params(params, fan_out=False):
+    """Reject combinations the pipeline would fail on or silently skip.
+
+    ``fan_out`` is True for the each-sector and each-pipeline routes, which
+    submit one single-sector job each and ignore the Sector field.
+    """
+    multi = not fan_out and is_multi_sector(params.get("sector"))
+    if multi and params.get("exptime") is None:
+        raise ParamError(
+            "Stitching several sectors (Sector = all or a list) needs an Exposure Time "
+            "(e.g. 120, 200, 600 or 1800 s) so that only one cadence is stitched."
+        )
+    if params.get("precession_search") and not multi:
+        how = "untick 'Run each available sector/pipeline' and set " if fan_out else "set "
+        raise ParamError(
+            "Precession search compares sectors, so it needs one stitched multi-sector "
+            f"light curve: {how}Sector to 'all' or a list such as 57,58,77-84."
+        )
+    return params
+
+
 def _parse_params(form):
-    """Parse form-data or JSON dict into pipeline kwargs."""
+    """Parse form-data or JSON dict into pipeline kwargs.
+
+    Raises ``ParamError`` for a Sector field that is not a valid sector spec.
+    """
 
     def safe_int(val, default=-1):
         try:
@@ -461,7 +527,7 @@ def _parse_params(form):
             return default
 
     return {
-        "sector": safe_int(form.get("sector", -1), -1),
+        "sector": _parse_sector_field(form.get("sector", -1)),
         "pipeline": form.get("pipeline", "spoc"),
         "fluxtype": form.get("fluxtype", "pdcsap"),
         "exptime": safe_int(form.get("exptime") or None, None),
@@ -485,7 +551,7 @@ def _parse_params(form):
         "precession_mode": _precession_mode(form.get("precession_mode")),
         "min_sde_iterative": safe_float(form.get("min_sde_iterative", 5.0), 5.0),
         "max_planets": safe_int(form.get("max_planets") or None, None),
-        "custom_ephem": form.get("custom_ephem"),
+        "custom_ephem": _parse_custom_ephem(form.get("custom_ephem")),
         "survey": form.get("survey", "dss1"),
         "show_simbad": _is_truthy(form.get("show_simbad")),
         "outdir": form.get("outdir"),
@@ -504,9 +570,10 @@ def _job_dedup_signature(params):
     (e.g. SPOC vs TGLC, different sector, different flux/photometry) is a
     different job and gets auto-disambiguated rather than rejected.
     """
+    sector = params.get("sector", -1)
     return (
         params.get("pipeline", "spoc"),
-        params.get("sector", -1),
+        tuple(sector) if isinstance(sector, list) else sector,
         params.get("fluxtype", "pdcsap"),
         params.get("exptime", None),
         bool(params.get("iterative_search", False)),
@@ -550,8 +617,9 @@ def index():
 
 
 @app.errorhandler(InvalidInputError)
+@app.errorhandler(ParamError)
 def handle_invalid_input(e):
-    """Turn a rejected target name into a 400 rather than a 500 + traceback."""
+    """Turn a rejected target name or form field into a 400 rather than a 500 + traceback."""
     return jsonify({"ok": False, "reason": str(e)}), 400
 
 
@@ -564,7 +632,7 @@ def submit_job():
         return jsonify({"ok": False, "reason": "Target name is required"}), 400
 
     name = sanitize_target_name(name)
-    params = _parse_params(form)
+    params = _validate_params(_parse_params(form))
 
     new_sig = _job_dedup_signature(params)
     with jobs_lock:
@@ -607,7 +675,7 @@ def batch_submit():
     """Submit multiple targets sharing the same pipeline parameters."""
     data = request.json or {}
     targets = data.get("targets", [])
-    params_template = _parse_params(data.get("params", {}))
+    params_template = _validate_params(_parse_params(data.get("params", {})))
 
     if not targets:
         return jsonify({"ok": False, "reason": "No targets provided"}), 400
@@ -657,7 +725,7 @@ def each_sector_submit():
     data = request.json or {}
     name = (data.get("name") or "").strip()
     sectors = data.get("sectors", [])
-    params_template = _parse_params(data.get("params", {}))
+    params_template = _validate_params(_parse_params(data.get("params", {})), fan_out=True)
 
     if not name:
         return jsonify({"ok": False, "reason": "Target name is required"}), 400
@@ -709,7 +777,7 @@ def each_pipeline_submit():
     data = request.json or {}
     name = (data.get("name") or "").strip()
     pipelines = data.get("pipelines", [])
-    params_template = _parse_params(data.get("params", {}))
+    params_template = _validate_params(_parse_params(data.get("params", {})), fan_out=True)
 
     if not name:
         return jsonify({"ok": False, "reason": "Target name is required"}), 400
@@ -871,17 +939,83 @@ def bulk_delete():
     return jsonify({"ok": True, "deleted": all_deleted})
 
 
+def _output_name_token(target):
+    """The target part of output filenames, as ``TessQuickLook`` writes it.
+
+    Spaces and hyphens are dropped, and TOI numbers are zero-padded to four
+    digits (TOI-216 -> TOI0216), so a plain ``*TOI216*`` search missed them.
+    """
+    name = str(target).replace(" ", "").replace("-", "")
+    if name.lower().startswith("toi"):
+        try:
+            return f"TOI{int(float(name[3:])):04d}"
+        except ValueError:
+            pass
+    return name
+
+
+def _companion_images(main):
+    """``X_*.png`` written next to ``X.png`` (precession, mono, TTV, candidates)."""
+    return sorted(main.parent.glob(glob_escape(main.stem) + "_*.png"))
+
+
+def _recorded_outputs(target):
+    """``(png, h5)`` the worker recorded for this job, when they are served files."""
+    with jobs_lock:
+        info = dict(jobs.get(target) or {})
+    png = info.get("output_png")
+    if not png:
+        return None
+    png, h5 = Path(png), Path(info.get("output_h5") or "")
+    try:
+        served = png.resolve().parent == OUTPUT_DIR.resolve()
+    except OSError:
+        served = False
+    if not (served and png.exists()):
+        return None
+    return png, (h5 if h5.name and h5.exists() else None)
+
+
+def _main_and_extra_images(images, h5_path):
+    """The run's quicklook figure and its companions (``*_precession.png``, ...).
+
+    The main figure shares the h5 stem (``X_tls.h5`` -> ``X.png``); companions
+    are ``X_*.png``. Without a matching h5 the newest image is the main one,
+    as before. Companion figures are written after the main one, so "newest"
+    alone would show e.g. the precession figure in place of the quicklook.
+    """
+    if h5_path is not None:
+        stem = h5_path.stem[: -len("_tls")] if h5_path.stem.endswith("_tls") else h5_path.stem
+        main = h5_path.with_name(stem + ".png")
+        if main.exists():
+            extras = sorted(p for p in images if p.name.startswith(stem + "_"))
+            return main, extras
+    return (images[0] if images else None), []
+
+
 @app.route("/results-json/<target>")
 def results_json(target):
-    """Return paths to output PNG and H5 files for a completed job."""
-    # Output files use names without hyphens (e.g. TOI4152 not TOI-4152)
-    search_name = target.replace("-", "")
-    images = sorted(OUTPUT_DIR.glob(f"*{search_name}*.png"), key=os.path.getmtime, reverse=True)
-    h5s = sorted(OUTPUT_DIR.glob(f"*{search_name}*_tls.h5"), key=os.path.getmtime, reverse=True)
+    """Return paths to the output PNG (plus companion figures) and H5 of a job."""
+    recorded = _recorded_outputs(target)
+    if recorded is not None:
+        main, h5 = recorded
+        extras = _companion_images(main)
+    else:
+        token = glob_escape(_output_name_token(target))
+        by_age = dict(key=os.path.getmtime, reverse=True)
+        images = sorted(OUTPUT_DIR.glob(f"*{token}*.png"), **by_age)
+        h5s = sorted(OUTPUT_DIR.glob(f"*{token}*_tls.h5"), **by_age)
+        h5 = h5s[0] if h5s else None
+        main, extras = _main_and_extra_images(images, h5)
+
+    def link(path):
+        return url_for("static", filename=f"outputs/{path.name}")
+
     return jsonify(
         {
-            "image": url_for("static", filename=f"outputs/{images[0].name}") if images else None,
-            "h5": url_for("static", filename=f"outputs/{h5s[0].name}") if h5s else None,
+            "image": link(main) if main else None,
+            "extras": [{"url": link(p), "name": p.name} for p in extras],
+            "h5": link(h5) if h5 else None,
         }
     )
 
