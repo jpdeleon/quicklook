@@ -951,14 +951,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
             self.sector = lc.sector
 
         # Select flux type / photometry for pipelines that expose a choice.
+        # For sector_orig == "all" this already happened per sector inside
+        # _stitch_masked, before each light curve was normalized; selecting
+        # it again here would overwrite the stitched, per-sector-normalized
+        # "flux" column with the raw (unnormalized) column and reintroduce
+        # the sector-to-sector offsets normalization is meant to remove.
         author = lc.meta["AUTHOR"].lower()
-        if author == "spoc":
-            lc = lc.select_flux(self.flux_type + "_flux")
-        elif author == "tglc":
-            # MAST TGLC HLSP files carry both calibrated flux columns.
-            lc, used = _select_tglc_flux(lc, self.flux_type)
-            if used != self.flux_type:
-                self.flux_type = used
+        if sector_orig != "all":
+            if author == "spoc":
+                lc = lc.select_flux(self.flux_type + "_flux")
+            elif author == "tglc":
+                # MAST TGLC HLSP files carry both calibrated flux columns.
+                lc, used = _select_tglc_flux(lc, self.flux_type)
+                if used != self.flux_type:
+                    self.flux_type = used
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -1002,13 +1008,41 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         return lc
 
     def _stitch_masked(self, search_result, author):
-        """Download and stitch several light curves, masking TGLC per sector."""
+        """Download and stitch several light curves, masking TGLC per sector.
+
+        The flux column is selected on each light curve *before* stitching, so
+        that ``LightCurveCollection.stitch()``'s per-light-curve
+        ``normalize()`` (its default ``corrector_func``) acts on the column
+        the user asked for and brings every sector to the same median of 1.
+        Selecting the flux column afterwards, on the already-stitched light
+        curve, would instead restore each sector's raw, unnormalized counts —
+        which differ sector to sector (aperture, background, pipeline drift)
+        — and a single normalize() over the whole stitched array does not
+        remove those per-sector offsets, only rescales them together. This
+        produced visibly different flux levels per sector for TOI-1355 and
+        TOI-216 multi-sector/"all" runs.
+        """
         lcs = search_result.download_all(
             quality_bitmask=_download_bitmask(author, self.quality_bitmask)
         )
+        # None (e.g. synthetic light curves in tests, built without a flux
+        # column to choose) means there is no choice to apply before
+        # stitching; stitch() then normalizes whatever "flux" already holds.
+        flux_type = getattr(self, "flux_type", None)
         if str(author).upper() == "TGLC":
             lcs = lk.LightCurveCollection(
                 [_apply_tglc_hlsp_mask(lc, self.quality_bitmask) for lc in lcs]
+            )
+            if flux_type is not None:
+                selected = [_select_tglc_flux(lc, flux_type) for lc in lcs]
+                lcs = lk.LightCurveCollection([sel_lc for sel_lc, _ in selected])
+                used = {u for _, u in selected}
+                if len(used) == 1 and (used_flux_type := used.pop()) != flux_type:
+                    self.flux_type = used_flux_type
+        elif str(author).upper() == "SPOC" and flux_type is not None:
+            flux_col = f"{flux_type}_flux"
+            lcs = lk.LightCurveCollection(
+                [lc.select_flux(flux_col) if flux_col in lc.colnames else lc for lc in lcs]
             )
         self._record_sector_spans(lcs)
         return _sort_by_time(lcs.stitch())

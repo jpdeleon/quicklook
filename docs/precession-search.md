@@ -226,6 +226,17 @@ to 2.01 h, and `Rp/Rs` stays at 0.078-0.079. The `grazing_degeneracy` flag
 (max `|corr(b, Rp/Rs)|` = 0.95) is informational here because `Rp/Rs` does not
 trend.
 
+With the current full-covariance method, `db/dt = 0.0148 ± 0.0009 /yr`
+(16.9σ, ΔBIC = 284) — the same candidate, more significant — now that every
+stitched sector normalizes to the same baseline. Previously,
+`TessQuickLook.get_lc()` reselected each sector's raw, un-normalized flux
+column *after* `LightCurveCollection.stitch()` had already normalized it, so
+sectors downloaded at different absolute brightness levels (aperture,
+background, pipeline drift) kept those offsets instead of settling on a
+common baseline of 1 — visible as level jumps between TOI-1355's five sectors
+in the raw light curve, which biased the per-sector transit-shape fit this
+search depends on.
+
 ![TOI-1355 precession figure](img/precession-toi1355.png)
 
 On synthetic four-sector light curves (three years, b ≈ 0.8) the tests check
