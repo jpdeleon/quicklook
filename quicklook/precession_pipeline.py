@@ -137,18 +137,20 @@ class PrecessionMixin:
         """
         if not getattr(self, "precession_search", False):
             return None
+        mode = self.resolve_precession_mode()
+        result_type = EBPrecessionResult if mode == "eb" else PrecessionResult
         spans = tuple(getattr(self, "_sector_spans", ()) or ())
         if len(spans) < MIN_SECTORS:
             logger.warning(
                 "Precession search needs >= 2 stitched sectors "
                 "(use --sector all or a sector list); skipping."
             )
-            return self._finish_precession(PrecessionResult((), None, reason="single sector"))
+            return self._finish_precession(result_type((), None, reason="single sector"))
         ephem = self._precession_ephemeris()
         if ephem is None:
             if self.verbose:
                 logger.info("Precession search: no periodic signal or custom ephemeris to fit.")
-            return self._finish_precession(PrecessionResult((), None, reason="no periodic signal"))
+            return self._finish_precession(result_type((), None, reason="no periodic signal"))
         period, t0, duration = ephem
         lc = self.flat_lc
         flux_err = None if lc.flux_err is None else np.asarray(lc.flux_err.value, dtype=float)
@@ -161,7 +163,7 @@ class PrecessionMixin:
             t0,
             duration,
         )
-        if self.resolve_precession_mode() == "eb":
+        if mode == "eb":
             logger.info(f"Precession search: eclipsing-binary branch (P = {period:.6f} d)")
             return self._finish_precession(search_eb_precession(*data))
         self.precession_a_rs_prior = self._precession_a_rs_prior(period)

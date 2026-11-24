@@ -157,3 +157,16 @@ def test_gui_summary_extracts_eb_fields():
     assert fields["prec_mode"] == "eb"
     assert fields["prec_di_dt"] == pytest.approx(ql.precession_result.di_dt)
     assert fields["prec_candidate"] is True
+
+
+@pytest.mark.parametrize("reason", ["single sector", "no periodic signal"])
+def test_skipped_auto_eb_preserves_mode(reason):
+    ql = _ql(mode="auto", otype="EclBin")
+    if reason == "single sector":
+        ql._sector_spans = ql._sector_spans[:1]
+    else:
+        ql.tls_results["SDE"] = 0.0
+    result = ql.run_precession_search()
+    assert isinstance(result, EBPrecessionResult)
+    assert result.reason == reason
+    assert ql.tls_results["precession_mode"] == "eb"
