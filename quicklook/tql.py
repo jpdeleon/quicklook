@@ -2601,6 +2601,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         found candidates are masked out) so the panel shows the signal as it
         appears in the raw flattened data.
         """
+        images = []
         for idx, results in enumerate(getattr(self, "iterative_tls_results", [])[1:], start=2):
             cand_png = fp.with_stem(fp.stem + f"_p{idx}").with_suffix(".png")
             cand_h5 = Path(self.outdir, fp.name + f"_tls_p{idx}").with_suffix(".h5")
@@ -2635,11 +2636,13 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
             )
             if self.savefig:
                 fig2.savefig(cand_png, dpi=150, bbox_inches="tight")
+                images.append(cand_png)
                 logger.info(f"Saved: {cand_png}")
             if self.savetls:
                 h5io.save(cand_h5, results)
                 logger.info(f"Saved: {cand_h5}")
             pl.close(fig2)
+        return images
 
     def _linear_transit_mask(self) -> np.ndarray:
         """In-transit mask of ``flat_lc`` from the TLS linear ephemeris."""
@@ -2957,12 +2960,15 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
 
         fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
+        self.companion_images = []
         if self.savefig:
             fig.savefig(png_file, dpi=150, bbox_inches="tight")
             logger.info(f"Saved: {png_file}")
-            self._save_single_event_figure(fp)
-            self._save_ttv_figures(fp)
-            self._save_precession_figure(fp)
+            mono = self._save_single_event_figure(fp)
+            if mono is not None:
+                self.companion_images.append(mono)
+            self.companion_images.extend(self._save_ttv_figures(fp))
+            self.companion_images.extend(self._save_precession_figure(fp))
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
@@ -2972,7 +2978,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         if (self.savefig or self.savetls) and len(
             getattr(self, "iterative_tls_results", None) or []
         ) > 1:
-            self._save_iterative_candidates(fp)
+            self.companion_images.extend(self._save_iterative_candidates(fp))
 
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start

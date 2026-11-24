@@ -7,6 +7,7 @@ custom ephemeris was dropped silently (TLS ran instead) or failed in the worker.
 
 import os
 import time
+from pathlib import Path
 
 import pytest
 
@@ -282,12 +283,15 @@ def test_results_json_prefers_paths_recorded_by_the_worker(monkeypatch, tmp_path
     _touch(tmp_path / f"{stem}_tls.h5", 30)
     _touch(tmp_path / f"{stem}.png", 20)
     _touch(tmp_path / f"{stem}_precession.png", 10)
+    _touch(tmp_path / f"{stem}_ttv.png", 30)  # stale diagnostic from a prior run
+    _touch(tmp_path / f"{stem}_custom.png", 1)  # separate run with a suffix
     _touch(tmp_path / "TOI1355_s84_pdcsap_sc.png", 1)  # newer run of another job
     monkeypatch.setattr(app_module, "OUTPUT_DIR", tmp_path)
     monkeypatch.setitem(
         app_module.jobs,
         "TOI-1355_spoc",
         {
+            "output_extras": [tmp_path / f"{stem}_precession.png"],
             "output_png": str(tmp_path / f"{stem}.png"),
             "output_h5": str(tmp_path / f"{stem}_tls.h5"),
         },
@@ -298,7 +302,8 @@ def test_results_json_prefers_paths_recorded_by_the_worker(monkeypatch, tmp_path
     assert [e["name"] for e in data["extras"]] == [f"{stem}_precession.png"]
 
 
-def test_worker_records_output_paths(monkeypatch, tmp_path):
+@pytest.mark.parametrize("save", [True, False])
+def test_worker_records_output_paths(monkeypatch, tmp_path, save):
     from threading import Event
 
     class FakeQuickLook:
@@ -306,6 +311,7 @@ def test_worker_records_output_paths(monkeypatch, tmp_path):
             pass
 
         def plot_tql(self, **kwargs):
+            self.companion_images = [Path("/out/X_ttv.png")] if save else []
             return None, "/out/X.png", "/out/X_tls.h5"
 
     monkeypatch.setattr(app_module, "LOG_DIR", tmp_path)
@@ -316,6 +322,7 @@ def test_worker_records_output_paths(monkeypatch, tmp_path):
         "status": "queued", "log_file": "", "error": "", "cancel_event": Event(),
         "submitted_at": 0.0, "params": {}, "step_times": {},
     }  # fmt: skip
-    app_module.run_quicklook_background(name=name, cancel_event=Event(), save=False)
-    assert app_module.jobs[name]["output_png"] == "/out/X.png"
-    assert app_module.jobs[name]["output_h5"] == "/out/X_tls.h5"
+    app_module.run_quicklook_background(name=name, cancel_event=Event(), save=save)
+    assert app_module.jobs[name]["output_png"] == ("/out/X.png" if save else None)
+    assert app_module.jobs[name]["output_h5"] == ("/out/X_tls.h5" if save else None)
+    assert app_module.jobs[name]["output_extras"] == ([Path("/out/X_ttv.png")] if save else [])

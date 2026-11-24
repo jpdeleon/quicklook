@@ -365,7 +365,13 @@ def run_quicklook_background(name, cancel_event, **kwargs):
         if isinstance(result, tuple) and len(result) == 3:
             # The worker knows exactly what it wrote; /results-json prefers this
             # over guessing from the job name (TOI0216 vs TOI-216, "_spoc_2").
-            jobs[name]["output_png"], jobs[name]["output_h5"] = result[1], result[2]
+            saved = kwargs.get("save", False)
+            with jobs_lock:
+                jobs[name].update(
+                    output_png=result[1] if saved else None,
+                    output_h5=result[2] if saved else None,
+                    output_extras=list(getattr(tql, "companion_images", [])),
+                )
         if cancel_event.is_set():
             jobs[name]["status"] = "cancelled"
         else:
@@ -955,26 +961,24 @@ def _output_name_token(target):
     return name
 
 
-def _companion_images(main):
-    """``X_*.png`` written next to ``X.png`` (precession, mono, TTV, candidates)."""
-    return sorted(main.parent.glob(glob_escape(main.stem) + "_*.png"))
-
-
 def _recorded_outputs(target):
-    """``(png, h5)`` the worker recorded for this job, when they are served files."""
+    """Return the served files written by this job, or None for an unknown job."""
     with jobs_lock:
-        info = dict(jobs.get(target) or {})
-    png = info.get("output_png")
-    if not png:
+        info = jobs.get(target)
+        if info is None:
+            return None
+        png = info.get("output_png")
+        h5 = info.get("output_h5")
+        extras = info.get("output_extras", ())
+
+    def served(path):
+        if path:
+            path = Path(path)
+            if path.resolve().parent == OUTPUT_DIR.resolve() and path.is_file():
+                return path
         return None
-    png, h5 = Path(png), Path(info.get("output_h5") or "")
-    try:
-        served = png.resolve().parent == OUTPUT_DIR.resolve()
-    except OSError:
-        served = False
-    if not (served and png.exists()):
-        return None
-    return png, (h5 if h5.name and h5.exists() else None)
+
+    return served(png), served(h5), sorted(p for item in extras if (p := served(item)))
 
 
 def _main_and_extra_images(images, h5_path):
@@ -999,8 +1003,7 @@ def results_json(target):
     """Return paths to the output PNG (plus companion figures) and H5 of a job."""
     recorded = _recorded_outputs(target)
     if recorded is not None:
-        main, h5 = recorded
-        extras = _companion_images(main)
+        main, h5, extras = recorded
     else:
         token = glob_escape(_output_name_token(target))
         by_age = dict(key=os.path.getmtime, reverse=True)
