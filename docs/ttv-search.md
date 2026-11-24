@@ -8,6 +8,8 @@ displaced ones in, and can find them again as a fake second signal near the
 same period. With `--ttv-search` (CLI) or the **TTV search** checkbox (GUI),
 QuickLook fits every transit on its own.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) Example notebook: [`notebook/ttv_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) runs the TOI-216 and TOI-6109 examples below.
+
 This is step 5 of [issue #42](https://github.com/jpdeleon/quicklook/issues/42).
 
 ## How it works
@@ -90,20 +92,26 @@ TOI-216 has two planets near a 2:1 resonance with known TTVs. Stitching
 sectors 1–6:
 
 ```bash
-ql run --name TOI-216 --sectors 1,2,3,4,5,6 --exptime 120 --ttv-search --save
+ql run --name TOI-216 --sectors 1,2,3,4,5,6 --exptime 120 --window-length 1 --ttv-search --save
 ```
 
-TLS finds TOI-216 c at P = 34.545 d (SDE 45). All 5 transits are fitted.
-The O−C swings by ±10 min (amplitude 10.2 min, p = 4×10⁻³¹, still
-3×10⁻¹² without the worst transit), so TTVs are flagged. With no epoch
-missing between transits, the cycle count is unique.
+TLS finds TOI-216 c at P = 34.556 d (SDE 41), depth 17.3 ppt (matching
+TFOP's 17.4 ppt). All 5 transits are fitted. The O−C swings by ±9.3 min
+(p = 3.9×10⁻³⁸, still 5.2×10⁻²⁰ without the worst transit), so TTVs are
+flagged. With no epoch missing between transits, the cycle count is unique.
 
 ![TOI-216 sectors 1-6 with the TTV search](img/ttv-toi216-s1-6.png)
 
-The small bumps on either side of the aligned transits (panel 7) come from
-the pipeline's 0.48 d biweight window, which is only ~2.4× the 4.7 h duration.
-They are symmetric, so they do not shift the fitted times. A longer
-`--window-length` removes them.
+The auto-optimized window (0.48 d, only ~2.4–3× the 4.7 h transit duration)
+still let the biweight filter partially fit the transit, flattening the depth
+and leaving small symmetric bumps on either side of the aligned transits
+(panel 7). The window-length grid search is calibrated against generic
+injected transits (duration 0.05–0.5 d), not against this specific candidate's
+long, shallow one, so "3×" from that search is not a guaranteed safety
+margin — Hippke & Heller (2019) report measurable depth bias persisting past
+that ratio for biweight. A fixed `--window-length 1` (d) — about 5–6× the
+duration — fixes it: fewer in-transit points fall inside each window, so the
+local robust mean isn't pulled toward the transit.
 
 ## Diagnostic figures for active stars
 

@@ -200,6 +200,11 @@
     .result-section h2 { font-size: 1.1rem; margin-bottom: 10px; }
     .result-section img { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 8px; }
     .result-actions { display: flex; gap: 12px; margin-top: 12px; justify-content: center; }
+    .result-extras:empty { display: none; }
+    .result-extras { display: grid; gap: 14px; margin-top: 16px; }
+    .result-extras figure { margin: 0; }
+    .result-extras figcaption { font-size: 0.8rem; color: var(--text-sec); margin-top: 4px; text-align: center; }
+    .result-extras img { max-width: 720px; margin: 0 auto; }
 
     /* --- Recent results --- */
     .recent-section { margin-top: 28px; }
@@ -315,9 +320,9 @@
         <div>
           <div class="label-row">
             <label for="sector">Sector</label>
-            <span class="help-tip" tabindex="0" data-tip="-1 = latest available sector. Ignored when 'Run each available sector' is checked.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="-1 = latest available sector, or one sector number. 'all' stitches every sector of the pipeline into one light curve, and a list such as 57,58,77-84 stitches just those; both need an Exposure Time so that one cadence is stitched. Click an available sector to use it; Shift-click adds or removes it from a list. Ignored when 'Run each available sector' is checked.">?</span>
           </div>
-          <input type="number" name="sector" id="sector" value="-1">
+          <input type="text" name="sector" id="sector" value="-1" inputmode="text" autocomplete="off" spellcheck="false" placeholder="-1, 57, all, or 57,58,77-84" aria-describedby="sectorHint">
           <div id="sectorHint" class="sector-hint" aria-live="polite"></div>
           <label style="display:flex;align-items:center;gap:5px;margin-top:5px;font-weight:normal;font-size:0.82rem;cursor:pointer;">
             <input type="checkbox" name="each_sector" id="each_sector"> Run each available sector
@@ -516,7 +521,7 @@
           </span>
           <span class="check-item">
             <label><input type="checkbox" name="precession_search" id="precession_search"> Precession search</label>
-            <span class="help-tip" tabindex="0" data-tip="Fit the transit shape (impact parameter b, Rp/Rs, T14) in each stitched sector and test for a secular drift in b, as nodal precession produces. Needs a multi-sector run (Sector = all, or a sector list) spanning at least a year and a periodic TLS signal or custom ephemeris. Writes a *_precession.png figure and flags dilution changes, grazing degeneracy and short baselines. Mode: Planet fits b per sector; EB fits the inner-binary inclination of an eclipsing binary (needs the binary period with T0 at the primary eclipse, e.g. a custom ephemeris); Auto picks EB when SIMBAD lists an eclipsing binary.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Fit the transit shape (impact parameter b, Rp/Rs, T14) in each stitched sector and test for a secular drift in b, as nodal precession produces. Needs a multi-sector run (Sector = all, or a list such as 57,58,77-84, with an Exposure Time) spanning at least a year and a periodic TLS signal or custom ephemeris. Writes a *_precession.png figure and flags dilution changes, grazing degeneracy and short baselines. Mode: Planet fits b per sector; EB fits the inner-binary inclination of an eclipsing binary (needs the binary period with T0 at the primary eclipse, e.g. a custom ephemeris); Auto picks EB when SIMBAD lists an eclipsing binary.">?</span>
             <select name="precession_mode" id="precession_mode" class="inline-select" aria-label="Precession search mode">
               <option value="auto">Auto</option>
               <option value="planet">Planet</option>
@@ -648,6 +653,7 @@
 <div id="resultSection" class="result-section">
   <h2>Result</h2>
   <img id="resultImage" src="" alt="QuickLook result">
+  <div id="resultExtras" class="result-extras"></div>
   <div class="result-actions">
     <a id="downloadH5" class="btn btn-green" download>Download TLS (.h5)</a>
     <a id="downloadImg" class="btn btn-outline" download>Download Image</a>
@@ -705,6 +711,7 @@ const logToggle = $('logToggle');
 const logElem = $('log');
 const resultSection = $('resultSection');
 const resultImage = $('resultImage');
+const resultExtras = $('resultExtras');
 const downloadH5 = $('downloadH5');
 const downloadImg = $('downloadImg');
 const queueSection = $('queueSection');
@@ -1001,6 +1008,7 @@ updateFieldStates();
    ========================================================================= */
 let _availableSectors = null;   // null = unknown, [] = none, [int...] = found
 let _lastSectorQuery = null;    // dedupe identical name+pipeline lookups
+let _availableSectorsFor = null; // name|pipeline the loaded list belongs to
 
 function _sectorHintEl() { return document.getElementById('sectorHint'); }
 
@@ -1011,20 +1019,58 @@ function renderSectorChips() {
     hint.innerHTML = '<span class="sector-warn">No sectors found for this target/pipeline.</span>';
     return;
   }
-  const current = parseInt(form.elements['sector'].value, 10);
+  const spec = parseSectorSpec(form.elements['sector'].value);
+  const chosen = spec.kind === 'all' ? _availableSectors : (spec.sectors || []);
   let html = '<span>Available:</span>';
   _availableSectors.forEach(s => {
-    const cls = (s === current) ? 'sector-chip active' : 'sector-chip';
-    html += ' <button type="button" class="' + cls + '" data-sector="' + s + '" title="Use sector ' + s + '">' + s + '</button>';
+    const cls = chosen.includes(s) ? 'sector-chip active' : 'sector-chip';
+    html += ' <button type="button" class="' + cls + '" data-sector="' + s + '" title="Use sector ' + s + ' (Shift-click: add to or remove from a list)">' + s + '</button>';
   });
+  if (_availableSectors.length > 1) {
+    const cls = spec.kind === 'all' ? 'sector-chip active' : 'sector-chip';
+    html += ' <button type="button" class="' + cls + '" data-sector="all" title="Stitch every sector (needs an Exposure Time)">all</button>';
+  }
   hint.innerHTML = html;
   hint.querySelectorAll('.sector-chip').forEach(btn => {
-    btn.addEventListener('click', () => {
-      form.elements['sector'].value = btn.dataset.sector;
+    btn.addEventListener('click', (ev) => {
+      form.elements['sector'].value = ev.shiftKey && btn.dataset.sector !== 'all'
+        ? toggleSectorInList(form.elements['sector'].value, parseInt(btn.dataset.sector, 10))
+        : btn.dataset.sector;
       saveFormState();
       renderSectorChips();
     });
   });
+}
+
+/* Mirrors quicklook/sector_spec.py:parse_sector_spec (the server re-checks). */
+function parseSectorSpec(text) {
+  const t = String(text == null ? '' : text).trim().toLowerCase();
+  if (t === '' || t === '-1') return { kind: 'latest', sectors: [] };
+  if (t === 'all') return { kind: 'all', sectors: [] };
+  const limit = {{ max_sectors | tojson }};
+  const tooMany = { kind: 'error', sectors: [], error: 'Select at most ' + limit + ' sectors.' };
+  const set = new Set();
+  for (const part of t.split(',')) {
+    const m = /^\s*(\d+)(?:-(\d+))?\s*$/.exec(part);
+    if (!m) return { kind: 'error', sectors: [], error: 'Sector must be -1, a number, "all", or a list such as 57,58,77-84.' };
+    const first = parseInt(m[1], 10), last = m[2] ? parseInt(m[2], 10) : first;
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first) return { kind: 'error', sectors: [], error: 'Invalid sector range "' + part.trim() + '".' };
+    if (last - first + 1 > limit) return tooMany;
+    for (let s = first; s <= last; s++) {
+      set.add(s);
+      if (set.size > limit) return tooMany;
+    }
+  }
+  const sectors = Array.from(set).sort((a, b) => a - b);
+  return { kind: sectors.length === 1 ? 'single' : 'list', sectors: sectors };
+}
+
+function toggleSectorInList(text, sector) {
+  const spec = parseSectorSpec(text);
+  const current = spec.kind === 'all' ? _availableSectors : spec.sectors;
+  const next = current.includes(sector) ? current.filter(s => s !== sector) : current.concat([sector]);
+  next.sort((a, b) => a - b);
+  return next.length ? next.join(',') : '-1';
 }
 
 async function refreshSectorHint() {
@@ -1035,6 +1081,7 @@ async function refreshSectorHint() {
   if (!name || name.length < 2) {
     hint.innerHTML = '';
     _availableSectors = null;
+    _availableSectorsFor = null;
     _lastSectorQuery = null;
     return;
   }
@@ -1045,15 +1092,18 @@ async function refreshSectorHint() {
   try {
     const res = await fetch(BASE + '/available-sectors?name=' + encodeURIComponent(name) + '&pipeline=' + encodeURIComponent(pipeline));
     const data = await res.json();
+    if (key !== _lastSectorQuery) return;  // a newer lookup superseded this one
     if (!data.ok || !Array.isArray(data.sectors) || data.sectors.length === 0) {
       _availableSectors = [];
     } else {
       _availableSectors = data.sectors.map(s => parseInt(s, 10)).filter(n => !isNaN(n));
     }
+    _availableSectorsFor = key;
     renderSectorChips();
   } catch (err) {
     hint.innerHTML = '<span class="sector-warn">Could not fetch sectors: ' + err.message + '</span>';
     _availableSectors = null;
+    _availableSectorsFor = null;
     _lastSectorQuery = null;
   }
 }
@@ -1253,6 +1303,36 @@ cancelAllBtn.addEventListener('click', async () => {
   cancelAllBtn.disabled = false;
 });
 
+/* Client-side copy of the server's sector checks, for an immediate message. */
+function sectorPreflight(name, fanOut) {
+  const precession = form.elements['precession_search'] && form.elements['precession_search'].checked;
+  if (fanOut) {
+    return precession
+      ? 'Precession search compares sectors in one stitched light curve: untick "Run each available sector/pipeline" and set Sector to "all" or a list.'
+      : '';
+  }
+  const spec = parseSectorSpec(form.elements['sector'].value);
+  if (spec.kind === 'error') return spec.error;
+  const multi = spec.kind === 'all' || spec.kind === 'list';
+  // The list is fetched on name blur, asynchronously: after typing a new name
+  // and clicking Run it may still belong to the previous target, so only
+  // trust it when it was looked up for this name and pipeline.
+  const listIsCurrent = _availableSectorsFor === name + '|' + (form.elements['pipeline'].value || 'spoc');
+  if (listIsCurrent && Array.isArray(_availableSectors) && _availableSectors.length > 0) {
+    const missing = spec.sectors.filter(s => !_availableSectors.includes(s));
+    if (missing.length) {
+      return 'Sector ' + missing.join(', ') + ' not available for ' + name + '. Available: ' + _availableSectors.join(', ');
+    }
+  }
+  if (multi && !form.elements['exptime'].value) {
+    return 'Stitching several sectors needs an Exposure Time (e.g. 120, 200, 600 or 1800 s).';
+  }
+  if (precession && !multi) {
+    return 'Precession search needs several stitched sectors: set Sector to "all" or a list such as 57,58,77-84.';
+  }
+  return '';
+}
+
 /* =========================================================================
    AJAX form submission
    ========================================================================= */
@@ -1272,21 +1352,16 @@ form.addEventListener('submit', async (e) => {
   // asked for a specific sector that isn't in it, block the submit. (-1
   // means "latest available" and is always valid; each-sector mode picks
   // sectors server-side.)
-  const requestedSector = parseInt(form.elements['sector'].value, 10);
-  if (!eachSector
-      && Number.isInteger(requestedSector)
-      && requestedSector !== -1
-      && Array.isArray(_availableSectors)
-      && _availableSectors.length > 0
-      && !_availableSectors.includes(requestedSector)) {
-    showToast(
-      'Sector ' + requestedSector + ' is not available for ' + name +
-      '. Available: ' + _availableSectors.join(', '),
-      'error', 8000
-    );
-    form.elements['sector'].focus();
-    form.elements['sector'].classList.add('invalid');
-    setTimeout(() => form.elements['sector'].classList.remove('invalid'), 2500);
+  const eachPipelineOn = form.elements['each_pipeline'] && form.elements['each_pipeline'].checked;
+  const fanOut = eachSector || eachPipelineOn;
+  const sectorProblem = sectorPreflight(name, fanOut);
+  if (sectorProblem) {
+    showToast(sectorProblem, 'error', 9000);
+    if (!fanOut) {
+      form.elements['sector'].focus();
+      form.elements['sector'].classList.add('invalid');
+      setTimeout(() => form.elements['sector'].classList.remove('invalid'), 2500);
+    }
     return;
   }
 
@@ -1472,6 +1547,7 @@ async function showResults(target) {
       // instead of a browser-cached copy of the previous run's image.
       const bust = '?t=' + Date.now();
       resultImage.src = data.image + bust;
+      renderResultExtras(data.extras || [], bust);
       downloadImg.href = data.image;
       downloadImg.download = data.image.split('/').pop();
       if (data.h5) {
@@ -1490,6 +1566,26 @@ async function showResults(target) {
   } catch (e) {
     console.error('Failed to load results:', e);
   }
+}
+
+function renderResultExtras(extras, cacheBust) {
+  resultExtras.replaceChildren();
+  extras.forEach(item => {
+    const fig = document.createElement('figure');
+    const img = document.createElement('img');
+    img.src = item.url + cacheBust;
+    img.alt = item.name;
+    img.loading = 'lazy';
+    const link = document.createElement('a');
+    link.href = item.url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.appendChild(img);
+    const cap = document.createElement('figcaption');
+    cap.textContent = item.name;
+    fig.append(link, cap);
+    resultExtras.appendChild(fig);
+  });
 }
 
 function updateRecentResults(imagePath, cacheBust) {

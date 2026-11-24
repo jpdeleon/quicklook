@@ -2,6 +2,7 @@
 
 from unittest.mock import patch
 
+import lightkurve as lk
 import numpy as np
 import pytest
 from astropy.table import Table
@@ -179,3 +180,55 @@ def test_get_lc_only_downloads_requested_sectors():
             pass  # only the sector selection is under test
     assert captured["sectors"] == [66, 67, 68]
     assert ql.sector == [66, 67, 68]
+
+
+def _raw_sector_lc(t0, sector, level, seed):
+    """A sector downloaded at its own absolute flux level (aperture,
+    background, pipeline drift differ sector to sector): ``flux`` and
+    ``pdcsap_flux`` both hold the same un-normalized counts, as a real
+    SPOC/PDCSAP product does before any selection or normalization."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(t0, t0 + 25.0, 120 / 86400)
+    raw = level * (1 + rng.normal(0, 5e-4, t.size))
+    lc = lk.LightCurve(time=t, flux=raw, flux_err=np.full_like(raw, 5e-4 * level))
+    lc.meta["SECTOR"] = sector
+    lc.meta["AUTHOR"] = "SPOC"
+    lc.meta["FRAMETIM"] = 2.0
+    lc.meta["NUM_FRM"] = 60
+    lc["pdcsap_flux"] = raw.copy()
+    lc["pdcsap_flux_err"] = lc["flux_err"].copy()
+    return lc
+
+
+def test_get_lc_normalizes_every_sector_to_the_same_baseline():
+    """TOI-1355 and TOI-216: multi-sector runs showed a different flux
+    baseline per sector. get_lc() used to reselect the flux column *after*
+    stitch() had already normalized a different column, which restored each
+    sector's raw, un-normalized level instead of leaving every sector at 1.0.
+    """
+    rows = [("SPOC", 1, 120), ("SPOC", 2, 120)]
+    lcs = lk.LightCurveCollection(
+        [_raw_sector_lc(1000.0, 1, 1000.0, 1), _raw_sector_lc(1030.0, 2, 5000.0, 2)]
+    )
+
+    class _DownloadableResult(_FakeSearch):
+        def __getitem__(self, mask):
+            return _DownloadableResult(self.table[mask])
+
+        def download_all(self, **_):
+            return lcs
+
+    fake = _DownloadableResult(_search(rows).table)
+    ql = _get_lc_instance()
+    ql.flux_type, ql.exptime, ql.flatten_method = "pdcsap", None, "biweight"
+    ql.sigma_clip_raw = None
+
+    with (
+        patch("quicklook.tql.lk.search_lightcurve", return_value=fake),
+        patch.object(TessQuickLook, "_download_with_retry", side_effect=lambda f: f()),
+    ):
+        result = ql.get_lc(author="SPOC", sector=[1, 2], exptime=120)
+
+    in_sector_1 = np.asarray(result.time.value) < 1030.0
+    assert np.nanmedian(result.flux.value[in_sector_1]) == pytest.approx(1.0, abs=0.02)
+    assert np.nanmedian(result.flux.value[~in_sector_1]) == pytest.approx(1.0, abs=0.02)

@@ -35,6 +35,13 @@ To run QuickLook interactively in Jupyter:
 pip install -U "quicklook-package[notebooks]"
 ```
 
+The example notebooks ([basics](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb),
+[single-transit](https://github.com/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb),
+[TTV](https://github.com/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb),
+[precession](https://github.com/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb))
+each start with an install cell for Google Colab; add the `precession` extra
+(`"quicklook-package[notebooks,precession]"`) to run the precession notebook locally.
+
 ## Development install
 
 Clone the repository and install in editable mode with all extras:

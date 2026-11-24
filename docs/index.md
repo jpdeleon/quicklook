@@ -30,10 +30,17 @@ See [Pipeline Overview](pipeline.md) for a detailed explanation of each panel.
 
 ## Try it now
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb)
+Each notebook installs `quicklook` when opened in Colab.
+
+| Notebook | Topic | |
+|---|---|---|
+| [`examples.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb) | Quick-look basics: a planet, an eclipsing binary and more | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/examples.ipynb) |
+| [`single_transit_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb) | Mono- and duotransit search (TOI-2180 b) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb) |
+| [`ttv_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) | TTV search (TOI-216 c, TOI-6109 b) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) |
+| [`precession_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) | Precession search (TOI-1355 b, V907 Sco) | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) |
 
 ## Links
 
 - [GitHub repository](https://github.com/jpdeleon/quicklook)
 - [PyPI package](https://pypi.org/project/quicklook-package/)
-- [Example notebook](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb)
+- Example notebooks: [basics](https://github.com/jpdeleon/quicklook/blob/main/notebook/examples.ipynb), [single-transit](https://github.com/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb), [TTV](https://github.com/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb), [precession](https://github.com/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb)

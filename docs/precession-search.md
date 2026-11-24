@@ -6,12 +6,21 @@ so two or more TESS sectors far enough apart can show a secular drift in
 transit shape. `--precession-search` fits the transit shape in each sector and
 tests whether `b` changes with time.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) Example notebook: [`notebook/precession_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/precession_search.ipynb) runs the TOI-1355 b and V907 Sco examples below.
+
 Install the optional transit-fitting dependency before running the search.
 
 ```bash
 pip install 'quicklook-package[precession]'
 ql run --name TOI-1355 --sector all --exptime 120 --precession-search --save
 ```
+
+In the GUI: Sector `all` (or a list such as `57,58,77-84`), Exposure Time
+`120`, tick **Precession search** under Period Search, and Run. The
+`*_precession.png` figure is shown under the quicklook figure. With Period
+Min/Max 2.1/2.25 this reproduces the TOI-1355 b run below:
+
+![TOI-1355 precession run in the GUI](img/ql-gui-precession-result.png)
 
 The search runs after the TLS (and optional TTV) search. It needs a
 multi-sector light curve (`--sector all` or `--sectors ...`; quicklook already
@@ -65,7 +74,7 @@ A **precession candidate** needs all of:
 | `grazing_degeneracy` | no | `|corr(b, Rp/Rs)| > 0.95` in some sector (expected near b ~ 1) |
 | `contamination_varies` | no | `CROWDSAP` range across sectors > 0.01: dilution changes can mimic a depth change |
 | `mixed_cadence` | no | sector cadences differ by > 10% |
-| `t0_offset` | no | a sector's mid-time is > 3σ off the ephemeris (TTVs can distort shape) |
+| `t0_offset` | no | a sector's mid-time is > 3σ off the ephemeris (TTVs can distort shape); with 3+ sectors the offsets are taken from a linear refit of the per-sector mid-times, so a slightly wrong period or T0 (common for a TLS ephemeris over years) does not trip it |
 | `depth_change` | no | `Rp/Rs` trend at >= 3σ (dilution, or transit-depth variations) |
 | `nonlinear` | no | the quadratic model beats the linear one by ΔBIC >= 2 |
 
@@ -216,6 +225,17 @@ result.db_dt, result.db_dt_err, result.is_candidate, result.flags
 to 2.01 h, and `Rp/Rs` stays at 0.078-0.079. The `grazing_degeneracy` flag
 (max `|corr(b, Rp/Rs)|` = 0.95) is informational here because `Rp/Rs` does not
 trend.
+
+With the current full-covariance method, `db/dt = 0.0148 ± 0.0009 /yr`
+(16.9σ, ΔBIC = 284) — the same candidate, more significant — now that every
+stitched sector normalizes to the same baseline. Previously,
+`TessQuickLook.get_lc()` reselected each sector's raw, un-normalized flux
+column *after* `LightCurveCollection.stitch()` had already normalized it, so
+sectors downloaded at different absolute brightness levels (aperture,
+background, pipeline drift) kept those offsets instead of settling on a
+common baseline of 1 — visible as level jumps between TOI-1355's five sectors
+in the raw light curve, which biased the per-sector transit-shape fit this
+search depends on.
 
 ![TOI-1355 precession figure](img/precession-toi1355.png)
 

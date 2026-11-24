@@ -63,20 +63,12 @@ def _parse_sector(value: str):
 
 def _parse_sectors(value: str):
     """Parse ``--sectors`` such as "66-68,93" into a sorted, unique list of ints."""
-    sectors = set()
-    for part in str(value).split(","):
-        part = part.strip()
-        match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
-        if not match:
-            raise typer.BadParameter(
-                f"--sectors must look like '66-68,93' (numbers and ranges), got {value!r}"
-            )
-        first = int(match.group(1))
-        last = int(match.group(2)) if match.group(2) else first
-        if first < 1 or last < first:
-            raise typer.BadParameter(f"invalid sector range {part!r} in --sectors")
-        sectors.update(range(first, last + 1))
-    return sorted(sectors)
+    from quicklook.sector_spec import parse_sector_ranges
+
+    try:
+        return parse_sector_ranges(value)
+    except ValueError as exc:
+        raise typer.BadParameter(f"--sectors: {exc}") from exc
 
 
 def _run_ql_for_sector(name: str, sector, pipeline: str, ql_kwargs: dict):

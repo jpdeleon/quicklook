@@ -264,6 +264,28 @@ def test_systematics_flags_contamination_cadence_and_t0():
     assert {"contamination_varies", "mixed_cadence", "t0_offset"} <= set(flags)
 
 
+# TOI-1355 b against its TLS ephemeris: a period error makes dt0 grow linearly.
+TOI1355_T_MID = (2868.78, 2894.81, 3404.82, 3443.88, 3597.97)
+TOI1355_DT0 = (-0.00680, -0.00602, 0.00727, 0.00826, 0.01211)
+
+
+def test_t0_offset_ignores_linear_ephemeris_drift():
+    fits = [
+        _fit(k, t, 0.9, dt0=d, dt0_err=3e-4)
+        for k, (t, d) in enumerate(zip(TOI1355_T_MID, TOI1355_DT0))
+    ]
+    assert "t0_offset" not in systematics_flags(fits)
+
+
+def test_t0_offset_flags_a_sector_off_the_refitted_ephemeris():
+    dt0 = list(TOI1355_DT0)
+    dt0[2] += 0.005  # 7 min, ~17 sigma off the drift line
+    fits = [
+        _fit(k, t, 0.9, dt0=d, dt0_err=3e-4) for k, (t, d) in enumerate(zip(TOI1355_T_MID, dt0))
+    ]
+    assert "t0_offset" in systematics_flags(fits)
+
+
 # --- end to end ---------------------------------------------------------------------
 
 

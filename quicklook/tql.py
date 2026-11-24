@@ -951,14 +951,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
             self.sector = lc.sector
 
         # Select flux type / photometry for pipelines that expose a choice.
+        # For sector_orig == "all" this already happened per sector inside
+        # _stitch_masked, before each light curve was normalized; selecting
+        # it again here would overwrite the stitched, per-sector-normalized
+        # "flux" column with the raw (unnormalized) column and reintroduce
+        # the sector-to-sector offsets normalization is meant to remove.
         author = lc.meta["AUTHOR"].lower()
-        if author == "spoc":
-            lc = lc.select_flux(self.flux_type + "_flux")
-        elif author == "tglc":
-            # MAST TGLC HLSP files carry both calibrated flux columns.
-            lc, used = _select_tglc_flux(lc, self.flux_type)
-            if used != self.flux_type:
-                self.flux_type = used
+        if sector_orig != "all":
+            if author == "spoc":
+                lc = lc.select_flux(self.flux_type + "_flux")
+            elif author == "tglc":
+                # MAST TGLC HLSP files carry both calibrated flux columns.
+                lc, used = _select_tglc_flux(lc, self.flux_type)
+                if used != self.flux_type:
+                    self.flux_type = used
 
         # Set exposure time and cadence
         if self.exptime is None:
@@ -1002,13 +1008,41 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         return lc
 
     def _stitch_masked(self, search_result, author):
-        """Download and stitch several light curves, masking TGLC per sector."""
+        """Download and stitch several light curves, masking TGLC per sector.
+
+        The flux column is selected on each light curve *before* stitching, so
+        that ``LightCurveCollection.stitch()``'s per-light-curve
+        ``normalize()`` (its default ``corrector_func``) acts on the column
+        the user asked for and brings every sector to the same median of 1.
+        Selecting the flux column afterwards, on the already-stitched light
+        curve, would instead restore each sector's raw, unnormalized counts —
+        which differ sector to sector (aperture, background, pipeline drift)
+        — and a single normalize() over the whole stitched array does not
+        remove those per-sector offsets, only rescales them together. This
+        produced visibly different flux levels per sector for TOI-1355 and
+        TOI-216 multi-sector/"all" runs.
+        """
         lcs = search_result.download_all(
             quality_bitmask=_download_bitmask(author, self.quality_bitmask)
         )
+        # None (e.g. synthetic light curves in tests, built without a flux
+        # column to choose) means there is no choice to apply before
+        # stitching; stitch() then normalizes whatever "flux" already holds.
+        flux_type = getattr(self, "flux_type", None)
         if str(author).upper() == "TGLC":
             lcs = lk.LightCurveCollection(
                 [_apply_tglc_hlsp_mask(lc, self.quality_bitmask) for lc in lcs]
+            )
+            if flux_type is not None:
+                selected = [_select_tglc_flux(lc, flux_type) for lc in lcs]
+                lcs = lk.LightCurveCollection([sel_lc for sel_lc, _ in selected])
+                used = {u for _, u in selected}
+                if len(used) == 1 and (used_flux_type := used.pop()) != flux_type:
+                    self.flux_type = used_flux_type
+        elif str(author).upper() == "SPOC" and flux_type is not None:
+            flux_col = f"{flux_type}_flux"
+            lcs = lk.LightCurveCollection(
+                [lc.select_flux(flux_col) if flux_col in lc.colnames else lc for lc in lcs]
             )
         self._record_sector_spans(lcs)
         return _sort_by_time(lcs.stitch())
@@ -2601,6 +2635,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         found candidates are masked out) so the panel shows the signal as it
         appears in the raw flattened data.
         """
+        images = []
         for idx, results in enumerate(getattr(self, "iterative_tls_results", [])[1:], start=2):
             cand_png = fp.with_stem(fp.stem + f"_p{idx}").with_suffix(".png")
             cand_h5 = Path(self.outdir, fp.name + f"_tls_p{idx}").with_suffix(".h5")
@@ -2635,11 +2670,13 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
             )
             if self.savefig:
                 fig2.savefig(cand_png, dpi=150, bbox_inches="tight")
+                images.append(cand_png)
                 logger.info(f"Saved: {cand_png}")
             if self.savetls:
                 h5io.save(cand_h5, results)
                 logger.info(f"Saved: {cand_h5}")
             pl.close(fig2)
+        return images
 
     def _linear_transit_mask(self) -> np.ndarray:
         """In-transit mask of ``flat_lc`` from the TLS linear ephemeris."""
@@ -2957,12 +2994,15 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
 
         fp = self.check_output_file_exists()
         png_file = fp.with_suffix(".png")
+        self.companion_images = []
         if self.savefig:
             fig.savefig(png_file, dpi=150, bbox_inches="tight")
             logger.info(f"Saved: {png_file}")
-            self._save_single_event_figure(fp)
-            self._save_ttv_figures(fp)
-            self._save_precession_figure(fp)
+            mono = self._save_single_event_figure(fp)
+            if mono is not None:
+                self.companion_images.append(mono)
+            self.companion_images.extend(self._save_ttv_figures(fp))
+            self.companion_images.extend(self._save_precession_figure(fp))
 
         h5_file = Path(self.outdir, fp.name + "_tls").with_suffix(".h5")
         if self.savetls:
@@ -2972,7 +3012,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         if (self.savefig or self.savetls) and len(
             getattr(self, "iterative_tls_results", None) or []
         ) > 1:
-            self._save_iterative_candidates(fp)
+            self.companion_images.extend(self._save_iterative_candidates(fp))
 
         self.timer_end = timer()
         elapsed_time = self.timer_end - self.timer_start

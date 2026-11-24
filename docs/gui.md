@@ -22,12 +22,17 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
 1. Enter a target name (TOI, TIC, or common name)
 2. Adjust pipeline parameters (sector, pipeline, flux type, etc.)
+   - **Sector** takes `-1` (latest), one sector number, `all` (stitch every sector of the pipeline into one light curve) or a list such as `57,58,77-84` (stitch just those). Stitching needs an **Exposure Time** so that only one cadence is stitched, as `--sector all` / `--sectors` do on the CLI. Click an available-sector chip to use it, Shift-click to add it to or remove it from a list, or click **all**.
 3. Optionally toggle **Show SIMBAD** to overlay nearby non-stellar SIMBAD objects on the archival image (on by default in the GUI)
-   - Under **Period Search**, tick **Single-transit search** to also look for individual transits; see [Single-transit search](single-transit.md). The TLS summary page then shows each target's `Class`, `N_ev`, `P_min` and `N_alias` (duotransit aliases)
-   - Tick **TTV search** to fit every transit separately and test the O−C for transit-timing variations; see [TTV search](ttv-search.md). The TLS summary page then shows `TTV [min]` and `p_TTV`
-   - Tick **Precession search** (with Sector = all, or a sector list) to fit the transit shape per sector and test for a drift in the impact parameter; see [Precession search](precession-search.md). The mode selector next to it chooses **Planet**, **EB** (inner-binary inclination of an eclipsing binary; give the binary period and primary-eclipse T0 as a custom ephemeris) or **Auto** (EB when SIMBAD lists an eclipsing binary). The TLS summary page then shows `db/dt [/yr]` (red for a precession candidate; hover for significance and flags)
+   - Under **Period Search**, tick **Single-transit search** to also look for individual transits; see [Single-transit search](single-transit.md). Stitch sectors (e.g. Sector `19,48`, Exposure Time `120`) to pair two transits into a duotransit. The TLS summary page then shows each target's `Class`, `N_ev`, `P_min` and `N_alias` (duotransit aliases)
+   - Tick **TTV search** to fit every transit separately and test the O−C for transit-timing variations; see [TTV search](ttv-search.md). It needs >= 3 transits, so stitch sectors for long periods (e.g. Sector `1-6`, Exposure Time `120`). On active stars, give the planet's **Custom Ephemeris** (`Tc Tcerr P Perr Tdur Tdurerr`, spaces or commas; a malformed value is refused rather than ignored) to also get the `*_ttv.png` and `*_ttv_transits.png` diagnostics. The TLS summary page then shows `TTV [min]` and `p_TTV`
+   - Tick **Precession search** (with Sector = `all` or a list, and an Exposure Time) to fit the transit shape per sector and test for a drift in the impact parameter; see [Precession search](precession-search.md). The mode selector next to it chooses **Planet**, **EB** (inner-binary inclination of an eclipsing binary; give the binary period and primary-eclipse T0 as a custom ephemeris) or **Auto** (EB when SIMBAD lists an eclipsing binary). The `*_precession.png` figure appears under the main result (as do `*_mono.png`, `*_ttv.png` and `*_ttv_transits.png` from the other searches), and the TLS summary page shows `db/dt [/yr]` (red for a precession candidate; hover for significance and flags). The form refuses Precession search on a single sector or with **Run each available sector/pipeline**, where it could only skip.
 
    ![Period Search options](img/ql-gui-period-search.png)
+
+   A TTV run (TOI-216, Sector `1-6`, Exposure Time `120`, Window Length `1` under Detrending) shows the quicklook figure with `*_ttv.png` and `*_ttv_transits.png` under it:
+
+   ![TOI-216 TTV run in the GUI](img/ql-gui-ttv-result.png)
 4. Click **Run QuickLook**
 5. Watch live progress with step-by-step updates and ETA
 
