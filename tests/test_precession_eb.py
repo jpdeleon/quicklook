@@ -288,3 +288,35 @@ def test_search_rejects_bad_third_light():
     time, flux, err, spans = _stitched(0.0)
     with pytest.raises(ValueError):
         search_eb_precession(time, flux, err, spans, PERIOD, T0, _duration(), third_light=1.0)
+
+
+def test_unconverged_eclipse_fits_do_not_produce_verdict(monkeypatch):
+    from functools import partial
+
+    from scipy.optimize import least_squares
+
+    monkeypatch.setattr("quicklook.precession_eb.least_squares", partial(least_squares, max_nfev=1))
+    result = _search(1.0)
+    assert not result.is_candidate
+    assert result.models is None and result.binary is None
+    assert "did not converge" in result.reason
+
+
+def test_primary_only_fit_leaves_secondary_timing_unavailable():
+    time, flux, err, spans = _stitched(1.0)
+    primary_half = np.abs((time - T0 + PERIOD / 2) % PERIOD - PERIOD / 2) < PERIOD / 4
+    result = search_eb_precession(
+        time[primary_half], flux[primary_half], err[primary_half], spans, PERIOD, T0, _duration()
+    )
+    assert "no_secondary" in result.flags
+    assert np.isnan(result.binary.dt_sec)
+    assert np.isnan(result.binary.dt_sec_err)
+
+
+def test_opposite_crowding_trend_keeps_candidate():
+    from dataclasses import replace
+
+    fits = [replace(f, crowdsap=c) for f, c in zip(_trend_fits(), (0.98, 0.94, 0.89, 0.84))]
+    result = assess_eb_precession(fits, BINARY)
+    assert "contamination_varies" in result.flags
+    assert result.is_candidate

@@ -80,6 +80,8 @@ def main() -> None:
         third_light=args.third_light,
     )
     b = result.binary
+    if b is None:
+        raise SystemExit(result.reason)
     print(
         f"binary: r_sum={b.r_sum:.4f} k={b.k:.3f} J={b.sb_ratio:.3f} "
         f"dt_sec={b.dt_sec * 1440:.1f} min"

@@ -77,7 +77,7 @@ from quicklook.precession import (
 )
 
 EB_B_STARTS = (0.3, 0.8, 1.3)  # EBs are often grazing: also start beyond b = 1
-N_SHARED = 4  # r_sum, k, J, secondary offset
+N_SHARED = 3  # r_sum, k, J; an optional secondary offset follows all sector parameters
 N_PER_SECTOR = 3  # mid-time offset, inclination, baseline
 INC_MIN_DEG = 30.0
 INC_BOUNDARY_DEG = 0.1  # i fitted within this of 90 deg: covariance errors are meaningless
@@ -87,7 +87,7 @@ SB_BOUNDS = (0.0, 5.0)
 CORE_FRACTION = 0.1  # empirical depth: mean of points within this * duration of mid-eclipse
 MIN_CORE_POINTS = 3
 DEPTH_MISMATCH_SIGMA = 2.0  # opposite-sign depth trend this significant blocks a candidate
-DILUTION_DEPTH_RATIO = 0.5  # CROWDSAP spread this fraction of the depth change blocks
+DILUTION_DEPTH_RATIO = 0.5  # minimum fraction of the depth trend explained by crowding
 EB_BLOCKING_FLAGS = (
     "short_baseline",
     "i_at_boundary",
@@ -270,7 +270,7 @@ def _eclipse_flux(params, model, t0, rp, a_r, inc) -> np.ndarray:
 
 
 def _sector_model(theta, k_sector, models, period, t0, third_light):
-    r_sum, k, sb, dt_sec = theta[:N_SHARED]
+    r_sum, k, sb = theta[:N_SHARED]
     base = N_SHARED + N_PER_SECTOR * k_sector
     dt0, inc, c0 = theta[base : base + N_PER_SECTOR]
     r1, r2 = _radii(r_sum, k)
@@ -280,6 +280,7 @@ def _sector_model(theta, k_sector, models, period, t0, third_light):
     prim = c0 * ((1 - third_light) * (f1 + light) / (1 + light) + third_light)
     if sec is None:
         return prim, None
+    dt_sec = theta[-1]
     sp, sm = sec
     f2 = _eclipse_flux(sp, sm, t0 + 0.5 * period + dt0 + dt_sec, 1 / k, 1 / r2, inc)
     second = c0 * ((1 - third_light) * (1 + light * f2) / (1 + light) + third_light)
@@ -320,15 +321,19 @@ def _initial_guess(windows, period, t0, duration, b0) -> tuple:
     r1 = r_sum / 2
     inc0 = float(np.degrees(np.arccos(np.clip(b0 * r1, 0, 1))))
     dt_bound = max(0.5 * duration, MIN_DT0_BOUND)
-    x0 = [r_sum, 1.0, sb, 0.0]
-    lo = [R_SUM_BOUNDS[0], K_BOUNDS[0], SB_BOUNDS[0], -dt_bound]
-    hi = [R_SUM_BOUNDS[1], K_BOUNDS[1], SB_BOUNDS[1], dt_bound]
+    x0 = [r_sum, 1.0, sb]
+    lo = [R_SUM_BOUNDS[0], K_BOUNDS[0], SB_BOUNDS[0]]
+    hi = [R_SUM_BOUNDS[1], K_BOUNDS[1], SB_BOUNDS[1]]
     for w in windows:
         out = np.abs(_phase(w.primary.time, period, t0)) > 0.5 * duration
         c0 = float(np.median(w.primary.flux[out])) if np.any(out) else 1.0
         x0 += [0.0, min(inc0, 90.0 - 1e-3), c0]
         lo += [-dt_bound, INC_MIN_DEG, 0.5]
         hi += [dt_bound, 90.0, 1.5]
+    if secs:
+        x0.append(0.0)
+        lo.append(-dt_bound)
+        hi.append(dt_bound)
     return np.array(x0), np.array(lo), np.array(hi)
 
 
@@ -344,7 +349,7 @@ def _best_fit(windows, models, period, t0, duration, third_light):
             args=(windows, models, period, t0, third_light),
             x_scale="jac",
         )
-        if best is None or res.cost < best.cost:
+        if res.success and (best is None or res.cost < best.cost):
             best = res
     return best
 
@@ -425,13 +430,17 @@ def fit_sector_eclipses(
 
     ``third_light`` is a fixed fraction of the total flux (0 when the light
     curve is already corrected for contamination and there is no known third
-    star). Both stars share ``limb_darkening``.
+    star). Both stars share ``limb_darkening``. Returns ``((), None, None)``
+    when none of the optimizer starts converge.
     """
     if not 0 <= third_light < 1:
         raise ValueError(f"third_light must be in [0, 1), got {third_light}")
     batman = import_batman()
     models = _make_eb_models(windows, period, t0, limb_darkening, batman)
     res = _best_fit(windows, models, period, t0, duration, third_light)
+    if res is None:
+        return (), None, None
+    has_secondary = any(w.secondary is not None for w in windows)
     cov = covariance(res)
     err = np.sqrt(np.clip(np.diag(cov), 0, None))
     draws = np.random.default_rng(seed).multivariate_normal(
@@ -452,8 +461,8 @@ def fit_sector_eclipses(
         k_err=float(err[1]),
         sb_ratio=float(res.x[2]),
         sb_ratio_err=float(err[2]),
-        dt_sec=float(res.x[3]),
-        dt_sec_err=float(err[3]),
+        dt_sec=float(res.x[-1]) if has_secondary else np.nan,
+        dt_sec_err=float(err[-1]) if has_secondary else np.nan,
         third_light=float(third_light),
     )
     inc_idx = N_SHARED + 1 + N_PER_SECTOR * np.arange(len(windows))
@@ -478,9 +487,16 @@ def _dilution_mimics_depth(fits) -> bool:
     ok = np.isfinite(crowd) & np.isfinite(depth) & (crowd > 0)
     if np.count_nonzero(ok) < MIN_SECTORS or np.median(depth[ok]) <= 0:
         return False
-    rel_crowd = np.ptp(crowd[ok]) / np.median(crowd[ok])
-    rel_depth = np.ptp(depth[ok]) / np.median(depth[ok])
-    return bool(rel_crowd >= DILUTION_DEPTH_RATIO * rel_depth)
+    time = np.array([f.t_mid for f in fits])[ok]
+    centered = time - np.mean(time)
+    # For constant intrinsic depth, observed depth scales with CROWDSAP.
+    # Both slopes share the same positive time denominator, which cancels.
+    crowd_trend = centered @ (crowd[ok] - np.mean(crowd[ok])) / np.median(crowd[ok])
+    depth_trend = centered @ (depth[ok] - np.mean(depth[ok])) / np.median(depth[ok])
+    return bool(
+        crowd_trend * depth_trend > 0
+        and abs(crowd_trend) >= DILUTION_DEPTH_RATIO * abs(depth_trend)
+    )
 
 
 def eb_flags(fits, binary: Optional[BinaryParams]) -> tuple:
@@ -512,7 +528,7 @@ def assess_eb_precession(
     A candidate needs ``|di/dt| >= 3 sigma``, ``BIC(static) - BIC(linear) >= 2``
     and none of: a baseline under ``min_baseline_yr``, ``i`` pinned at 90 deg,
     a measured depth trend opposite to ``di/dt`` at >= 2 sigma, or a CROWDSAP
-    spread large enough to explain the depth change.
+    trend large enough and in the same direction to explain the depth change.
     """
     order = np.argsort([f.t_mid for f in fits])
     fits = tuple(fits[i] for i in order)
@@ -608,4 +624,6 @@ def search_eb_precession(
     fits, binary, inc_cov = fit_sector_eclipses(
         windows, period, t0, duration, limb_darkening, third_light, seed
     )
+    if binary is None:
+        return EBPrecessionResult((), None, reason="joint eclipse fit did not converge")
     return assess_eb_precession(fits, binary, inc_cov, min_baseline_yr)

@@ -131,10 +131,10 @@ blocking flags:
 | `short_baseline` | yes | sectors span < 1 yr |
 | `i_at_boundary` | yes | some sector's `i` is within 0.1° of 90°, where the covariance errors mean nothing |
 | `depth_sign_mismatch` | yes | measured depth trend opposite to `di/dt` at >= 2σ |
-| `dilution_mimics_depth` | yes | `contamination_varies` and the relative `CROWDSAP` spread is at least half the relative depth change |
+| `dilution_mimics_depth` | yes | `contamination_varies` and the fractional `CROWDSAP` trend has the same sign and at least half the magnitude of the fractional depth trend over the same sectors |
 | `contamination_varies` | no | `CROWDSAP` range across sectors > 0.01 |
 | `mixed_cadence`, `t0_offset`, `nonlinear` | no | as in the planet branch |
-| `no_secondary` | no | no sector covers a secondary eclipse: `J` is set only through the dilution |
+| `no_secondary` | no | no sector covers a secondary eclipse: the secondary timing offset and its uncertainty are unavailable, and `J` is constrained only through dilution |
 | `eccentric` | no | the secondary eclipse is > 3σ off phase 0.5 |
 
 **Precession period.** The inner orbit normal precesses on a cone of
