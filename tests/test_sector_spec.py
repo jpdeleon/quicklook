@@ -38,6 +38,16 @@ def test_parse_sector_spec_rejects_bad_input(value):
         parse_sector_spec(value)
 
 
+@pytest.mark.parametrize("value", ["1-1025", "1-1024,2000", "1-10000000000"])
+def test_oversized_sector_selection(value):
+    with pytest.raises(ValueError, match="at most"):
+        parse_sector_ranges(value)
+
+
+def test_overlapping_ranges_at_limit():
+    assert parse_sector_ranges("1-1024,100-200") == list(range(1, 1025))
+
+
 def test_parse_sector_ranges_matches_cli_format():
     assert parse_sector_ranges("66-68,93") == [66, 67, 68, 93]
 

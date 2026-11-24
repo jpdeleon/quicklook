@@ -16,6 +16,7 @@ import re
 from typing import Union
 
 LATEST_SECTOR = -1
+MAX_SECTORS = 1024
 SectorSpec = Union[int, str, list]
 _RANGE = re.compile(r"(\d+)(?:-(\d+))?")
 
@@ -37,7 +38,12 @@ def parse_sector_ranges(text: str) -> list:
         last = int(match.group(2)) if match.group(2) else first
         if first < 1 or last < first:
             raise ValueError(f"invalid sector range {part!r}")
-        sectors.update(range(first, last + 1))
+        if last - first + 1 > MAX_SECTORS:
+            raise ValueError(f"select at most {MAX_SECTORS} sectors")
+        for sector in range(first, last + 1):
+            sectors.add(sector)
+            if len(sectors) > MAX_SECTORS:
+                raise ValueError(f"select at most {MAX_SECTORS} sectors")
     return sorted(sectors)
 
 

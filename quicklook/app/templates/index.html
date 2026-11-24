@@ -1047,13 +1047,19 @@ function parseSectorSpec(text) {
   const t = String(text == null ? '' : text).trim().toLowerCase();
   if (t === '' || t === '-1') return { kind: 'latest', sectors: [] };
   if (t === 'all') return { kind: 'all', sectors: [] };
+  const limit = {{ max_sectors | tojson }};
+  const tooMany = { kind: 'error', sectors: [], error: 'Select at most ' + limit + ' sectors.' };
   const set = new Set();
   for (const part of t.split(',')) {
     const m = /^\s*(\d+)(?:-(\d+))?\s*$/.exec(part);
     if (!m) return { kind: 'error', sectors: [], error: 'Sector must be -1, a number, "all", or a list such as 57,58,77-84.' };
     const first = parseInt(m[1], 10), last = m[2] ? parseInt(m[2], 10) : first;
-    if (first < 1 || last < first) return { kind: 'error', sectors: [], error: 'Invalid sector range "' + part.trim() + '".' };
-    for (let s = first; s <= last; s++) set.add(s);
+    if (!Number.isSafeInteger(first) || !Number.isSafeInteger(last) || first < 1 || last < first) return { kind: 'error', sectors: [], error: 'Invalid sector range "' + part.trim() + '".' };
+    if (last - first + 1 > limit) return tooMany;
+    for (let s = first; s <= last; s++) {
+      set.add(s);
+      if (set.size > limit) return tooMany;
+    }
   }
   const sectors = Array.from(set).sort((a, b) => a - b);
   return { kind: sectors.length === 1 ? 'single' : 'list', sectors: sectors };
@@ -1061,7 +1067,7 @@ function parseSectorSpec(text) {
 
 function toggleSectorInList(text, sector) {
   const spec = parseSectorSpec(text);
-  const current = spec.kind === 'single' || spec.kind === 'list' ? spec.sectors : [];
+  const current = spec.kind === 'all' ? _availableSectors : spec.sectors;
   const next = current.includes(sector) ? current.filter(s => s !== sector) : current.concat([sector]);
   next.sort((a, b) => a - b);
   return next.length ? next.join(',') : '-1';

@@ -23,7 +23,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from quicklook.cli.ql import sanitize_target_name
 from quicklook.exceptions import InvalidInputError, QuickLookError
 from quicklook.pipelines import ALL_TESS_PIPELINES, HLSP_PIPELINES
-from quicklook.sector_spec import is_multi_sector, parse_sector_spec
+from quicklook.sector_spec import MAX_SECTORS, is_multi_sector, parse_sector_spec
 from quicklook.utils import get_available_pipelines, get_available_sectors
 
 warnings.filterwarnings("ignore", category=UserWarning, module="lightkurve")
@@ -612,6 +612,7 @@ def index():
     return render_template(
         "index.html",
         recent_results=recent_results,
+        max_sectors=MAX_SECTORS,
         pipelines=ALL_TESS_PIPELINES,
     )
 
