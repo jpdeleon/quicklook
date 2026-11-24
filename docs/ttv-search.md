@@ -8,6 +8,8 @@ displaced ones in, and can find them again as a fake second signal near the
 same period. With `--ttv-search` (CLI) or the **TTV search** checkbox (GUI),
 QuickLook fits every transit on its own.
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) Example notebook: [`notebook/ttv_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/ttv_search.ipynb) runs the TOI-216 and TOI-6109 examples below.
+
 This is step 5 of [issue #42](https://github.com/jpdeleon/quicklook/issues/42).
 
 ## How it works

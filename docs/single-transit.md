@@ -8,6 +8,8 @@ matching dips into a duotransit, and classifies each target.
 
 This is tracked in [issue #42](https://github.com/jpdeleon/quicklook/issues/42).
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb) Example notebook: [`notebook/single_transit_search.ipynb`](https://github.com/jpdeleon/quicklook/blob/main/notebook/single_transit_search.ipynb) runs both examples below.
+
 ## How it works
 
 The search runs after TLS on its own detrended light curve (see
