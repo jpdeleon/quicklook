@@ -1,5 +1,36 @@
 # Changelog
 
+## [1.14.0](https://github.com/jpdeleon/quicklook/compare/v1.13.0...v1.14.0) (2026-11-24)
+
+
+### Features
+
+* --precession-mode to run the EB precession branch from CLI and GUI ([8a6ccf6](https://github.com/jpdeleon/quicklook/commit/8a6ccf69918217c4f76d0ed2f25c0bd730506120))
+* eclipsing-binary branch of the precession search ([#63](https://github.com/jpdeleon/quicklook/issues/63)) ([943e9a7](https://github.com/jpdeleon/quicklook/commit/943e9a7ff32c39d801c11f8d32dc2f61f65adb3c))
+* eclipsing-binary branch of the precession search ([#63](https://github.com/jpdeleon/quicklook/issues/63)) ([175eeba](https://github.com/jpdeleon/quicklook/commit/175eebad7b46a101eabd45e0fab3125d224725d4))
+* **gui:** add Precession search option and db/dt summary column ([26158c0](https://github.com/jpdeleon/quicklook/commit/26158c09bec477f1d11680d41a20b484a60b759d))
+* precession search via per-sector transit shape ([#63](https://github.com/jpdeleon/quicklook/issues/63)) ([d1d3b02](https://github.com/jpdeleon/quicklook/commit/d1d3b02b43522f4c512917dadc3d6bbaf2b00512))
+* search for nodal precession via per-sector transit shape ([#63](https://github.com/jpdeleon/quicklook/issues/63)) ([083d316](https://github.com/jpdeleon/quicklook/commit/083d3163169dc5f67eb82770880171fa78795d06))
+
+
+### Bug Fixes
+
+* block grazing precession trends only when Rp/Rs absorbs them ([3d3ac40](https://github.com/jpdeleon/quicklook/commit/3d3ac40ffdbfd4e4c7d9e217c9651387c62f3b51))
+* exit 3 when the TGLC benchmark disagrees with MAST, keep 1 for crashes ([2f17435](https://github.com/jpdeleon/quicklook/commit/2f17435a9e1440a7539544b1467e83136a78a1fd))
+* exit 3 when the TGLC benchmark disagrees with MAST, keep 1 for crashes ([eed08ef](https://github.com/jpdeleon/quicklook/commit/eed08ef0131d107d9d48ed31fcb25a79abe24cb6))
+* **gui:** bound sector selections and preserve all-sector toggles ([13082c7](https://github.com/jpdeleon/quicklook/commit/13082c78c54302a7bf3f299ae75b5069e965801c))
+* **gui:** display companion figures written by the selected job ([a00c510](https://github.com/jpdeleon/quicklook/commit/a00c510f3cfc2c5266d601a3ab41b0bb36b41b28))
+* **gui:** multi-sector searches, result figures, and Colab notebooks for each search ([539793d](https://github.com/jpdeleon/quicklook/commit/539793dc2f508e9a3f34b3f0068fde7472d89d9d))
+* **gui:** run multi-sector searches and show their companion figures ([59c0fe3](https://github.com/jpdeleon/quicklook/commit/59c0fe32f99ca484de0699c78e181fd01b44c697))
+* load the optional precession fitter on demand ([0cc525e](https://github.com/jpdeleon/quicklook/commit/0cc525e8158051d7b0e847197377efc8f0223dec))
+* normalize every stitched sector to the same baseline ([6c7577a](https://github.com/jpdeleon/quicklook/commit/6c7577a9b4f204dcbf39c4117497536a2376b024))
+* preserve eclipsing-binary mode for skipped searches ([3e1067a](https://github.com/jpdeleon/quicklook/commit/3e1067a20bdaa3ff73534781144dc0dbe995a0dd))
+* preserve known stellar errors and handle zero scatter ([fb28aa5](https://github.com/jpdeleon/quicklook/commit/fb28aa5748db387c21e8128ca50ba7efd2bac7c9))
+* propagate joint impact-parameter covariance into trend tests ([911e0c4](https://github.com/jpdeleon/quicklook/commit/911e0c4068910f0f3ad9f47c8e59cb646cc54ed7))
+* reject unconverged eclipse fits and test signed dilution trends ([0b6f143](https://github.com/jpdeleon/quicklook/commit/0b6f1435bf3b9fa5f0b428d05da5c24785670255))
+* stop a linear ephemeris drift from raising t0_offset ([6601a07](https://github.com/jpdeleon/quicklook/commit/6601a07480c1766e28a3c80e5896802210b642e3))
+* stop a missing distinct_transit_count from forcing periodic ([6a75833](https://github.com/jpdeleon/quicklook/commit/6a75833e31986f153df328f18580c31488d24052))
+
 ## [1.13.0](https://github.com/jpdeleon/quicklook/compare/v1.12.0...v1.13.0) (2026-11-15)
 
 
