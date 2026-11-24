@@ -31,6 +31,7 @@ from quicklook.single_event import (
     SingleEventResult,
     _cadence,
     classify_events,
+    distinct_transit_count,
     duration_grid,
     longest_segment,
     min_period,
@@ -134,13 +135,17 @@ class SingleEventMixin:
         if res is None:
             return False
         sde = res.get("SDE")
-        n_transits = res.get("distinct_transit_count", PERIODIC_MIN_TRANSITS)
-        return bool(
-            sde is not None
-            and np.isfinite(sde)
-            and sde >= PERIODIC_SDE_MIN
-            and n_transits >= PERIODIC_MIN_TRANSITS
-        )
+        if not (sde is not None and np.isfinite(sde) and sde >= PERIODIC_SDE_MIN):
+            return False
+        n_transits = res.get("distinct_transit_count")
+        if n_transits is None:
+            # Not every TLS backend reports this (the GPU implementation used
+            # here never does); assuming it trivially met PERIODIC_MIN_TRANSITS
+            # silently defeated this guard, so recompute it from the data.
+            n_transits = distinct_transit_count(
+                self.raw_lc.time.value, res.get("period"), res.get("T0"), res.get("duration")
+            )
+        return bool(n_transits >= PERIODIC_MIN_TRANSITS)
 
     def _explained_by_tls(self, event) -> bool:
         res = self.tls_results

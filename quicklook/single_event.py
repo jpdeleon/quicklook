@@ -317,6 +317,31 @@ def gap_boundaries(time) -> np.ndarray:
     return np.concatenate([[time[0]], time[jumps], time[jumps + 1], [time[-1]]])
 
 
+def distinct_transit_count(time, period, epoch, duration) -> int:
+    """Number of transit cycles (at this ephemeris) with at least one in-transit point.
+
+    Not every TLS backend reports its own ``distinct_transit_count`` (the GPU
+    implementation used here never does); recompute it directly from the
+    light curve instead of assuming a value, which can hide an alias with too
+    few genuinely observed transits as "periodic" (TOI-2180 b, sectors 19+48:
+    SDE 22 at a ~25 d period close to one sector's length, with only 2
+    sectors' worth of real in-transit data, not the 3 a trivial default
+    would assume).
+    """
+    time = np.sort(np.asarray(time, dtype=float))
+    time = time[np.isfinite(time)]
+    if time.size == 0 or period is None or not (np.isfinite(period) and period > 0):
+        return 0
+    half = (
+        duration / 2.0
+        if duration is not None and np.isfinite(duration) and duration > 0
+        else _cadence(time)
+    )
+    cycle = np.round((time - epoch) / period)
+    phase = time - (epoch + cycle * period)
+    return int(np.unique(cycle[np.abs(phase) <= half]).size)
+
+
 def _pick_peaks(grid, snr, best_dur, snr_min, max_events):
     order = np.argsort(np.where(np.isfinite(snr), snr, -np.inf))[::-1]
     peaks = []

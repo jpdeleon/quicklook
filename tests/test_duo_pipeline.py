@@ -61,6 +61,18 @@ def test_tls_with_two_transits_does_not_block_a_duo():
     assert ql.tls_results["event_class"] == "duo"
 
 
+def test_missing_distinct_transit_count_does_not_assume_periodic():
+    # Some TLS backends (the GPU implementation used here) never report
+    # distinct_transit_count. TOI-2180 b (sectors 19+48): SDE 22 at a ~25 d
+    # period close to one sector's length, aliasing dT=700 d at n=28
+    # (700/28=25); only the 2 real sectors have in-transit data, not the 3
+    # PERIODIC_MIN_TRANSITS assumed trivially true when the key is missing.
+    tls = {"SDE": 20.0, "period": 25.0, "T0": 10.0, "duration": 0.3}
+    ql = _ql(_two_sector_lc(), tls=tls)
+    ql.run_single_event_search()
+    assert ql.tls_results["event_class"] == "duo"
+
+
 def test_inconsistent_depths_stay_mono():
     ql = _ql(_two_sector_lc(depths=(0.002, 0.010)))
     ql.run_single_event_search()
