@@ -413,6 +413,13 @@ def run(
         "on its own and test the O-C against a linear ephemeris for transit-timing "
         "variations; needs >=3 transits",
     ),
+    precession_search: bool = typer.Option(
+        False,
+        "--precession-search",
+        help="Fit the transit shape (b, Rp/Rs, T14) per sector and test for a secular "
+        "drift in the impact parameter (nodal precession); needs >=2 stitched sectors "
+        "(--sector all) spanning >=1 yr",
+    ),
 ):
     """Run a quick-look analysis of a TESS lightcurve.
 
@@ -553,6 +560,7 @@ def run(
         extend_period_ceiling=extend_period_ceiling,
         single_event_search=single_event_search,
         ttv_search=ttv_search,
+        precession_search=precession_search,
     )
 
     if each_sector:
