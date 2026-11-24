@@ -213,6 +213,8 @@ def extract_fields(data: dict[str, Any], stem: str) -> dict[str, Any]:
         "prec_sigma": coerce_scalar(data.get("precession_significance")),
         "prec_candidate": coerce_scalar(data.get("precession_candidate")),
         "prec_flags": coerce_scalar(data.get("precession_flags")),
+        "prec_mode": coerce_scalar(data.get("precession_mode")),
+        "prec_di_dt": coerce_scalar(data.get("precession_di_dt")),
     }
     return {key: _json_safe(val) for key, val in fields.items()}
 

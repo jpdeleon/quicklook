@@ -76,6 +76,7 @@
       transition: border-color 0.2s, background-color 0.2s;
     }
     input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); background: var(--card-bg); }
+    select.inline-select { width: auto; padding: 2px 6px; font-size: 0.8rem; margin-left: 4px; }
     input.invalid { border-color: var(--red); }
     .validation-msg { color: var(--red); font-size: 0.78rem; margin-top: 2px; display: none; }
     .sector-hint {
@@ -515,7 +516,12 @@
           </span>
           <span class="check-item">
             <label><input type="checkbox" name="precession_search" id="precession_search"> Precession search</label>
-            <span class="help-tip" tabindex="0" data-tip="Fit the transit shape (impact parameter b, Rp/Rs, T14) in each stitched sector and test for a secular drift in b, as nodal precession produces. Needs a multi-sector run (Sector = all, or a sector list) spanning at least a year and a periodic TLS signal or custom ephemeris. Writes a *_precession.png figure and flags dilution changes, grazing degeneracy and short baselines.">?</span>
+            <span class="help-tip" tabindex="0" data-tip="Fit the transit shape (impact parameter b, Rp/Rs, T14) in each stitched sector and test for a secular drift in b, as nodal precession produces. Needs a multi-sector run (Sector = all, or a sector list) spanning at least a year and a periodic TLS signal or custom ephemeris. Writes a *_precession.png figure and flags dilution changes, grazing degeneracy and short baselines. Mode: Planet fits b per sector; EB fits the inner-binary inclination of an eclipsing binary (needs the binary period with T0 at the primary eclipse, e.g. a custom ephemeris); Auto picks EB when SIMBAD lists an eclipsing binary.">?</span>
+            <select name="precession_mode" id="precession_mode" class="inline-select" aria-label="Precession search mode">
+              <option value="auto">Auto</option>
+              <option value="planet">Planet</option>
+              <option value="eb">EB</option>
+            </select>
           </span>
         </div>
         <div class="full-width">
@@ -821,7 +827,8 @@ const FORM_STORAGE_KEY = 'ql-form-state';
 const PERSIST_FIELDS = [
   'name','sector','pipeline','fluxtype','exptime','quality_bitmask','flatten_method',
   'window_length','edge_cutoff','gp_kernel','pg_method','period_min','period_max',
-  'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix'
+  'phase_xlim','sigma_clip_raw','sigma_clip_flat','custom_ephem','survey','outdir','suffix',
+  'precession_mode'
 ];
 const PERSIST_CHECKS = ['save','verbose','overwrite','mask_ephem','each_sector','each_pipeline','use_priors','show_simbad','iterative_search','single_event_search','ttv_search','precession_search'];
 

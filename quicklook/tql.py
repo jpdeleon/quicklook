@@ -367,6 +367,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         single_event_search: bool = False,
         ttv_search: bool = False,
         precession_search: bool = False,
+        precession_mode: str = "auto",
     ):
         # start timer
         self.timer_start = timer()
@@ -395,6 +396,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         self.single_event_search = single_event_search
         self.ttv_search = ttv_search
         self.precession_search = precession_search
+        self.precession_mode = precession_mode
         # Optional zero-arg callable polled inside the long TGLC ePSF loop;
         # returning truthy raises InterruptedError so the worker thread
         # actually stops when the GUI Cancel button is clicked.
