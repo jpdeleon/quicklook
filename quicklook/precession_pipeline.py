@@ -259,23 +259,29 @@ class PrecessionMixin:
         logger.info(msg)
 
     def _save_precession_figure(self, fp) -> list:
-        """Write ``<fp>_precession.png`` when the search produced per-sector fits."""
+        """Save this run's precession figures and retire stale companions on overwrite."""
         r = self.precession_result
+        path = Path(str(fp) + PRECESSION_FIGURE_SUFFIX)
+        folds_path = Path(str(fp) + PRECESSION_FOLDS_SUFFIX)
         if r is None or not r.sector_fits:
+            if getattr(self, "overwrite", False):
+                path.unlink(missing_ok=True)
+                folds_path.unlink(missing_ok=True)
             return []
         plot = plot_eb_precession if isinstance(r, EBPrecessionResult) else plot_precession
         fig = plot(r, getattr(self, "target_name", ""))
-        path = Path(str(fp) + PRECESSION_FIGURE_SUFFIX)
         fig.savefig(path, dpi=120, bbox_inches="tight")
         pl.close(fig)
         logger.info(f"Saved: {path}")
-        return [path, *self._save_sector_folds_figure(fp)]
+        return [path, *self._save_sector_folds_figure(folds_path)]
 
-    def _save_sector_folds_figure(self, fp) -> list:
-        """Write ``<fp>_precession_folds.png`` (per-sector folds) for a planet-branch candidate."""
+    def _save_sector_folds_figure(self, path: Path) -> list:
+        """Write per-sector folds for a planet-branch candidate."""
         r = self.precession_result
         ephem = self._precession_ephem
         if not isinstance(r, PrecessionResult) or not r.is_candidate or ephem is None:
+            if getattr(self, "overwrite", False):
+                path.unlink(missing_ok=True)
             return []
         lc = self.flat_lc
         flux_err = None if lc.flux_err is None else np.asarray(lc.flux_err.value, dtype=float)
@@ -288,7 +294,6 @@ class PrecessionMixin:
             *ephem,
             title=getattr(self, "target_name", ""),
         )
-        path = Path(str(fp) + PRECESSION_FOLDS_SUFFIX)
         fig.savefig(path, dpi=120, bbox_inches="tight")
         pl.close(fig)
         logger.info(f"Saved: {path}")

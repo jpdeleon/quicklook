@@ -125,6 +125,25 @@ def test_non_candidate_skips_folds_figure(tmp_path):
     assert names == ["target" + PRECESSION_FIGURE_SUFFIX]
 
 
+def test_overwrite_removes_stale_precession_figures(tmp_path):
+    stem = tmp_path / "target"
+    candidate = _ql()
+    assert candidate.run_precession_search().is_candidate
+    trend, folds = candidate._save_precession_figure(stem)
+
+    static = _ql(db_dt=0.0)
+    static.overwrite = True
+    assert not static.run_precession_search().is_candidate
+    assert static._save_precession_figure(stem) == [trend]
+    assert trend.is_file() and not folds.exists()
+
+    candidate._save_precession_figure(stem)
+    disabled = _ql(enabled=False)
+    disabled.overwrite = True
+    assert disabled._save_precession_figure(stem) == []
+    assert not trend.exists() and not folds.exists()
+
+
 def test_no_figure_without_fits(tmp_path):
     ql = _ql(sde=4.0)
     ql.run_precession_search()
