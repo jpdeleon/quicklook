@@ -326,3 +326,18 @@ def test_search_recovers_trend_with_underestimated_duration():
     time, flux, err, spans = _stitched(0.04)
     result = search_precession(time, flux, err, spans, PERIOD, T0, 0.3 * _duration())
     assert abs(result.db_dt - 0.04) < 3 * result.db_dt_err
+
+
+@pytest.mark.parametrize(
+    ("r_err", "m_err", "expected"), [(0.3, np.nan, 0.3), (np.nan, 0.9, 0.3), (0.02, np.nan, 0.1)]
+)
+def test_partial_stellar_errors_respect_known_uncertainty(r_err, m_err, expected):
+    a_rs, sigma = a_rs_from_star(3, 1, 1, r_err, m_err)
+    assert sigma / a_rs == pytest.approx(expected)
+
+
+def test_search_skips_sectors_with_no_measurable_noise():
+    time, flux, _, spans = _stitched(0)
+    result = search_precession(time, np.ones_like(flux), None, spans, PERIOD, T0, _duration())
+    assert not result.is_candidate
+    assert not result.sector_fits

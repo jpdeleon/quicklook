@@ -236,7 +236,13 @@ def extract_sector_transits(
         t, f, e = time[sel & near], flux[sel & near], err[sel & near]
         oot = ~in_transit[sel & near]
         scatter = _robust_std(f[oot]) if np.count_nonzero(oot) > 2 else _robust_std(f)
-        e = np.where(np.isfinite(e) & (e > 0), e, scatter)
+        valid_err = np.isfinite(e) & (e > 0)
+        if not np.all(valid_err):
+            if not np.isfinite(scatter) or scatter <= 0:
+                if not np.any(valid_err):
+                    continue
+                scatter = np.median(e[valid_err])
+            e = np.where(valid_err, e, scatter)
         intr = sel & in_transit
         epochs = np.round((time[intr] - t0) / period)
         out.append(
@@ -313,10 +319,11 @@ def a_rs_from_star(
         return None
     a_au = (m_star * (period / DAYS_PER_YEAR) ** 2) ** (1 / 3)
     a_rs = a_au * AU_PER_RSUN / r_star
-    if np.isfinite(r_err) and np.isfinite(m_err) and r_err > 0 and m_err > 0:
-        rel = np.hypot(m_err / (3 * m_star), r_err / r_star)
-    else:
-        rel = A_RS_PRIOR_FLOOR
+    has_r_err = np.isfinite(r_err) and r_err > 0
+    has_m_err = np.isfinite(m_err) and m_err > 0
+    rel = np.hypot(r_err / r_star if has_r_err else 0, m_err / (3 * m_star) if has_m_err else 0)
+    if not (has_r_err and has_m_err):
+        rel = max(rel, A_RS_PRIOR_FLOOR)
     return float(a_rs), float(a_rs * max(rel, 1e-3))
 
 
