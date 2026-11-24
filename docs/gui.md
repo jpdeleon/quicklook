@@ -30,7 +30,7 @@ This starts a local server at [http://127.0.0.1:5000](http://127.0.0.1:5000).
 
    ![Period Search options](img/ql-gui-period-search.png)
 
-   A TTV run (TOI-216, Sector `1-6`, Exposure Time `120`) shows the quicklook figure with `*_ttv.png` and `*_ttv_transits.png` under it:
+   A TTV run (TOI-216, Sector `1-6`, Exposure Time `120`, Window Length `1` under Detrending) shows the quicklook figure with `*_ttv.png` and `*_ttv_transits.png` under it:
 
    ![TOI-216 TTV run in the GUI](img/ql-gui-ttv-result.png)
 4. Click **Run QuickLook**
