@@ -50,9 +50,10 @@ A **precession candidate** needs all of:
 | Flag | Blocks | Meaning |
 |------|:------:|---------|
 | `short_baseline` | yes | sectors span < 1 yr; `db/dt` is reported but not trusted |
-| `grazing_degeneracy` | yes | `|corr(b, Rp/Rs)| > 0.95` in some sector: `Rp/Rs` can absorb the `b` change |
+| `rp_absorbs_b` | yes | `grazing_degeneracy` and `depth_change` together: `Rp/Rs` may be absorbing the `b` change |
 | `shape_sign_mismatch` | yes | `T14` trend has the same sign as `db/dt` (geometry requires the opposite) |
 | `b_at_boundary` | yes | some sector's `b` is pinned at 0, where the covariance errors mean nothing |
+| `grazing_degeneracy` | no | `|corr(b, Rp/Rs)| > 0.95` in some sector (expected near b ~ 1) |
 | `contamination_varies` | no | `CROWDSAP` range across sectors > 0.01: dilution changes can mimic a depth change |
 | `mixed_cadence` | no | sector cadences differ by > 10% |
 | `t0_offset` | no | a sector's mid-time is > 3σ off the ephemeris (TTVs can distort shape) |
@@ -86,6 +87,18 @@ result.db_dt, result.db_dt_err, result.is_candidate, result.flags
 
 ## Validation
 
+**TOI-1355 b (real data).** `ql run --name TOI-1355 --sector all --exptime 120
+--period-limits 2.1 2.25 --precession-search` fits the five 2-min sectors
+(57, 58, 77, 78, 84; 2.0 yr) and gives `db/dt = 0.0149 ± 0.0012 /yr`
+(12σ, ΔBIC = 146, candidate), within 1σ of the published
+`0.01633 +0.00081/-0.00076 /yr` (Watanabe et al. 2026, who also used the
+2019-2020 FFI sectors). `b` rises from 0.902 to 0.930, `T14` falls from 2.18 h
+to 2.01 h, and `Rp/Rs` stays at 0.078-0.079. The `grazing_degeneracy` flag
+(max `|corr(b, Rp/Rs)|` = 0.95) is informational here because `Rp/Rs` does not
+trend.
+
+![TOI-1355 precession figure](img/precession-toi1355.png)
+
 On synthetic four-sector light curves (three years, b ≈ 0.8) the tests check
 recovery of an injected `db/dt` of ±0.03–0.04 /yr and a null false-positive
 rate ≤ 5% over 20 noise realisations (`tests/test_precession.py`).
@@ -96,7 +109,8 @@ rate ≤ 5% over 20 noise realisations (`tests/test_precession.py`).
   precession period).
 - MCMC posteriors, LDTk limb-darkening priors, SAP vs PDCSAP comparison,
   half-sector splits.
-- Regression runs against TOI-1355 b, TOI-1518 b and V907 Sco on real data.
+- Regression runs against TOI-1518 b and V907 Sco, and an automated TOI-1355 b
+  regression test (needs network).
 
 ## References
 

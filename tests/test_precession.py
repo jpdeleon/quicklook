@@ -216,9 +216,27 @@ def test_assess_blocks_when_t14_moves_with_b():
     assert not result.is_candidate
 
 
-def test_assess_blocks_grazing_degeneracy():
+def test_assess_grazing_correlation_alone_does_not_block():
     result = assess_precession(_trend_fits(0.05, corr_b_rp=0.99), a_rs=A_RS)
     assert "grazing_degeneracy" in result.flags
+    assert "rp_absorbs_b" not in result.flags
+    assert result.is_candidate
+
+
+def test_assess_blocks_when_rp_rs_trends_with_degenerate_b():
+    fits = [
+        _fit(
+            k,
+            yr * DAYS_PER_YEAR,
+            0.5 + 0.05 * yr,
+            t14=_duration(0.5 + 0.05 * yr),
+            corr_b_rp=0.99,
+            rp_rs=RP - 0.01 * yr,
+        )
+        for k, yr in enumerate((0, 1, 2, 3))
+    ]
+    result = assess_precession(fits, a_rs=A_RS)
+    assert {"grazing_degeneracy", "depth_change", "rp_absorbs_b"} <= set(result.flags)
     assert not result.is_candidate
 
 

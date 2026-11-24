@@ -61,7 +61,7 @@ AU_PER_RSUN = 215.032
 A_RS_PRIOR_FLOOR = 0.1  # relative a/Rs prior width when R*, M* errors are missing
 BLOCKING_FLAGS = (
     "short_baseline",
-    "grazing_degeneracy",
+    "rp_absorbs_b",
     "shape_sign_mismatch",
     "b_at_boundary",
 )
@@ -533,7 +533,7 @@ def assess_precession(
 
     A candidate needs ``|db/dt| >= 3 sigma``, ``BIC(static) - BIC(linear) >= 2``,
     and none of: a baseline under ``min_baseline_yr``, a ``b``-``Rp/Rs``
-    degeneracy, or a ``T14`` trend with the same sign as ``db/dt`` (``T14``
+    degeneracy together with an ``Rp/Rs`` trend, ``b`` pinned at 0, or a ``T14`` trend with the same sign as ``db/dt`` (``T14``
     must shrink as ``b`` grows).
     """
     fits = tuple(sorted(fits, key=lambda f: f.t_mid))
@@ -562,6 +562,10 @@ def assess_precession(
         flags.append("depth_change")
     if models.delta_bic_quadratic >= DELTA_BIC_MIN:
         flags.append("nonlinear")
+    # Near b ~ 1, b and Rp/Rs are correlated; that alone is expected at high
+    # b. Block only when Rp/Rs also trends, i.e. it may be absorbing the change.
+    if "grazing_degeneracy" in flags and "depth_change" in flags:
+        flags.append("rp_absorbs_b")
 
     blocking = [f for f in flags if f in BLOCKING_FLAGS]
     detected = significance >= SIGNIFICANCE_MIN and models.delta_bic >= DELTA_BIC_MIN
