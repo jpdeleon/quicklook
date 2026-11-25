@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.15.0](https://github.com/jpdeleon/quicklook/compare/v1.14.0...v1.15.0) (2026-11-25)
+
+
+### Features
+
+* add per-sector phase-folded figure for precession candidates ([932890a](https://github.com/jpdeleon/quicklook/commit/932890a6c2e0a7c5feaff92d5286e36b48aa601b))
+* hide sectors with uncertain b in the precession figure ([8eb0561](https://github.com/jpdeleon/quicklook/commit/8eb05612459f2678376827cf705feabc5fa955cf))
+* hide sectors with uncertain b in the precession figure ([f714cf9](https://github.com/jpdeleon/quicklook/commit/f714cf94e0ad13cf526a88705c81153d7ba13bfc))
+* per-sector phase-folded figure for precession candidates ([6a2508f](https://github.com/jpdeleon/quicklook/commit/6a2508f594bba575e144a57854a10f7b11618ee5))
+
+
+### Bug Fixes
+
+* finalize the raw panel legend after single-event overlays ([963e7a3](https://github.com/jpdeleon/quicklook/commit/963e7a30b25ed96cd6adc0069ecd17967e230da3))
+* keep the legend of a broken-axis panel inside the figure ([8e15f43](https://github.com/jpdeleon/quicklook/commit/8e15f43b0d8f4bed0d4b664eb8831ce52c2aee42))
+* normalize sector folds with the fitted baseline ([69a678f](https://github.com/jpdeleon/quicklook/commit/69a678f045238005c52dfd0754b5fe9e5dcc2d22))
+* retire stale precession figures on report overwrite ([c9011cf](https://github.com/jpdeleon/quicklook/commit/c9011cfc2c2d46451d8c10a82c7bcf5cc3515446))
+
 ## [1.14.0](https://github.com/jpdeleon/quicklook/compare/v1.13.0...v1.14.0) (2026-11-24)
 
 
