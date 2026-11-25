@@ -397,6 +397,7 @@ class SingleEventMixin:
         for ax in panel0:
             mark_events(ax, events)
             self._plot_se_trend(ax)
+        finish_broken_axes(panel0)
         panel3 = self._time_panel_axes(axes[3])
         for ax in panel3:
             ax.plot(time, flux, ".", color="k", ms=1)

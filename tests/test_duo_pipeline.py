@@ -129,7 +129,28 @@ def test_duo_time_panels_are_broken_between_sectors():
     ql.run_single_event_search()
     fig, axes = pl.subplots(3, 3)
     flat = axes.flatten()
+    raw_slot = flat[0].get_subplotspec()
+    ql._panel0_axes = ql._time_panel_axes(flat[0])
+    ql.se_time = ql.flat_lc.time.value
+    ql.se_trend = np.ones_like(ql.se_time)
+    ql.se_window = 1.0
+    for ax in ql._panel0_axes:
+        ax.plot(ql.se_time, ql.raw_lc.flux.value, label="raw")
+        ax.plot(ql.se_time, ql.se_trend, label="baseline trend")
+        ax.legend()
     ql._plot_single_event_panels(flat)
+    legends = [
+        ax.get_legend()
+        for ax in fig.axes
+        if ax.get_subplotspec().get_topmost_subplotspec() == raw_slot and ax.get_legend()
+    ]
+    assert len(legends) == 1
+    assert [t.get_text().splitlines()[0] for t in legends[0].get_texts()] == [
+        "raw",
+        "baseline trend",
+        "single-event trend",
+    ]
+    assert all(ax.get_legend() is None for ax in ql._panel0_axes)
     # Panels 4 and 5 (flattened flux, single-event SNR) each become 2 sub-axes.
     for idx in (3, 4):
         subs = ql._broken_panels[idx]

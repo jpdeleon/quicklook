@@ -379,3 +379,37 @@ def test_joint_fit_retains_sensitivity_to_moderate_b_drift():
     data = _stitched(0.012, b_ref=0.55)
     result = search_precession(*data, PERIOD, T0, _duration(0.55))
     assert result.significance >= 3
+
+
+def test_plot_sector_folds_has_one_panel_per_sector_plus_overlay():
+    from quicklook.plot_precession import plot_sector_folds
+
+    time, flux, err, spans = _stitched(0.04)
+    result = search_precession(time, flux, err, spans, PERIOD, T0, _duration())
+    fig = plot_sector_folds(result, time, flux, err, spans, PERIOD, T0, _duration(), "t")
+    visible = [ax for ax in fig.axes if ax.get_visible()]
+    assert len(visible) == len(result.sector_fits) + 1
+    assert "b = " in visible[0].get_title()
+
+
+def test_sector_fold_uses_fitted_baseline_without_out_of_transit_points():
+    import matplotlib.pyplot as pl
+
+    from quicklook.plot_precession import plot_sector_folds
+
+    time, flux, err, spans = _stitched(0.04)
+    first = time <= spans[0].tmax
+    phase = (time - T0 + PERIOD / 2) % PERIOD - PERIOD / 2
+    keep = ~first | (np.abs(phase) < 0.095)
+    flux[first] *= 1.1
+    err[first] *= 1.1
+    data = (time[keep], flux[keep], err[keep], spans, PERIOD, T0, 0.22)
+    result = search_precession(*data, a_rs_prior=(A_RS, 0.1))
+    assert result.is_candidate
+    baseline = result.sector_fits[0].baseline
+    assert baseline == pytest.approx(1.1, abs=0.001)
+    fig = plot_sector_folds(result, *data)
+    raw, binned = fig.axes[0].lines[:2]
+    np.testing.assert_allclose(raw.get_ydata(), flux[first & keep] / baseline)
+    assert np.isfinite(binned.get_ydata()).all()
+    pl.close(fig)

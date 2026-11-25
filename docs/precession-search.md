@@ -83,6 +83,10 @@ A **precession candidate** needs all of:
 - Log line with `db/dt`, significance, ΔBIC, the verdict and flags.
 - `*_precession.png`: `b`, `T14` and `(Rp/Rs)^2` per sector against time, with
   the static/linear/quadratic fits on the `b` panel.
+- `*_precession_folds.png` (planet branch, candidates only): the phase-folded
+  transit of each sector with its best-fit model and fitted `b` and `T14`, plus
+  a panel overlaying every sector's model, to see the change in impact
+  parameter directly.
 - `*_tls.h5` keys (with `--save`): `precession_candidate`, `precession_db_dt`
   (+`_err`), `precession_significance`, `precession_delta_bic`,
   `precession_baseline_yr`, `precession_di_dt` (deg/yr),
@@ -90,6 +94,12 @@ A **precession candidate** needs all of:
   `b = 1 + Rp/Rs`), `precession_flags`, `precession_reason`,
   `precession_a_rs`, `precession_a_rs_prior`, and per-sector arrays
   `precession_{sectors,t_mid,b,b_err,rp_rs,rp_rs_err,depth,depth_err,t14,t14_err,dt0,cadence,crowdsap,flfrcsap,corr_b_rp}`.
+
+For TOI-1355 b, the sector panels show how each fitted model follows the
+phase-folded transit data. Compare the overlaid models to see how the fitted
+transit duration changes across sectors.
+
+![TOI-1355 b phase-folded transits by TESS sector with fitted models and a model overlay](img/TOI1355b_precession_folds.png)
 
 ## Eclipsing binaries
 

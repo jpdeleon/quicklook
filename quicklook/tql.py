@@ -2739,7 +2739,6 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         for ax in self._panel0_axes:
             self.raw_lc.scatter(ax=ax, label=f"raw (exp={self.exptime} s)")
             self.trend_lc.plot(ax=ax, color="r", lw=2, label=label)
-        finish_broken_axes(self._panel0_axes)
 
         if self.verbose:
             logger.info("Running Lomb-Scargle periodogram...")
@@ -2850,6 +2849,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
                 logger.info("Plotting single-event panels...")
             self._plot_single_event_panels(axes.flatten())
         else:
+            finish_broken_axes(self._panel0_axes)
             if self.verbose:
                 logger.info("Plotting TLS periodogram...")
             ax = axes.flatten()[4]

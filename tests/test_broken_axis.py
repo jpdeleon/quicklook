@@ -80,8 +80,23 @@ def test_finish_moves_xlabel_to_the_slot_and_keeps_one_legend():
     assert host is not None and host.get_xlabel() == "Time [BTJD]"
     assert all(ax.get_xlabel() == "" for ax in subs)
     assert subs[0].get_ylabel() == "Flux" and subs[1].get_ylabel() == ""
-    assert subs[0].get_legend() is not None and subs[1].get_legend() is None
-    assert subs[0].get_legend()._loc == 0  # "best": a narrow sub-axes has no safe corner
+    assert all(ax.get_legend() is None for ax in subs)
+    assert host.get_legend() is not None
+    pl.close(fig)
+
+
+def test_slot_legend_sits_above_the_slot_inside_the_figure():
+    fig, axes = pl.subplots(3, 3, figsize=(16, 12))
+    subs = broken_time_axes(axes[0, 0], _two_sectors())
+    for ax in subs:
+        ax.plot([0, 727], [1, 1], label="baseline trend\nmethod=biweight(window_size=1.00)")
+        ax.legend()
+    host = finish_broken_axes(subs)
+    fig.canvas.draw()
+    legend_box = host.get_legend().get_window_extent()
+    slot_box = host.get_window_extent()
+    assert legend_box.y0 >= slot_box.y1 - 1  # above the slot, not over a sector
+    assert legend_box.x0 >= 0 and legend_box.x1 <= fig.bbox.x1
     pl.close(fig)
 
 
