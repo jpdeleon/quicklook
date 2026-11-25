@@ -95,11 +95,11 @@ A **precession candidate** needs all of:
   `precession_a_rs`, `precession_a_rs_prior`, and per-sector arrays
   `precession_{sectors,t_mid,b,b_err,rp_rs,rp_rs_err,depth,depth_err,t14,t14_err,dt0,cadence,crowdsap,flfrcsap,corr_b_rp}`.
 
-For TOI-1518 b, the sector panels show how each fitted model follows the
+For TOI-1355 b, the sector panels show how each fitted model follows the
 phase-folded transit data. Compare the overlaid models to see how the fitted
 transit duration changes across sectors.
 
-![TOI-1518 b phase-folded transits by TESS sector with fitted models and a model overlay](img/precession-folds-toi1518.png)
+![TOI-1355 b phase-folded transits by TESS sector with fitted models and a model overlay](img/TOI1355b_precession_folds.png)
 
 ## Eclipsing binaries
 
