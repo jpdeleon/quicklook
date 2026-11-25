@@ -413,3 +413,35 @@ def test_sector_fold_uses_fitted_baseline_without_out_of_transit_points():
     np.testing.assert_allclose(raw.get_ydata(), flux[first & keep] / baseline)
     assert np.isfinite(binned.get_ydata()).all()
     pl.close(fig)
+
+
+def _annotations(ax):
+    return [t.get_text() for t in ax.texts if t.get_text().startswith("S")]
+
+
+def test_plot_precession_hides_sectors_with_uncertain_b():
+    import matplotlib.pyplot as pl
+
+    from quicklook.plot_precession import plot_precession
+
+    fits = [_fit(10 + k, 365.25 * k, 0.8, b_err=e) for k, e in enumerate((0.01, 1.5, 1.0))]
+    fig = plot_precession(assess_precession(fits))
+
+    for ax in fig.axes:
+        assert _annotations(ax) == ["S10", "S12"]
+        assert len(ax.containers[0].lines[0].get_xdata()) == 2
+    assert any("S11" in t.get_text() for t in fig.axes[-1].texts)
+    pl.close(fig)
+
+
+def test_plot_precession_with_every_b_uncertain_says_so():
+    import matplotlib.pyplot as pl
+
+    from quicklook.plot_precession import plot_precession
+
+    fits = [_fit(10 + k, 365.25 * k, 0.8, b_err=2.0) for k in range(3)]
+    fig = plot_precession(assess_precession(fits))
+
+    assert not any(ax.containers for ax in fig.axes)
+    assert any("S10, S11, S12" in t.get_text() for ax in fig.axes for t in ax.texts)
+    pl.close(fig)
