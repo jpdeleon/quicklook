@@ -23,6 +23,7 @@ from quicklook.precession import (
 from quicklook.precession_eb import EBPrecessionResult
 
 MINUTES_PER_DAY = 1440.0
+MAX_PLOTTED_B_ERR = 1.0  # sectors with a larger b uncertainty are not drawn
 _MODEL_STYLES = (("static", "--", "C7"), ("linear", "-", "C3"), ("quadratic", ":", "C2"))
 
 
@@ -42,7 +43,11 @@ def _draw_models(ax, result, t_yr):
 
 
 def plot_precession(result: PrecessionResult, title: str = "") -> pl.Figure:
-    """Three stacked panels; the b panel carries the static/linear/quadratic fits."""
+    """Three stacked panels; the b panel carries the static/linear/quadratic fits.
+
+    Sectors with ``b_err > MAX_PLOTTED_B_ERR`` are left out of every panel (and
+    named in the figure). The trend fits and the verdict still use all sectors.
+    """
     panels = (
         ("b", "b_err", 1.0, "impact parameter b"),
         ("t14", "t14_err", 24.0, "T14 [h]"),
@@ -52,7 +57,10 @@ def plot_precession(result: PrecessionResult, title: str = "") -> pl.Figure:
         f"db/dt = {result.db_dt:.4f} ± {result.db_dt_err:.4f} /yr "
         f"({result.significance:.1f}σ, ΔBIC={result.delta_bic:.1f})"
     )
-    return _plot_panels(result, panels, f"{title}  {headline}")
+    fits = result.sector_fits
+    shown = tuple(f for f in fits if f.b_err <= MAX_PLOTTED_B_ERR)
+    hidden = tuple(f for f in fits if f not in shown)
+    return _plot_panels(result, panels, f"{title}  {headline}", shown, hidden)
 
 
 def plot_eb_precession(result: EBPrecessionResult, title: str = "") -> pl.Figure:
@@ -66,7 +74,7 @@ def plot_eb_precession(result: EBPrecessionResult, title: str = "") -> pl.Figure
         f"di/dt = {result.di_dt:.3f} ± {result.di_dt_err:.3f} deg/yr "
         f"({result.significance:.1f}σ, ΔBIC={result.delta_bic:.1f})"
     )
-    fig = _plot_panels(result, panels, f"{title}  {headline}")
+    fig = _plot_panels(result, panels, f"{title}  {headline}", result.sector_fits)
     if result.models is not None:
         fits = result.sector_fits
         t_yr = _years([f.t_mid for f in fits], result.models.t_ref)
@@ -76,22 +84,36 @@ def plot_eb_precession(result: EBPrecessionResult, title: str = "") -> pl.Figure
     return fig
 
 
-def _plot_panels(result, panels, headline: str) -> pl.Figure:
-    fits = result.sector_fits
+def _plot_panels(result, panels, headline: str, fits, hidden=()) -> pl.Figure:
     fig, axes = pl.subplots(3, 1, figsize=(7, 8), sharex=True)
-    if not fits or result.models is None:
+    if not result.sector_fits or result.models is None:
         axes[0].text(0.5, 0.5, result.reason or "no fit", ha="center", transform=axes[0].transAxes)
         return fig
     t_yr = _years([f.t_mid for f in fits], result.models.t_ref)
     for ax, (attr, err_attr, scale, label) in zip(axes, panels):
+        ax.set_ylabel(label)
+        if not fits:
+            continue
         y = np.array([getattr(f, attr) for f in fits]) * scale
         yerr = np.array([getattr(f, err_attr) for f in fits]) * scale
         ax.errorbar(t_yr, y, yerr=yerr, fmt="o", color="k", capsize=3)
         for x, yy, f in zip(t_yr, y, fits):
             ax.annotate(f"S{f.sector}", (x, yy), textcoords="offset points", xytext=(4, 4))
-        ax.set_ylabel(label)
-    _draw_models(axes[0], result, t_yr)
-    axes[0].legend(fontsize=8, loc="best")
+    if fits:
+        _draw_models(axes[0], result, t_yr)
+        axes[0].legend(fontsize=8, loc="best")
+    if hidden:
+        names = ", ".join(f"S{f.sector}" for f in hidden)
+        axes[-1].text(
+            0.99,
+            0.97,
+            f"not shown (b uncertainty > {MAX_PLOTTED_B_ERR:g}): {names}",
+            transform=axes[-1].transAxes,
+            ha="right",
+            va="top",
+            fontsize=8,
+            color="C7",
+        )
     verdict = "candidate" if result.is_candidate else "no candidate"
     axes[0].set_title(f"{headline.strip()} → {verdict}", fontsize=9)
     if result.flags:

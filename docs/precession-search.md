@@ -82,7 +82,10 @@ A **precession candidate** needs all of:
 
 - Log line with `db/dt`, significance, ΔBIC, the verdict and flags.
 - `*_precession.png`: `b`, `T14` and `(Rp/Rs)^2` per sector against time, with
-  the static/linear/quadratic fits on the `b` panel.
+  the static/linear/quadratic fits on the `b` panel. A sector whose `b`
+  uncertainty is larger than ±1 is left out of all three panels and named in
+  the figure. This only affects the figure: the trend fits, the verdict and the
+  saved `*_tls.h5` arrays still include it.
 - `*_precession_folds.png` (planet branch, candidates only): the phase-folded
   transit of each sector with its best-fit model and fitted `b` and `T14`, plus
   a panel overlaying every sector's model, to see the change in impact
