@@ -116,6 +116,9 @@ ql run --name TOI-125.01 --sector 2 --pipeline qlp
 # For a blind period search on a young star with a duration estimate, try 3×.
 ql run --name TOI-125.01 --sector 2 --window-t14-multiplier 3
 
+# Experimental young-star preset
+ql run --name TOI-125.01 --sector 2 --adaptive
+
 # Custom detrending
 ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 
@@ -184,6 +187,20 @@ ql run --name TOI-125.01 --pipeline tglc --fluxtype psf --show-simbad --save
 
 > **Note:** Old-style `-save` / `-verbose` flags and the standalone
 > `read_tls` / `rank_tls` commands still work via automatic redirect.
+For exploratory single-sector young-star runs, `--adaptive` uses a fixed 0.5-day
+notch filter when the catalog or custom ephemeris lacks a positive finite T14.
+With a usable T14 it uses biweight at 5 × T14, switching to 3 × T14 when an
+unmasked GLS period is at most 5 days and the hourly flux variability is at
+least 0.5% (95th–5th percentile range divided by the median). An unreliable GLS
+estimate keeps 5×. Supplying `--flatten-method`, `--window-length` or
+`--window-t14-multiplier` bypasses the preset. TLS results record the resolved
+method, window in days and `adaptive_reason`.
+
+On nine held-out young hosts, this rule recovered 38.3% of periods versus
+40.1% for fixed 3× and 34.4% for fixed 5×. Median depth retention was 98.2%
+(95% interval 92.3–100.0%). The rule missed the benchmark's joint validation
+criteria and is opt-in.
+
 > Underscore flags (`--flatten_method`) are interchangeable with hyphens
 > (`--flatten-method`). On headless Linux systems, `--save` is required
 > (the CLI detects missing `$DISPLAY` and exits early unless `--save` is set).
