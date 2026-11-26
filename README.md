@@ -112,15 +112,16 @@ ql run --name WASP-21 --save --verbose
 # Specific sector and pipeline
 ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
-# Biweight detrending defaults to 5 × T14 for a known TOI duration. Use 3× explicitly:
+# For depth measurements, biweight defaults to 5 × the catalog or custom transit duration.
+# For a blind period search on a young star with a duration estimate, try 3×.
 ql run --name TOI-125.01 --sector 2 --window-t14-multiplier 3
 
 # Custom detrending
 ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 
-# Notch filter (window length in days) or LOCoR (window-length is the
-# rotation period in days; leave it unset to estimate it via GLS)
+# For a young star with no duration estimate, try notch with a fixed 0.5-day window.
 ql run --name TOI-125.01 --flatten-method notch --window-length 0.5
+# LOCoR estimates the rotation period via GLS when the window is omitted.
 ql run --name TOI-125.01 --flatten-method locor
 
 # Restrict TLS period search range
