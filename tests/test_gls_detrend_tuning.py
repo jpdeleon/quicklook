@@ -29,7 +29,7 @@ def spotted_lc():
     return lc
 
 
-def _run(lc, flatten_method):
+def _run(lc, flatten_method, **kwargs):
     exofop = {
         "basic_info": {"star_names": "Test star, TIC 1, Gaia DR3 1", "tic_id": "1"},
         "coordinates": {"ra": 10.0, "dec": -10.0},
@@ -54,6 +54,7 @@ def _run(lc, flatten_method):
             flatten_method=flatten_method,
             tls_use_threads=1,
             verbose=False,
+            **kwargs,
         )
 
 
@@ -71,6 +72,29 @@ def test_biweight_rotation_aware_window_uses_gls(spotted_lc):
     ql = _run(spotted_lc, "biweight")
 
     assert ql.window_length == pytest.approx(1.0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("options", "expected_days"),
+    [
+        ({}, 0.375),
+        ({"window_t14_multiplier": 5}, 0.625),
+        ({"window_t14_multiplier": 5, "window_length": 0.8}, 0.8),
+    ],
+)
+def test_duration_scaled_window(spotted_lc, options, expected_days):
+    ql = _run(spotted_lc, "biweight", custom_ephem=(1, 0.01, 5, 0.01, 3, 0.1), **options)
+    assert ql.window_length == pytest.approx(expected_days)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("value", [0, -1, float("nan"), float("inf")])
+def test_invalid_duration_multiplier(value):
+    from quicklook.exceptions import InvalidInputError
+
+    with pytest.raises(InvalidInputError, match="finite and positive"):
+        TessQuickLook("TIC 1", window_t14_multiplier=value)
 
 
 @pytest.mark.unit

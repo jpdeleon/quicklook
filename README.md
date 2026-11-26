@@ -112,6 +112,9 @@ ql run --name WASP-21 --save --verbose
 # Specific sector and pipeline
 ql run --name TOI-125.01 --sector 2 --pipeline qlp
 
+# Biweight detrending for a known TOI duration: use 5 × T14 (default: 3 × T14)
+ql run --name TOI-125.01 --sector 2 --window-t14-multiplier 5
+
 # Custom detrending
 ql run --name TOI-125.01 --flatten-method cosine --window-length 0.3
 
