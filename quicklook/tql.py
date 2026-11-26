@@ -368,7 +368,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         ttv_search: bool = False,
         precession_search: bool = False,
         precession_mode: str = "auto",
-        window_t14_multiplier: float = 3.0,
+        window_t14_multiplier: float = 5.0,
     ):
         if not math.isfinite(window_t14_multiplier) or window_t14_multiplier <= 0:
             raise InvalidInputError("window_t14_multiplier must be finite and positive")

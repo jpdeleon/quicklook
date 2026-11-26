@@ -78,8 +78,8 @@ def test_biweight_rotation_aware_window_uses_gls(spotted_lc):
 @pytest.mark.parametrize(
     ("options", "expected_days"),
     [
-        ({}, 0.375),
-        ({"window_t14_multiplier": 5}, 0.625),
+        ({}, 0.625),
+        ({"window_t14_multiplier": 3}, 0.375),
         ({"window_t14_multiplier": 5, "window_length": 0.8}, 0.8),
     ],
 )

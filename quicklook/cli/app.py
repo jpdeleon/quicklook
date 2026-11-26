@@ -343,7 +343,7 @@ def run(
         None, "--window-length", help="Flatten window length (days); 0 = auto-optimize"
     ),
     window_t14_multiplier: float = typer.Option(
-        3.0,
+        5.0,
         "--window-t14-multiplier",
         help="Scale the known transit duration for detrending (5 for single-sector TOI biweight). "
         "An explicit --window-length takes precedence. LOCoR uses the rotation period.",
