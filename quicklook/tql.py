@@ -368,7 +368,10 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         ttv_search: bool = False,
         precession_search: bool = False,
         precession_mode: str = "auto",
+        window_t14_multiplier: float = 5.0,
     ):
+        if not math.isfinite(window_t14_multiplier) or window_t14_multiplier <= 0:
+            raise InvalidInputError("window_t14_multiplier must be finite and positive")
         # start timer
         self.timer_start = timer()
         self.target_name = target_name
@@ -427,11 +430,10 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
             self.window_length = 0.0
         elif window_length is None:
             self._use_rotation_aware_window = True
-            self.window_length = (
-                self.toi_dur[0] * 3
-                if (self.toi_dur is not None) and (self.toi_dur[0] * 3 >= 0.1)
-                else 0.5
+            duration_window = (
+                self.toi_dur[0] * window_t14_multiplier if self.toi_dur is not None else 0.0
             )
+            self.window_length = duration_window if duration_window >= 0.1 else 0.5
         else:
             self._use_rotation_aware_window = False
             self.window_length = window_length

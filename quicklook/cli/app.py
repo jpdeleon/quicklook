@@ -342,6 +342,12 @@ def run(
     window_length: Optional[float] = typer.Option(
         None, "--window-length", help="Flatten window length (days); 0 = auto-optimize"
     ),
+    window_t14_multiplier: float = typer.Option(
+        5.0,
+        "--window-t14-multiplier",
+        help="Scale the known transit duration for detrending (5 for single-sector TOI biweight). "
+        "An explicit --window-length takes precedence. LOCoR uses the rotation period.",
+    ),
     edge_cutoff: float = typer.Option(0.1, "--edge-cutoff", help="Edge cutoff (days)"),
     sigma_clip_raw: Optional[Tuple[float, float]] = typer.Option(
         (10.0, 5.0), "--sigma-clip-raw", help="(sigma_lo, sigma_hi) for raw LC outlier rejection"
@@ -540,6 +546,7 @@ def run(
         gp_kernel=gp_kernel,
         gp_kernel_size=gp_kernel_size,
         window_length=window_length,
+        window_t14_multiplier=window_t14_multiplier,
         sigma_clip_raw=sigma_clip_raw,
         sigma_clip_flat=sigma_clip_flat,
         Porb_limits=period_limits,

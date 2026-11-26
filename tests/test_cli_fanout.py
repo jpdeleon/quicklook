@@ -16,6 +16,7 @@ from quicklook.cli.app import app
 OPTIONS = [
     "--custom-ephem", "2459705.80", "0.001", "2.8626", "0.00001", "2.36", "0.01",
     "--window-length", "0.5",
+    "--window-t14-multiplier", "5",
     "--sigma-clip-flat", "10", "3",
     "--sigma-clip-raw", "8", "4",
     "--gp-kernel-size", "7",
@@ -26,6 +27,7 @@ OPTIONS = [
 EXPECTED = {
     "custom_ephem": (2459705.80, 0.001, 2.8626, 0.00001, 2.36, 0.01),
     "window_length": 0.5,
+    "window_t14_multiplier": 5.0,
     "sigma_clip_flat": (10.0, 3.0),
     "sigma_clip_raw": (8.0, 4.0),
     "gp_kernel_size": 7,
