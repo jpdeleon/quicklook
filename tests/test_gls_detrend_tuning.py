@@ -156,3 +156,51 @@ def test_locor_falls_back_when_gls_peak_sits_at_the_cap():
     ql = _run(lc, "locor")
 
     assert ql.window_length == pytest.approx(1.0)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("amplitude", "period", "expected"),
+    [(0.02, 5.0, 3), (0.02, 5.1, 5), (0.001, 2, 5), (0.02, 8.9, 5), (0.02, np.nan, 5)],
+)
+def test_adaptive_multiplier(spotted_lc, amplitude, period, expected):
+    from quicklook.tql import _adaptive_multiplier
+
+    lc = spotted_lc.copy()
+    lc.flux = 1 + amplitude * np.sin(2 * np.pi * lc.time.value / 2)
+    with patch("quicklook.tql.Gls", return_value=_FakeGls(period)):
+        multiplier, reason = _adaptive_multiplier(lc)
+    assert multiplier == expected
+    assert reason
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("ephem", "options", "method", "days"),
+    [
+        (None, {}, "notch", 0.5),
+        ((1, 0.01, 5, 0.01, 3, 0.1), {}, "biweight", 0.375),
+        ((1, 0.01, 5, 0.01, 3, 0.1), {"window_t14_multiplier": 5}, "biweight", 0.625),
+        (None, {"window_length": 0.75}, "biweight", 0.75),
+        ((1, 0.01, 5, 0.01, 3, 0.1), {"flatten_method": "biweight"}, "biweight", 0.625),
+    ],
+)
+def test_adaptive_constructor(spotted_lc, ephem, options, method, days):
+    with patch("quicklook.tql._adaptive_multiplier", return_value=(3, "fast and variable")) as rule:
+        ql = _run(
+            spotted_lc,
+            options.get("flatten_method"),
+            adaptive=True,
+            custom_ephem=ephem,
+            **{k: v for k, v in options.items() if k != "flatten_method"},
+        )
+    assert ql.flatten_method == method
+    assert ql.window_length == pytest.approx(days)
+    assert rule.call_count == int(ephem is not None and not options)
+    assert ql.adaptive_reason == (
+        "explicit detrending option"
+        if options
+        else "fast and variable"
+        if ephem
+        else "no usable T14"
+    )

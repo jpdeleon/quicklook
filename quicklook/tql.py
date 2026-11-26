@@ -223,6 +223,33 @@ def _gls_period(gls_obj) -> float:
     return period
 
 
+def _adaptive_multiplier(lc):
+    """Apply the experimental young-host rule to unmasked, pre-flattening flux."""
+    t, y, e = (np.asarray(column.value, dtype=float) for column in (lc.time, lc.flux, lc.flux_err))
+    good = np.isfinite(t) & np.isfinite(y) & np.isfinite(e) & (y > 0) & (e > 0)
+    t, idx = np.unique(t[good], return_index=True)
+    if len(t) < 3 or np.ptp(t) / LOCOR_MIN_CYCLES <= 0.1:
+        return 5.0, "insufficient data for GLS"
+
+    y, e = y[good][idx], e[good][idx]
+    hourly = pd.Series(y).groupby(np.floor((t - t[0]) * 24)).median()
+    low, median, high = np.quantile(hourly, [0.05, 0.5, 0.95])
+    amplitude = 100 * (high - low) / median
+    if amplitude < 0.5:
+        return 5.0, f"hourly variability {amplitude:.3g}% below threshold"
+
+    cap = np.ptp(t) / LOCOR_MIN_CYCLES
+    try:
+        period = _gls_period(Gls(np.array([t, y, e]), Pbeg=0.1, Pend=cap, verbose=False))
+    except Exception as exc:  # Same GLS fallback policy as automatic LOCoR.
+        return 5.0, f"unusable GLS estimate ({exc})"
+    if period >= LOCOR_CAP_EDGE_FRAC * cap:
+        return 5.0, "GLS peak at search cap"
+    return (
+        3.0 if period <= 5.0 else 5.0
+    ), f"GLS {period:.4g} d, hourly variability {amplitude:.3g}%"
+
+
 def _check_positive_flux(flux) -> None:
     """Raise ValueError unless ``flux`` is positive enough to detrend.
 
@@ -334,7 +361,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         flux_type="pdcsap",
         exptime: float = None,
         pg_method: str = "gls",
-        flatten_method: str = "biweight",
+        flatten_method: str | None = None,
         gp_kernel: str = "periodic_auto",  # works if flatten_method=='gp'
         gp_kernel_size: float = 5,  # works if flatten_method=='gp'
         # bin_size : float = None, # useful for dense lc (exp<=120s)
@@ -368,8 +395,17 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         ttv_search: bool = False,
         precession_search: bool = False,
         precession_mode: str = "auto",
-        window_t14_multiplier: float = 5.0,
+        window_t14_multiplier: float | None = None,
+        adaptive: bool = False,
     ):
+        explicit_detrending = any(
+            x is not None for x in (flatten_method, window_length, window_t14_multiplier)
+        )
+        self.adaptive_reason = (
+            "explicit detrending option" if adaptive and explicit_detrending else None
+        )
+        if window_t14_multiplier is None:
+            window_t14_multiplier = 5.0
         if not math.isfinite(window_t14_multiplier) or window_t14_multiplier <= 0:
             raise InvalidInputError("window_t14_multiplier must be finite and positive")
         # start timer
@@ -389,7 +425,7 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         self.sigma_clip_raw = sigma_clip_raw
         self.sigma_clip_flat = sigma_clip_flat
         self.quality_bitmask = quality_bitmask
-        self.flatten_method = flatten_method
+        self.flatten_method = "biweight" if flatten_method is None else flatten_method
         self.tls_use_threads = tls_use_threads
         self.use_star_priors = use_star_priors
         self.phase_xlim = phase_xlim
@@ -422,7 +458,20 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         self.gp_kernel_size = gp_kernel_size
         self.edge_cutoff = edge_cutoff
 
-        if window_length is None and flatten_method == "locor":
+        if adaptive and not explicit_detrending:
+            duration = self.toi_dur[0] if self.toi_dur is not None else None
+            if duration is None or not np.isfinite(duration) or duration <= 0:
+                self.flatten_method = "notch"
+                window_length = 0.5
+                self.adaptive_reason = "no usable T14"
+            else:
+                multiplier, self.adaptive_reason = _adaptive_multiplier(self.raw_lc)
+                window_length = multiplier * duration
+            logger.info(
+                f"Adaptive detrending: {self.adaptive_reason}; {self.flatten_method}, {window_length:.4g} d"
+            )
+
+        if window_length is None and self.flatten_method == "locor":
             # window_length doubles as LOCoR's rotation period, which the
             # toi_dur/0.5 d heuristic below doesn't make sense for; defer to
             # the GLS-based period estimate computed in flatten_raw_lc().
@@ -2512,6 +2561,8 @@ class TessQuickLook(SingleEventMixin, TTVMixin, PrecessionMixin):
         # Append baseline model used to flatten raw flux
         self.tls_results["flatten_method"] = self.flatten_method
         self.tls_results["window_length"] = self.window_length
+        if getattr(self, "adaptive_reason", None) is not None:
+            self.tls_results["adaptive_reason"] = self.adaptive_reason
 
         # Iterative multi-planet search metadata: whether it was requested and,
         # if any additional candidates were found, their parameters and vetting

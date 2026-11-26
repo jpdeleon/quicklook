@@ -327,10 +327,10 @@ def run(
     quality_bitmask: str = typer.Option(
         "hard", "--quality-bitmask", help=f"Quality bitmask ({'/'.join(_BITMASK_CHOICES)})"
     ),
-    flatten_method: str = typer.Option(
-        "biweight",
+    flatten_method: Optional[str] = typer.Option(
+        None,
         "--flatten-method",
-        help=f"Flatten method ({'/'.join(sorted(_FLATTEN_CHOICES))})",
+        help=f"Flatten method (default: biweight; {'/'.join(sorted(_FLATTEN_CHOICES))})",
     ),
     gp_kernel: str = typer.Option(
         "periodic_auto", "--gp-kernel", help=f"Wotan GP kernel ({'/'.join(_GP_KERNEL_CHOICES)})"
@@ -342,10 +342,15 @@ def run(
     window_length: Optional[float] = typer.Option(
         None, "--window-length", help="Flatten window length (days); 0 = auto-optimize"
     ),
-    window_t14_multiplier: float = typer.Option(
-        5.0,
+    adaptive: bool = typer.Option(
+        False,
+        "--adaptive",
+        help="Experimental young-star detrending preset; explicit detrending options take precedence.",
+    ),
+    window_t14_multiplier: Optional[float] = typer.Option(
+        None,
         "--window-t14-multiplier",
-        help="Scale the known transit duration for detrending (5 for single-sector TOI biweight). "
+        help="Scale the known transit duration for detrending (default: 5). "
         "An explicit --window-length takes precedence. LOCoR uses the rotation period.",
     ),
     edge_cutoff: float = typer.Option(0.1, "--edge-cutoff", help="Edge cutoff (days)"),
@@ -457,7 +462,8 @@ def run(
     _validate_choice(fluxtype, _FLUXTYPE_CHOICES, "fluxtype")
     pipeline_lower = _validate_choice(pipeline, _PIPELINE_CHOICES, "pipeline")
     _validate_choice(quality_bitmask, _BITMASK_CHOICES, "quality_bitmask")
-    _validate_choice(flatten_method, _FLATTEN_CHOICES, "flatten_method")
+    if flatten_method is not None:
+        flatten_method = _validate_choice(flatten_method, _FLATTEN_CHOICES, "flatten_method")
     _validate_choice(gp_kernel, _GP_KERNEL_CHOICES, "gp_kernel")
     _validate_choice(pg_method, _PG_CHOICES, "pg_method")
     precession_mode = _validate_choice(precession_mode, _PRECESSION_MODE_CHOICES, "precession_mode")
@@ -547,6 +553,7 @@ def run(
         gp_kernel_size=gp_kernel_size,
         window_length=window_length,
         window_t14_multiplier=window_t14_multiplier,
+        adaptive=adaptive,
         sigma_clip_raw=sigma_clip_raw,
         sigma_clip_flat=sigma_clip_flat,
         Porb_limits=period_limits,
